@@ -1,0 +1,196 @@
+import 'dart:convert';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../../../core/api_service.dart';
+import '../../../core/storage_service.dart';
+import '../../../models/user.dart';
+
+class AuthController extends ChangeNotifier {
+  static final AuthController _instance = AuthController._internal();
+  static AuthController get instance => _instance;
+  AuthController._internal();
+
+
+  // --- State Variables ---
+  UserModel? _user;
+  bool _isLoading = false;
+  String? _errorMessage;
+  bool _isInitialized = false;
+  bool _isAuthenticated = false;
+  Timer? _refreshTimer;
+
+  // --- Getters ---
+  UserModel? get user => _user;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  bool get isInitialized => _isInitialized;
+  bool get isAuthenticated => _isAuthenticated;
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void manageSession() {
+    final String? expiry = StorageService.getString(keyExpiresIn);
+    if (expiry == null) return;
+
+    final expiryDate = DateTime.fromMillisecondsSinceEpoch(int.parse(expiry));
+    
+    final refreshTime = expiryDate.subtract(const Duration(minutes: 2));
+    final Duration delay = refreshTime.difference(DateTime.now());
+
+    if (delay.isNegative) {
+      refreshAccessToken();
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = Timer(delay, () => refreshAccessToken());
+    }
+  }
+
+  bool _isTokenExpired(String? expiry) {
+    if (expiry == null) return true;
+    final expiryDate = DateTime.fromMillisecondsSinceEpoch(int.parse(expiry));
+    return DateTime.now().isAfter(expiryDate.subtract(const Duration(minutes: 1)));
+  }
+
+  bool _isNearExpiry(String? expiry) {
+    if (expiry == null) return true;
+    final expiryDate = DateTime.fromMillisecondsSinceEpoch(int.parse(expiry));
+    return DateTime.now().isAfter(expiryDate.subtract(const Duration(minutes: 2)));
+  }
+
+  Future<void> checkSession() async {
+    final String? token = StorageService.getString(keyIdToken);
+    final String? expiry = StorageService.getString(keyExpiresIn);
+
+    if (token != null && !_isTokenExpired(expiry)) {
+      manageSession();
+      _isAuthenticated = true;
+    } else if (token != null && _isNearExpiry(expiry)) {
+      bool success = await refreshAccessToken();
+      if (success) {
+          _isAuthenticated = true;
+        } else {
+          _isAuthenticated = false;
+          await StorageService.clearAll();
+        }
+    } else {
+      _isAuthenticated = false;
+      await StorageService.clearAll(); 
+    }
+
+    _isInitialized = true;
+    notifyListeners();
+  }
+  
+  Future<void> login(String email, String password) async {
+    try {
+      _isLoading = true;
+      _errorMessage = '';
+      notifyListeners();
+
+      final loginRes = await apiService.post('/user/signin', {
+        'email': email,
+        'password': password,
+      });
+
+      if (loginRes.statusCode != 200) {
+        final errorData = jsonDecode(loginRes.body);
+        _errorMessage = errorData['message'] ?? 'An unknown error occurred';
+        throw Exception(_errorMessage);
+      }
+
+      final loginData = jsonDecode(loginRes.body);
+      int expiresInSeconds = loginData['ExpiresIn'];
+      DateTime expiryDate = DateTime.now().add(Duration(seconds: expiresInSeconds));
+
+      await Future.wait([
+        StorageService.setString(keyAccessToken, loginData['AccessToken']),
+        StorageService.setString(keyIdToken, loginData['IdToken']),
+        StorageService.setString(keyExpiresIn, expiryDate.millisecondsSinceEpoch.toString()),
+        StorageService.setString(keyRefreshToken, loginData['RefreshToken']),
+        StorageService.setString(keyTokenType, loginData['TokenType']),
+      ]);
+      _isAuthenticated = true;
+      manageSession(); 
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = error.toString().replaceAll('Exception: ', '');
+      _isAuthenticated = false;
+      _user = null;
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> refreshAccessToken() async {
+    final String? refreshToken = StorageService.getString(keyRefreshToken);
+    if (refreshToken == null) return false;
+
+    try {
+      final response = await apiService.post('/user/refresh-token',{
+        'refresh_token': refreshToken
+      });
+
+      if (response.statusCode != 200) {
+        final errorData = jsonDecode(response.body);
+        _errorMessage = errorData['message'] ?? 'An unknown error occurred';
+        throw Exception(_errorMessage);
+      }
+
+      final responseData = jsonDecode(response.body);
+      int expiresInSeconds = responseData['ExpiresIn'];
+      DateTime expiryDate = DateTime.now().add(Duration(seconds: expiresInSeconds));
+
+      await Future.wait([
+        StorageService.setString(keyAccessToken, responseData['AccessToken']),
+        StorageService.setString(keyIdToken, responseData['IdToken']),
+        StorageService.setString(keyExpiresIn, expiryDate.millisecondsSinceEpoch.toString()),
+        StorageService.setString(keyRefreshToken, responseData['RefreshToken']),
+        StorageService.setString(keyTokenType, responseData['TokenType']),
+      ]);
+      manageSession(); 
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString().replaceAll('Exception: ', '');
+      _isAuthenticated = false;
+      _user = null;
+      rethrow;
+    }
+  }
+
+  Future fetchUserDetails() async {
+    try {
+      final response = await apiService.post('/user/auth', {});
+
+      if (response.statusCode == 200) {
+
+        final userData = UserModel.fromJson(jsonDecode(response.body));
+        _user = userData;
+          notifyListeners();
+      } else {
+        final errorData = jsonDecode(response.body);
+        _errorMessage = errorData['message'] ?? 'An unknown error occurred';
+        throw Exception(_errorMessage);
+      }
+    } catch (error) {
+      _user = null;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> logout() async {
+    await StorageService.clearAll();
+    _user = null;
+    _isAuthenticated = false;
+    notifyListeners();
+  }
+}
+
+final authController = AuthController.instance;
