@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/widgets/form_components/text_field.dart';
+import '../../../widgets/form_components/text_field.dart';
 import '../controllers/auth_controller.dart';
 
 class LoginForm extends StatefulWidget {

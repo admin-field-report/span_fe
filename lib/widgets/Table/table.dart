@@ -184,7 +184,6 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
               ),
             );
           }),
-          const SizedBox(width: 40),
         ],
       ),
     );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../widgets/button/button.dart';
-import '../../../core/widgets/form_components/form_controls.dart';
+import '../../../widgets/form_components/form_controls.dart';
 import '../../templates/controllers/template_controller.dart';
 import '../controllers/project_controller.dart';
 import '../../../core/api_service.dart';

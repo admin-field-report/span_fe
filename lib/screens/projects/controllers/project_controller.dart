@@ -1,3 +1,4 @@
+import 'package:field_report_fe/services/toast_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../models/project.dart';
@@ -33,20 +34,6 @@ class ProjectController extends ChangeNotifier {
       _error = e.toString();
     } finally {
       _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> removeProject(String id) async {
-    final originalList = List<Project>.from(_projects);
-    _projects.removeWhere((p) => p.id == id);
-    notifyListeners();
-
-    try {
-      await _apiService.delete('/projects/$id');
-    } catch (e) {
-      _projects = originalList;
-      _error = "Failed to delete project";
       notifyListeners();
     }
   }

@@ -3,9 +3,10 @@ import 'package:intl/intl.dart';
 import '../../core/theme_controller.dart';
 import '../../models/project.dart';
 import './controllers/project_controller.dart';
-import '../../widgets/table/table.dart';
-import '../../widgets/button/button.dart';
+import '../../widgets/widgets.dart';
 import './widgets/add_project_form.dart';
+import '../../core/api_service.dart';
+import '../../services/toast_service.dart';
 
 class ProjectScreen extends StatefulWidget {
   const ProjectScreen({super.key});
@@ -15,6 +16,7 @@ class ProjectScreen extends StatefulWidget {
 }
 
 class _ProjectScreenState extends State<ProjectScreen> {
+    final ApiService _apiService = ApiService();
   String _searchQuery = "";
 
   @override
@@ -53,6 +55,70 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (context) => const AddProjectForm(isDesktop: false),
       );
     }
+  }
+
+  // Future<void> removeProject(BuildContext context,String id) async {
+  //   try {
+  //     final response = await _apiService.delete('/project/$id');
+  //     if (response.statusCode == 200) {
+  //       ToastService.show(context, message: "Project deleted successfully", type: ToastType.success);
+  //       projectController.getAllProjects();
+  //     }
+  //   } catch (e) {
+  //     ToastService.show(context, message: "Failed to delete project", type: ToastType.error);
+  //   }
+  // }
+
+  Future<void> removeProject(BuildContext context, String id) async {
+  try {
+    final response = await _apiService.delete('/project/$id');
+    if (!context.mounted) return;
+
+    if (response.statusCode == 200) {
+      ToastService.show(context, 
+        message: "Project deleted successfully", 
+        type: ToastType.success
+      );
+      projectController.getAllProjects();
+    } else {
+      ToastService.show(context, 
+        message: "Unexpected error occurred", 
+        type: ToastType.error
+      );
+    }
+  } catch (e) {
+    if (!context.mounted) return;
+    ToastService.show(context, 
+      message: "Failed to delete project", 
+      type: ToastType.error
+    );
+  }
+}
+
+  void _confirmDelete(BuildContext context, Project project) {
+    showDialog(
+        context: context,
+        barrierColor: Colors.black.withOpacity(0.5),
+        builder: (context) => Center(
+          child: Material(
+            color: Colors.transparent,
+            child: ConfirmationDialog(
+              title: "Remove Project",
+              description: "Are you sure you want to remove '${project.name}'?",
+              confirmLabel: "Remove",
+              onConfirm: () async => await removeProject(context, project.id),
+            ),
+          ),
+        ),
+      );
+
+    // showDialog(
+    //   context: context,
+    //   barrierDismissible: false,
+    //   builder: (context) => DeleteConfirmationDialog(
+    //     projectName: project.name,
+    //   ),
+    // );
   }
 
   @override
@@ -202,7 +268,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                                 builder: (p) => IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 20),
                                   color: colorScheme.error,
-                                  onPressed: () {},
+                                  onPressed: () => _confirmDelete(context, p),
                                 ),
                               ),
                             ],
