@@ -1,33 +1,32 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import '../../../models/project.dart';
+import '../../../models/template.dart';
 import '../../../core/api_service.dart';
 import '../../auth/controllers/auth_controller.dart';
 
 
-class ProjectController extends ChangeNotifier {
+class TemplateController extends ChangeNotifier {
   final ApiService _apiService = ApiService();
 
-  List<Project> _projects = [];
+  List<Template> _templates = [];
   bool _isLoading = false;
   String? _error;
 
-  List<Project> get projects => _projects;
+  List<Template> get templates => _templates;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  
-  Future<void> getAllProjects() async {
+  Future<void> getAllTemplates() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await _apiService.get('/project/user/${authController.user?.id}');
+      final response = await _apiService.get('/template/user');
       final Map<String, dynamic> responseData = jsonDecode(response.body); 
 
       if (responseData['success'] == true) {
         final List dataList = responseData['data'] ?? [];
-        _projects = dataList.map((item) => Project.fromJson(item)).toList();
+        _templates = dataList.map((item) => Template.fromJson(item)).toList();
       }
     } catch (e) {
       _error = e.toString();
@@ -37,19 +36,19 @@ class ProjectController extends ChangeNotifier {
     }
   }
 
-  Future<void> removeProject(String id) async {
-    final originalList = List<Project>.from(_projects);
-    _projects.removeWhere((p) => p.id == id);
+  Future<void> removeTemplate(String id) async {
+    final originalList = List<Template>.from(_templates);
+    _templates.removeWhere((p) => p.id == id);
     notifyListeners();
 
     try {
-      await _apiService.delete('/projects/$id');
+      await _apiService.delete('/template/$id');
     } catch (e) {
-      _projects = originalList;
-      _error = "Failed to delete project";
+      _templates = originalList;
+      _error = "Failed to delete template";
       notifyListeners();
     }
   }
 }
 
-final projectController = ProjectController();
+final templateController = TemplateController();

@@ -12,7 +12,6 @@ class ApiService {
   // Middleware: Centralized headers
   Map<String, String> _getHeaders() {
      final token = StorageService.getString(keyIdToken);
-     debugPrint('🔑 Retrieved token for API headers: $token');
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',

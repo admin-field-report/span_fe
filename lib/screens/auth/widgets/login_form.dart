@@ -20,6 +20,13 @@ class _LoginFormState extends State<LoginForm> {
   static const Color inactiveText = Color(0xFF919EAB);
 
   @override
+  void initState() {
+    super.initState();
+    _emailController.text = 'lakshit.fieldreport+15@gmail.com';
+    _passwordController.text = 'Init@123';
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
