@@ -18,6 +18,7 @@ class AuthController extends ChangeNotifier {
   bool _isInitialized = false;
   bool _isAuthenticated = false;
   Timer? _refreshTimer;
+  String? _targetPath;
 
   // --- Getters ---
   UserModel? get user => _user;
@@ -25,12 +26,21 @@ class AuthController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
+  String get targetPath => _targetPath ?? '/';
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
     super.dispose();
   }
+
+    void setTargetPath(String path) {
+    if (path != '/loading' && path != '/login') {
+      _targetPath = path;
+    }
+  }
+
+  void clearTargetPath() => _targetPath = null;
 
   void manageSession() {
     final String? expiry = StorageService.getString(keyExpiresIn);

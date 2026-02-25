@@ -57,18 +57,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
     }
   }
 
-  // Future<void> removeProject(BuildContext context,String id) async {
-  //   try {
-  //     final response = await _apiService.delete('/project/$id');
-  //     if (response.statusCode == 200) {
-  //       ToastService.show(context, message: "Project deleted successfully", type: ToastType.success);
-  //       projectController.getAllProjects();
-  //     }
-  //   } catch (e) {
-  //     ToastService.show(context, message: "Failed to delete project", type: ToastType.error);
-  //   }
-  // }
-
   Future<void> removeProject(BuildContext context, String id) async {
   try {
     final response = await _apiService.delete('/project/$id');
