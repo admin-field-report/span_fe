@@ -6,6 +6,7 @@ import '../screens/auth/app_loading_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
+import '../screens/projects/project_detail_screen.dart';
 
 // final _rootNavigatorKey = GlobalKey<NavigatorState>();
 // final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -39,72 +40,56 @@ final router = GoRouter(
         GoRoute(
           path: '/projects',
           builder: (context, state) => const ProjectScreen(),
+          routes: [
+            GoRoute(
+              path: 'details/:id/:name/:section', // Added /:section
+              builder: (context, state) {
+                return ProjectDetailsScreen(
+                  projectId: state.pathParameters['id']!,
+                  projectName: state.pathParameters['name']!,
+                  initialSection: state.pathParameters['section'] ?? 'inspections',
+                );
+              },
+            ),
+          ],
         ),
       ],
     ),
   ],
 
-  // redirect: (context, state) {
-  //   final bool isAuthenticated = authController.isAuthenticated;
-  //   final bool isInitialized = authController.isInitialized;
-  //   final String location = state.matchedLocation;
+  redirect: (context, state) {
+    final bool isAuthenticated = authController.isAuthenticated;
+    final bool isInitialized = authController.isInitialized;
+    final String location = state.matchedLocation;
 
-  //   // 1. Still Booting? Stay on /loading (if you use it as a route)
-  //   if (!isInitialized) return '/loading';
+    // 1. Still Booting? 
+    if (!isInitialized) {
+      // CAPTURE: Save where they were (e.g., /projects) before moving to /loading
+      authController.setTargetPath(location);
+      return '/loading';
+    }
 
-  //   // 2. Not logged in? Force to /login unless they are already there
-  //   if (!isAuthenticated) {
-  //     return (location == '/login') ? null : '/login';
-  //   }
+    // 2. Not logged in? Force to /login
+    if (!isAuthenticated) {
+      return (location == '/login') ? null : '/login';
+    }
 
-  //   // 3. Logged in but User Data is missing? Fetch it on /loading
-  //   if (isAuthenticated && authController.user == null) {
-  //     return (location == '/loading') ? null : '/loading';
-  //   }
+    // 3. Logged in but User Data is missing? Fetch it on /loading
+    if (isAuthenticated && authController.user == null) {
+      // If they were already on a specific page, keep saving it
+      authController.setTargetPath(location);
+      return (location == '/loading') ? null : '/loading';
+    }
 
-  //   // 4. Logged in and trying to hit Login or Loading? Send to Dashboard
-  //   if (isAuthenticated && (location == '/login' || location == '/loading')) {
-  //     return '/';
-  //   }
+    // 4. Logged in and trying to hit Login or Loading?
+    if (isAuthenticated && (location == '/login' || location == '/loading')) {
+      // RESTORE: Go to the saved path (Flow 2) or Dashboard (Flow 1)
+      return authController.targetPath;
+    }
 
-  //   // 5. IMPORTANT: Allow all other paths! 
-  //   // If we return null, GoRouter stays on the path the user clicked (e.g., /settings)
-  //   return null;
-  // },
-
-redirect: (context, state) {
-  final bool isAuthenticated = authController.isAuthenticated;
-  final bool isInitialized = authController.isInitialized;
-  final String location = state.matchedLocation;
-
-  // 1. Still Booting? 
-  if (!isInitialized) {
-    // CAPTURE: Save where they were (e.g., /projects) before moving to /loading
-    authController.setTargetPath(location);
-    return '/loading';
-  }
-
-  // 2. Not logged in? Force to /login
-  if (!isAuthenticated) {
-    return (location == '/login') ? null : '/login';
-  }
-
-  // 3. Logged in but User Data is missing? Fetch it on /loading
-  if (isAuthenticated && authController.user == null) {
-    // If they were already on a specific page, keep saving it
-    authController.setTargetPath(location);
-    return (location == '/loading') ? null : '/loading';
-  }
-
-  // 4. Logged in and trying to hit Login or Loading?
-  if (isAuthenticated && (location == '/login' || location == '/loading')) {
-    // RESTORE: Go to the saved path (Flow 2) or Dashboard (Flow 1)
-    return authController.targetPath;
-  }
-
-  // 5. Allow all other paths!
-  return null;
-},
+    // 5. Allow all other paths!
+    return null;
+  },
 );
 
 

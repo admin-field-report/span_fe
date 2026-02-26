@@ -21,17 +21,22 @@ class TableColumn<T> {
 }
 
 class CommonTable<T> extends StatefulWidget {
+  final bool isLoading;
   final List<T> data;
   final List<TableColumn<T>> columns;
   final bool showCheckboxes;
   final int rowsPerPage;
+  final Function(T item)? onRowTap;
+
 
   const CommonTable({
     super.key,
+    this.isLoading = false,
     required this.data,
     required this.columns,
     this.showCheckboxes = true,
     this.rowsPerPage = 10,
+    this.onRowTap,
   });
 
   @override
@@ -93,6 +98,14 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     final colorScheme = theme.colorScheme;
     final displayData = _processedData;
     final isDark = theme.brightness == Brightness.dark;
+
+    if (widget.isLoading) {
+      return _buildLoadingState(theme, colorScheme);
+    }
+
+    if (widget.data.isEmpty) {
+      return _buildEmptyState(theme, colorScheme);
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -191,7 +204,7 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
 
   Widget _buildRow(T item, bool isSelected, ThemeData theme, ColorScheme colorScheme) {
     return InkWell(
-      onTap: widget.showCheckboxes ? null : () {}, // Row click logic if needed
+      onTap: widget.showCheckboxes ? null : () => widget.onRowTap!(item),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
         // High-contrast primary highlight for selected rows
@@ -262,6 +275,78 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLoadingState(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      children: [
+        _buildHeader(theme, colorScheme, theme.brightness == Brightness.dark),
+        Expanded(
+          child: ListView.separated(
+            itemCount: 5,
+            separatorBuilder: (_, __) => Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
+            itemBuilder: (context, index) => _buildShimmerRow(colorScheme),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShimmerRow(ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+      child: Row(
+        children: widget.columns.map((col) => Expanded(
+          flex: col.flex,
+          child: Container(
+            height: 14,
+            margin: const EdgeInsets.only(right: 24),
+            decoration: BoxDecoration(
+              color: colorScheme.onSurface.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        )).toList(),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      children: [
+        _buildHeader(theme, colorScheme, theme.brightness == Brightness.dark),
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Use a relevant icon (Search off, Folder open, etc.)
+                Icon(
+                  Icons.inventory_2_outlined, 
+                  size: 64, 
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.2)
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  "No Records Found",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Try adjusting your filters or adding a new entry.",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
