@@ -20,25 +20,40 @@ class ThemeController extends ChangeNotifier {
   void setFontSize(double size) => { _fontSize = size, notifyListeners() };
 
   ThemeData getTheme(Brightness brightness) {
+
+    final isDark = brightness == Brightness.dark;
+
     // Exact background and surface colors from your dashboard images
-    final Color customBg = brightness == Brightness.dark 
+    final Color customBg = isDark
         ? const Color(0xFF151A21)
         : const Color(0xFFF9FAFB);
         
-    final Color customCard = brightness == Brightness.dark 
-        ? const Color(0xFF1C252E) // Lighter Navy-Grey for Cards/Sidebar
+    final Color surface = isDark
+        ? const Color(0xFF28323D)
+        : const Color(0xFFF4F6F8);
+
+    final Color surfaceContainer = isDark
+        ? const Color(0xFF1C252E)
         : Colors.white;
+
+    final Color outline = isDark 
+        ? const Color(0xFF2F363D) 
+        : const Color(0xFFE5E7EB);
+
+    final Color outlineVariant = isDark 
+        ? const Color(0xFF36404A) 
+        : const Color(0xFFEAECEF);
 
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _targetColor,
       brightness: brightness,
-      // CRITICAL: Set these explicitly to match your design
-      surface: customCard, 
-      surfaceContainer: customCard,
-      background: customBg, // Use surface for newer Flutter versions
+      surface: surface, 
+      surfaceContainer: surfaceContainer,
+      outline: outline,
+      outlineVariant: outlineVariant,
     ).copyWith(
-      surface: customCard,
-      onSurface: brightness == Brightness.dark ? Colors.white : const Color(0xFF212B36),
+      surface: surface,
+      onSurface: isDark ? Colors.white : const Color(0xFF212B36),
     );
 
     return ThemeData(
@@ -51,10 +66,9 @@ class ThemeController extends ChangeNotifier {
       ),
       scaffoldBackgroundColor: customBg,
       
-      // Explicitly set CardThemeData to use the customCard color
       cardTheme: CardThemeData(
-        color: customCard,
-        surfaceTintColor: Colors.transparent, // Prevents Material 3 from adding a purple tint
+        color: surfaceContainer,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),

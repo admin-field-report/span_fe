@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme_controller.dart'; 
 import 'app_menu_content.dart';
 import '../settings/settings_screen.dart';
+import '../../utils/utils.dart';
 
 class MainScaffold extends StatefulWidget {
   final Widget child;
@@ -23,11 +24,10 @@ class _MainScaffoldState extends State<MainScaffold> {
       builder: (context, _) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
-        final size = MediaQuery.of(context).size;
         final isDark = theme.brightness == Brightness.dark;
         
-        final bool isMobile = size.width < 900;
-        final bool isTabletRange = size.width >= 900 && size.width < 1200;
+        final bool isMobile = AppResponsive.isMobileScreen(context);
+        final bool isTabletRange = AppResponsive.isTabletScreen(context);
 
         bool effectiveCollapsed = isMobile ? false : (isTabletRange ? !_isCollapsed : _isCollapsed);
 
@@ -141,33 +141,65 @@ class _MainScaffoldState extends State<MainScaffold> {
                   ],
                 ),
               
-              // --- MAIN CONTENT ---
+              // --- MAIN CONTENT --- running
               Expanded(
                 child: Column(
                   children: [
                     _buildStickyHeader(context, isMobile, colorScheme, theme),
                     Expanded(
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
-                        decoration: BoxDecoration(
-                          color: isDark 
-                              ? colorScheme.surfaceContainerHighest.withOpacity(0.05)
-                              : Colors.white,
-                          borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(24),
-                          border: Border.all(
-                            color: theme.dividerColor.withOpacity(0.2),
+                      child: Padding(
+                          padding: isMobile ? const EdgeInsets.symmetric(horizontal: 15, vertical: 20) : const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                          child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
+                          child: ClipRRect(
+                            // borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(24),
+                            child: widget.child,
                           ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(24),
-                          child: widget.child,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
+
+              // --- MAIN CONTENT --- failing inner comp
+              // Expanded(
+              //   child: Column(
+              //     crossAxisAlignment: CrossAxisAlignment.stretch,
+              //     children: [
+              //       // 1. STICKY HEADER: Stays fixed at the top
+              //       _buildStickyHeader(context, isMobile, colorScheme, theme),
+                    
+              //       // 2. SCROLLABLE BODY: The only vertical scroll in the app
+              //       Expanded(
+              //         child: SingleChildScrollView(
+              //           key: const ValueKey('main_layout_scroll'),
+              //           // physics: BouncingScrollPhysics makes it feel premium on web/mobile
+              //           physics: const BouncingScrollPhysics(), 
+              //           child: Padding(
+              //             padding: EdgeInsets.symmetric(
+              //               horizontal: isMobile ? 16 : 24, 
+              //               vertical: 20
+              //             ),
+              //             child: Column(
+              //               // IMPORTANT: mainAxisSize.min tells the ScrollView 
+              //               // exactly how much space to create.
+                            
+              //               mainAxisSize: MainAxisSize.min, 
+              //               children: [
+              //                 // widget.child is your CommonTable wrapped in AppCard
+              //                 widget.child, 
+              //                 // SizedBox( height: 2000),
+              //               ],
+              //             ),
+              //           ),
+              //         ),
+              //       ),
+              //     ],
+              //   ),
+              // ),
+
             ],
           ),
         );

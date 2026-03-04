@@ -20,6 +20,9 @@ class AuthController extends ChangeNotifier {
   Timer? _refreshTimer;
   String? _targetPath;
 
+
+  bool _resetingPassword = false;
+
   // --- Getters ---
   UserModel? get user => _user;
   bool get isLoading => _isLoading;
@@ -27,6 +30,8 @@ class AuthController extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isAuthenticated => _isAuthenticated;
   String get targetPath => _targetPath ?? '/';
+
+  bool get resetingPassword => _resetingPassword;
 
   @override
   void dispose() {
@@ -95,6 +100,41 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
   
+  Future<bool> signup({
+    required String email,
+    required String firstName,
+    required String lastName,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await apiService.post('/user/signup', {
+        'email': email,
+        'first_name': firstName,
+        'last_name': lastName,
+      });
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        final Map<String, dynamic> responseData = jsonDecode(response.body);
+        _errorMessage = responseData['message'] ?? "Signup failed";
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _errorMessage = "An unexpected error occurred. Please try again.";
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> login(String email, String password) async {
     try {
       _isLoading = true;
@@ -133,6 +173,49 @@ class AuthController extends ChangeNotifier {
       rethrow;
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+   Future<void> resetPassword(String email, String password, String tempPassword) async {
+    try {
+      _resetingPassword = true;
+      _errorMessage = '';
+      notifyListeners();
+
+      final response = await apiService.post('/user/signup-verify', {
+        'email': email,
+        'password': password,
+        'temp_password': tempPassword
+      });
+
+      if (response.statusCode != 200) {
+        final errorData = jsonDecode(response.body);
+        _errorMessage = errorData['message'] ?? 'An unknown error occurred';
+        throw Exception(_errorMessage);
+      }
+
+      final loginData = jsonDecode(response.body);
+      int expiresInSeconds = loginData['ExpiresIn'];
+      DateTime expiryDate = DateTime.now().add(Duration(seconds: expiresInSeconds));
+
+      await Future.wait([
+        StorageService.setString(keyAccessToken, loginData['AccessToken']),
+        StorageService.setString(keyIdToken, loginData['IdToken']),
+        StorageService.setString(keyExpiresIn, expiryDate.millisecondsSinceEpoch.toString()),
+        StorageService.setString(keyRefreshToken, loginData['RefreshToken']),
+        StorageService.setString(keyTokenType, loginData['TokenType']),
+      ]);
+      _isAuthenticated = true;
+      manageSession(); 
+      notifyListeners();
+    } catch (error) {
+      _errorMessage = error.toString().replaceAll('Exception: ', '');
+      _isAuthenticated = false;
+      _user = null;
+      rethrow;
+    } finally {
+      _resetingPassword = false;
       notifyListeners();
     }
   }

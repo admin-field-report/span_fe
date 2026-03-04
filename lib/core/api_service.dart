@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../screens/auth/controllers/auth_controller.dart';
 import 'storage_service.dart';
+import '../utils/app_responsive.dart';
 
 class ApiService {
   final String baseUrl = dotenv.get('BASE_URL', fallback: '');
@@ -15,6 +16,7 @@ class ApiService {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'x-platform': AppResponsive.getPlatformName(),
       if (token != null) 
         'Authorization': token,
     };

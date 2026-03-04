@@ -75,67 +75,76 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [          
-          // The Common Table
-          Expanded(
-            child: ListenableBuilder(
-              listenable: projectController,
-              builder: (context, child) {
-                return CommonTable<ProjectInspection>(
-                  isLoading: projectController.isInspectionsLoading,
-                  data: projectController.inspections.toList(),
-                  showCheckboxes: false,
-                  // onRowTap: (item) => debugPrint("Navigating to ${item['id']}"),
-                  columns: [
-                    TableColumn(
-                      title: 'Sr No.',
-                      flex: 1,
-                      minWidth: 60,
-                      builder: (item) {
-                        final index = projectController.inspections.indexOf(item) + 1;
-                        return Text(index.toString().padLeft(2, '0'));
-                      },
-                    ),
-                    TableColumn(
-                      title: 'Inspector',
-                      flex: 2,
-                      sortable: true,
-                      builder: (item) => Text(
-                        "Unknown", 
-                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6)),
-                      ),
-                    ),
-                    TableColumn(
-                      title: 'Date',
-                      flex: 2,
-                      sortable: true,
-                      sortValue: (item) => item.createTime,
-                      builder: (item) {
-                        final date = item.createTime;
-                        return Text(DateFormat('dd MMM yyyy').format(date));
-                      },
-                    ),
-                    TableColumn(
-                      title: "Actions",
-                      flex: 0,
-                      minWidth: 150,
-                      builder: (p) => IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 20),
-                        color: colorScheme.error,
-                        onPressed: () => _confirmDelete(context, p),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+     return ListenableBuilder(
+      listenable: projectController,
+      builder: (context, child) {
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: 20),
+              AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch, 
+                  children: [
+                    ListenableBuilder(
+                      listenable: projectController,
+                      builder: (context, child) {
+                        return CommonTable<ProjectInspection>(
+                          isLoading: projectController.isInspectionsLoading,
+                          data: projectController.inspections.toList(),
+                          showCheckboxes: false,
+                          // onRowTap: (item) => debugPrint("Navigating to ${item['id']}"),
+                          columns: [
+                            TableColumn(
+                              title: 'Sr No.',
+                              flex: 1,
+                              minWidth: 60,
+                              builder: (item) {
+                                final index = projectController.inspections.indexOf(item) + 1;
+                                return Text(index.toString().padLeft(2, '0'));
+                              },
+                            ),
+                            TableColumn(
+                              title: 'Inspector',
+                              flex: 2,
+                              sortable: true,
+                              builder: (item) => Text(
+                                "Unknown", 
+                                style: TextStyle(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6)),
+                              ),
+                            ),
+                            TableColumn(
+                              title: 'Date',
+                              flex: 2,
+                              sortable: true,
+                              sortValue: (item) => item.createTime,
+                              builder: (item) {
+                                final date = item.createTime;
+                                return Text(DateFormat('dd MMM yyyy').format(date));
+                              },
+                            ),
+                            TableColumn(
+                              title: "Actions",
+                              flex: 0,
+                              minWidth: 150,
+                              builder: (p) => IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 20),
+                                color: colorScheme.error,
+                                onPressed: () => _confirmDelete(context, p),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                    )
+                  ]
+                )
+              )
+            ]
+        );
+      }
+     );
   }
 }

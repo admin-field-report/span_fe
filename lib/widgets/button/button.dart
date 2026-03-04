@@ -37,7 +37,7 @@ class Button extends StatelessWidget {
 
     final style = ElevatedButton.styleFrom(
       elevation: 0,
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 17),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       
       backgroundColor: variant == ButtonVariant.filled ? primaryColor : Colors.transparent,
@@ -81,7 +81,7 @@ class Button extends StatelessWidget {
           style: const TextStyle(
             fontWeight: FontWeight.bold, 
             letterSpacing: 0.5,
-            fontSize: 15,
+            fontSize: 13,
           ),
         ),
       ],

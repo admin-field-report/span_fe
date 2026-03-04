@@ -21,6 +21,10 @@ final router = GoRouter(
       builder: (context, state) => const LoginScreen(),
     ),
     GoRoute(
+      path: '/signup',
+      builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
       path: '/loading',
       builder: (context, state) => const AppLoadingScreen(),
     ),
@@ -98,16 +102,6 @@ class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: Text("Dashboard (Private)")));
-  }
-}
-
-// Private Page 2
-class ReportsListPage extends StatelessWidget {
-  const ReportsListPage({super.key});
-  @override
-  Widget build(BuildContext context) {
-    print("DEBUG: Navigated to Reports List");
-    return const Scaffold(body: Center(child: Text("Reports List (Private)")));
+    return Text("Dashboard (Private)");
   }
 }

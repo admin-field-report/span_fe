@@ -1,22 +1,36 @@
 import 'package:flutter/material.dart';
 import 'widgets/login_form.dart';
+import 'widgets/signup_form.dart';
 import 'widgets/branding_panel.dart';
+import '../../utils/app_responsive.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isDesktop = size.width > 900;
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+  
+class _LoginScreenState extends State<LoginScreen> {
 
-    // Hardcoded Palette constants
+  bool _showLoginForm = true;
+
+  void _toggleFormMode() {
+    setState(() {
+      _showLoginForm = !_showLoginForm;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = AppResponsive.isDesktopScreen(context);
+
     const Color obsidianBg = Color(0xFF151A21);
     const Color emeraldAccent = Color(0xFF00AB55);
     const Color slateSurface = Color(0xFF1C252E);
 
     return Scaffold(
-      backgroundColor: obsidianBg, // Obsidian background
+      backgroundColor: obsidianBg,
       body: Row(
         children: [
           if (isDesktop)
@@ -34,7 +48,7 @@ class LoginScreen extends StatelessWidget {
                     physics: const BouncingScrollPhysics(),
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight, // Ensures spacers still work
+                        minHeight: constraints.maxHeight,
                       ),
                       child: IntrinsicHeight(
                         child: Padding(
@@ -71,7 +85,24 @@ class LoginScreen extends StatelessWidget {
                                           color: Colors.white.withOpacity(0.05),
                                         ),
                                       ),
-                                      child: const LoginForm(),
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 300),
+                                        transitionBuilder: (Widget child, Animation<double> animation) {
+                                          return FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          );
+                                        },
+                                        child: _showLoginForm 
+                                          ? LoginForm(
+                                              key: const ValueKey('login'),
+                                              onSwitch: _toggleFormMode,
+                                            ) 
+                                          : SignupForm(
+                                              key: const ValueKey('signup'),
+                                              onSwitch: _toggleFormMode,
+                                            ),
+                                      ),
                                     ),
                                   ],
                                 ),

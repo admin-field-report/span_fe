@@ -91,7 +91,6 @@ class AppMenuContent extends StatelessWidget {
     );
   }
 
-  // bool _isPathActive(BuildContext context, String path) => GoRouterState.of(context).uri.toString() == path;
   bool _isPathActive(BuildContext context, String path) {
   final String location = GoRouterState.of(context).uri.toString();
   if (path == '/') return location == '/';

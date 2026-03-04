@@ -17,6 +17,12 @@ class ProjectController extends ChangeNotifier {
   List<ProjectDocument> _documents = [];
   bool _isDocumentsLoading = false;
 
+  List<InspectionMediaGroup> _groupedMedia = [];
+  bool _isMediaLoading = false;
+
+  List<ProjectReport> _reports = [];
+  bool _isReportLoading = false;
+
   String? _error;
 
   List<Project> get projects => _projects;
@@ -27,6 +33,12 @@ class ProjectController extends ChangeNotifier {
 
   List<ProjectDocument> get documents => _documents;
   bool get isDocumentsLoading => _isDocumentsLoading;
+
+  List<InspectionMediaGroup> get groupedMedia => _groupedMedia;
+  bool get isMediaLoading => _isMediaLoading;
+
+  List<ProjectReport> get reports => _reports;
+  bool get isReportLoading => _isReportLoading;
 
   String? get error => _error;
   
@@ -70,6 +82,7 @@ class ProjectController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
   Future<void> getAllDocuments(String projectId) async {
     _isDocumentsLoading = true;
     notifyListeners();
@@ -88,6 +101,70 @@ class ProjectController extends ChangeNotifier {
       debugPrint("Error loading documents for project $projectId: $_error");
     } finally {
       _isDocumentsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> getAllProjectMedia(String projectId) async {
+  _isMediaLoading = true;
+  notifyListeners();
+
+  try {
+    final response = await _apiService.get('/presignedurl/canvas-json-images/$projectId');
+    final List<dynamic> responseData = jsonDecode(response.body);
+
+    List<InspectionMediaGroup> groups = [];
+
+    for (var inspectionJson in responseData) {
+      List<ProjectMedia> itemsInThisInspection = [];
+      final List canvasItems = inspectionJson['canvas_page_item'] ?? [];
+
+      for (var item in canvasItems) {
+        final List images = item['canvas_page_item_image'] ?? [];
+        if (images.isNotEmpty) {
+          final List tagsJson = item['canvas_page_item_tag'] ?? [];
+          itemsInThisInspection.add(ProjectMedia(
+            id: item['id'],
+            imageUrl: images[0]['signedUrl'],
+            tags: tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList(),
+          ));
+        }
+      }
+
+      if (itemsInThisInspection.isNotEmpty) {
+        groups.add(InspectionMediaGroup(
+          inspectionId: inspectionJson['id'],
+          inspectionName: inspectionJson['name'],
+          createTime: DateTime.parse(inspectionJson['create_time']),
+          items: itemsInThisInspection,
+        ));
+      }
+    }
+    _groupedMedia = groups;
+  } catch (e) {
+    _error = e.toString();
+  } finally {
+    _isMediaLoading = false;
+    notifyListeners();
+  }
+}
+
+  Future<void> getAllReports(String projectId) async {
+    _isReportLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiService.get('/report/getByProjectId/$projectId');
+      final Map<String, dynamic> responseData = jsonDecode(response.body); 
+
+      final List dataList = responseData['data'] ?? [];
+      _reports = dataList.map((item) => ProjectReport.fromJson(item)).toList();
+
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isReportLoading = false;
       notifyListeners();
     }
   }

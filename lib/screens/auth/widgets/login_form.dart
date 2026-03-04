@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../widgets/form_components/text_field.dart';
 import '../controllers/auth_controller.dart';
+import 'emerald_textfield.dart';
 
 class LoginForm extends StatefulWidget {
-  const LoginForm({super.key});
+  final VoidCallback onSwitch;
+  const LoginForm({super.key, required this.onSwitch});
 
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -58,7 +59,7 @@ class _LoginFormState extends State<LoginForm> {
           ),
           const SizedBox(height: 40),
           
-          FormControlTextField(
+          EmeraldTextField(
             controller: _emailController,
             hintText: "Email Address",
             prefixIcon: Icons.email_outlined,
@@ -72,7 +73,7 @@ class _LoginFormState extends State<LoginForm> {
             },
           ),
           const SizedBox(height: 16),
-          FormControlTextField(
+          EmeraldTextField(
             controller: _passwordController,
             hintText: "Password",
             prefixIcon: Icons.lock_outline,
@@ -161,14 +162,21 @@ class _LoginFormState extends State<LoginForm> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text("Don't have an account? ", style: TextStyle(fontSize: 12, color: inactiveText)),
-              GestureDetector(
-                onTap: () {},
-                child: const Text(
-                  "Sign up",
-                  style: TextStyle(color: emerald, fontWeight: FontWeight.bold, fontSize: 12),
+              const Text("Don't have an account? ", style: TextStyle(fontSize: 13, color: inactiveText)),
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: widget.onSwitch,
+                  child: const Text(
+                    "Sign up",
+                    style: TextStyle(
+                      color: emerald, 
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
-              ),
+              )
             ],
           ),
         ],

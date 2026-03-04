@@ -1,3 +1,6 @@
+import 'package:flutter/material.dart';
+
+// -- Project
 class Project {
   final String id;
   final String name;
@@ -23,6 +26,7 @@ class Project {
   }
 }
 
+// -- Inspections 
 class ProjectInspection {
   final String id;
   final String? name;
@@ -46,6 +50,7 @@ class ProjectInspection {
   }
 }
 
+// -- Documents 
 class ProjectDocument {
   final String id;
   final String templateId;
@@ -71,6 +76,74 @@ class ProjectDocument {
       documentName: json['document_name'],
       createTime: DateTime.parse(json['create_time'] ?? DateTime.now().toIso8601String()),
       createdBy: json['created_by'] ?? 'Unknown',
+    );
+  }
+}
+
+
+// -- Media
+class ProjectMediaTag {
+  final String name;
+  final Color color;
+
+  ProjectMediaTag({required this.name, required this.color});
+
+factory ProjectMediaTag.fromJson(Map<String, dynamic> json) {
+    final tagMap = json['tag'] ?? {};
+    String hexColor = tagMap['color'] ?? "#FFFFFF";
+    
+    // Convert #RRGGBB to 0xFFRRGGBB
+    hexColor = hexColor.replaceAll('#', '');
+    if (hexColor.length == 6) hexColor = 'FF$hexColor';
+
+    return ProjectMediaTag(
+      name: tagMap['name'] ?? 'Unknown',
+      color: Color(int.parse('0x$hexColor')),
+    );
+  }
+}
+
+class ProjectMedia {
+  final String id;
+  final String imageUrl;
+  final List<ProjectMediaTag> tags;
+
+  ProjectMedia({required this.id, required this.imageUrl, required this.tags});
+}
+
+class InspectionMediaGroup {
+  final String inspectionId;
+  final String? inspectionName;
+  final DateTime createTime;
+  final List<ProjectMedia> items;
+
+  InspectionMediaGroup({
+    required this.inspectionId,
+    this.inspectionName,
+    required this.createTime,
+    required this.items,
+  });
+}
+
+// -- Reports
+class ProjectReport {
+  final String id;
+  final String name;
+  final DateTime createDate;
+
+  ProjectReport({
+    required this.id,
+    required this.name,
+    required this.createDate,
+  });
+  
+  factory ProjectReport.fromJson(Map<String, dynamic> json) {
+    return ProjectReport(
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown',
+      createDate: json['create_time'] != null 
+          ? DateTime.parse(json['create_time']) 
+          : DateTime.now(),
     );
   }
 }

@@ -6,36 +6,36 @@ import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 
-class ProjectDocuments extends StatefulWidget {
+class ProjectReports extends StatefulWidget {
     final String projectId;
 
-  const ProjectDocuments({super.key, required this.projectId});
+  const ProjectReports({super.key, required this.projectId});
 
   @override
-  State<ProjectDocuments> createState() => _ProjectDocumentsState();
+  State<ProjectReports> createState() => _ProjectReportsState();
 }
 
-class _ProjectDocumentsState extends State<ProjectDocuments> {
+class _ProjectReportsState extends State<ProjectReports> {
 
   final ApiService _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
-    projectController.getAllDocuments(widget.projectId);
+    projectController.getAllReports(widget.projectId);
   }
 
-  Future<void> removeDocument(BuildContext context, String id) async {
+  Future<void> removeReport(BuildContext context, String id) async {
     try {
-      final response = await _apiService.delete('/templateDocument/$id');
+      final response = await _apiService.delete('/report/delete/$id');
       if (!context.mounted) return;
 
       if (response.statusCode == 200) {
         ToastService.show(context, 
-          message: "Document deleted successfully", 
+          message: "Report deleted successfully", 
           type: ToastType.success
         );
-        projectController.getAllDocuments(widget.projectId);
+        projectController.getAllReports(widget.projectId);
       } else {
         ToastService.show(context, 
           message: "Unexpected error occurred", 
@@ -45,13 +45,13 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
     } catch (e) {
       if (!context.mounted) return;
       ToastService.show(context, 
-        message: "Failed to delete document: $e", 
+        message: "Failed to delete report: $e", 
         type: ToastType.error
       );
     }
   }
 
-  void _confirmDelete(BuildContext context,  ProjectDocument document) {
+  void _confirmDelete(BuildContext context,  ProjectReport report) {
     showDialog(
         context: context,
         barrierColor: Colors.black.withOpacity(0.5),
@@ -59,10 +59,10 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
           child: Material(
             color: Colors.transparent,
             child: ConfirmationDialog(
-              title: "Remove Document",
-              description: "Are you sure you want to remove document for '${DateFormat('dd MMM yyyy').format(document.createTime)}'?",
+              title: "Remove Report",
+              description: "Are you sure you want to remove this for '${report.name}'?",
               confirmLabel: "Remove",
-              onConfirm: () async => await removeDocument(context, document.id),
+              onConfirm: () async => await removeReport(context, report.id),
             ),
           ),
         ),
@@ -90,9 +90,9 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                     ListenableBuilder(
                       listenable: projectController,
                       builder: (context, child) {
-                        return CommonTable<ProjectDocument>(
-                        isLoading: projectController.isDocumentsLoading,
-                        data: projectController.documents.toList(),
+                        return CommonTable<ProjectReport>(
+                        isLoading: projectController.isReportLoading,
+                        data: projectController.reports.toList(),
                         showCheckboxes: false,
                         // onRowTap: (item) => debugPrint("Navigating to ${item['id']}"),
                         columns: [
@@ -101,16 +101,16 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                             flex: 1,
                             minWidth: 60,
                             builder: (item) {
-                              final index = projectController.documents.indexOf(item) + 1;
+                              final index = projectController.reports.indexOf(item) + 1;
                               return Text(index.toString().padLeft(2, '0'));
                             },
                           ),
                           TableColumn(
-                            title: 'Document Name',
+                            title: 'Report Name',
                             flex: 2,
                             sortable: true,
-                            builder: (item) => Text(
-                              item.documentName ?? "Unknown", 
+                            builder: (item) => Text(  
+                              item.name, 
                               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                             ),
                           ),
@@ -118,9 +118,9 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                             title: 'Created Date',
                             flex: 2,
                             sortable: true,
-                            sortValue: (item) => item.createTime,
+                            sortValue: (item) => item.createDate,
                             builder: (item) {
-                              final date = item.createTime;
+                              final date = item.createDate;
                               return Text(DateFormat('dd MMM yyyy').format(date));
                             },
                           ),
