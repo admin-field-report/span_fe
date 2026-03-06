@@ -4,14 +4,14 @@ class AppTabBar extends StatelessWidget implements PreferredSizeWidget {
   final TabController controller;
   final List<String> tabs;
   final Function(int)? onTap;
-  final double horizontalPadding; // Added for flexibility
+  final double horizontalPadding;
 
   const AppTabBar({
     super.key,
     required this.controller,
     required this.tabs,
     this.onTap,
-    this.horizontalPadding = 16.0, // Default padding
+    this.horizontalPadding = 16.0,
   });
 
   @override
@@ -29,7 +29,6 @@ class AppTabBar extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
       ),
-      // Apply the horizontal padding here
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
         child: TabBar(
@@ -47,9 +46,9 @@ class AppTabBar extends StatelessWidget implements PreferredSizeWidget {
           indicatorColor: isDark ? Colors.white : Colors.black,
           
           dividerColor: Colors.transparent,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 16), // Space between tab items
-          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 16),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
           
           tabs: tabs.map((title) => Tab(text: title)).toList(),
         ),

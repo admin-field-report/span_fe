@@ -64,7 +64,7 @@ class _SignupFormState extends State<SignupForm> {
 
   void _handleSignup() async {
     if (_formKey.currentState!.validate()) {
-      final success = await AuthController.instance.signup(
+      final success = await authController.signup(
       email: _emailController.text.trim(),
       firstName: _firstNameController.text.trim(),
       lastName: _lastNameController.text.trim(),
@@ -174,9 +174,9 @@ class _SignupFormState extends State<SignupForm> {
 
           // BUTTON
           ListenableBuilder(
-            listenable: AuthController.instance,
+            listenable: authController,
             builder: (context, _) {
-              final isLoading = AuthController.instance.isLoading;
+              final isLoading = authController.isCreatingUser;
               return SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -218,11 +218,11 @@ class _SignupFormState extends State<SignupForm> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               ListenableBuilder(
-                listenable: AuthController.instance,
+                listenable: authController,
                 builder: (context, child) {
-                  if (AuthController.instance.errorMessage == null) return const SizedBox.shrink();
+                  if (authController.errorMessageCreatingUser == null) return const SizedBox.shrink();
                   return Text(
-                    AuthController.instance.errorMessage!,
+                    authController.errorMessageCreatingUser!,
                     style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w500, fontSize: 13),
                     textAlign: TextAlign.center,
                   );

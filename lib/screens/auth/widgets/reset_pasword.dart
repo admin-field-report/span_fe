@@ -96,21 +96,8 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
               validator: (val) => val != _newPasswordController.text ? 'Passwords do not match' : null,
             ),
             const SizedBox(height: 24),
-
-            // SizedBox(
-            //   width: double.infinity,
-            //   height: 50,
-            //   child: ElevatedButton(
-            //     style: ElevatedButton.styleFrom(
-            //       backgroundColor: emerald,
-            //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            //     ),
-            //     onPressed: _updatePassword,
-            //     child: const Text("Update Password", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            //   ),
-            // ),
-             ListenableBuilder(
-              listenable: AuthController.instance,
+            ListenableBuilder(
+              listenable: authController,
               builder: (context, _) {
                 final isLoading = authController.resetingPassword;
                 return SizedBox(
@@ -147,6 +134,24 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
                 );
               },
             ),
+            const SizedBox(height: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ListenableBuilder(
+                  listenable: authController,
+                  builder: (context, child) {
+                    if (authController.errorMessageResetingPassword == null) return const SizedBox.shrink();
+                    return Text(
+                      authController.errorMessageResetingPassword!,
+                      style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w500, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    );
+                  },
+                ),
+              ],
+            ),
+          const SizedBox(height: 24),
           ],
         ),
       ),

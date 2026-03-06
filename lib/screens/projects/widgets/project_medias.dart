@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../controllers/project_controller.dart';
 import '../../../utils/app_responsive.dart';
 import '../../../models/project.dart';
+import '../../../widgets/search_field/search_field.dart';
 
 class ProjectMediaTab extends StatefulWidget {
     final String projectId;
@@ -15,7 +16,8 @@ class ProjectMediaTab extends StatefulWidget {
 
 
 class _ProjectMediaTabState extends State<ProjectMediaTab> {
-
+  String _searchQuery = "";
+  
   @override
   void initState() {
     super.initState();
@@ -26,117 +28,249 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
     return DateFormat('MMM dd, yyyy').format(date);
   }
 
+  List<InspectionMediaGroup> getFilteredMedia() {
+    if (_searchQuery.isEmpty) return projectController.groupedMedia;
+
+    final query = _searchQuery.toLowerCase();
+
+    return projectController.groupedMedia.map((group) {
+      final filteredItems = group.items.where((item) {
+        return item.tags.any((tag) => 
+          tag.name.toLowerCase().contains(query)
+        );
+      }).toList();
+
+      return InspectionMediaGroup(
+        inspectionId: group.inspectionId,
+        inspectionName: group.inspectionName,
+        createTime: group.createTime,
+        items: filteredItems,
+      );
+    }).where((group) => group.items.isNotEmpty).toList(); 
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return ListenableBuilder(
       listenable: projectController,
       builder: (context, _) {
-        final groups = projectController.groupedMedia;
+        final groups = getFilteredMedia();
         final int crossAxisCount = AppResponsive.isDesktopScreen(context) ? 5 : 2;
+        final bool isLoading = projectController.isMediaLoading;
+        final bool isEmpty = groups.isEmpty;
 
-        if (projectController.isMediaLoading) return _buildSkeletonGrid(crossAxisCount);
-        if (groups.isEmpty) return const Center(child: Text("No media found."));
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTopToolbar(theme),
+            const SizedBox(height: 10),
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: groups.length,
-          itemBuilder: (context, index) {
-            final group = groups[index];
-            
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- SECTION TITLE: "Inspection as of Feb 23, 2026" ---
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0, bottom: 16.0),
-                  child: Row(
+            Builder(
+              builder: (context) {
+                if (isLoading) {
+                  return _buildSkeletonGrid(crossAxisCount);
+                }
+
+                if (isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 80),
+                      child: _buildEmptyState(context),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: groups.map((group) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                      _buildGroupHeader(group),
+                      const SizedBox(height: 16),
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.75,
                         ),
-                        child: const Icon(Icons.camera_alt_rounded, size: 18, color: Colors.blue),
+                        itemCount: group.items.length,
+                        itemBuilder: (context, itemIndex) {
+                          return MediaCard(
+                            imageUrl: group.items[itemIndex].imageUrl,
+                            tags: group.items[itemIndex].tags,
+                          );
+                        },
                       ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Inspection as of ${formatInspectionDate(group.createTime)}",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold, 
-                              fontSize: 16,
-                              letterSpacing: 0.3
-                            ),
-                          ),
-                          Text(
-                            "${group.items.length} Images",
-                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                          ),
-                        ],
-                      ),
+                      const SizedBox(height: 40),
                     ],
-                  ),
-                ),
-                
-                // --- THE GRID ---
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.75,
-                  ),
-                  itemCount: group.items.length,
-                  itemBuilder: (context, itemIndex) {
-                    return MediaCard(
-                      imageUrl: group.items[itemIndex].imageUrl,
-                      tags: group.items[itemIndex].tags,
-                    );
-                  },
-                ),
-                const SizedBox(height: 32), // Space between groups
-              ],
-            );
-          },
+                  )).toList(),
+                );
+              },
+            ),
+          ],
         );
       },
     );
   }
 
+
+  Widget _buildTopToolbar(ThemeData theme) {
+    final isDesktop = AppResponsive.isDesktopScreen(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
+      child: Row(
+        children: [
+          Expanded(
+            child: SearchField(
+              hintText: 'Seaerch By Tags',
+              width: 350,
+              onChanged: (val) => setState(() => _searchQuery = val),
+            ),
+          ),
+
+          if (isDesktop) ...[
+            const Spacer(),
+            Tooltip(
+              message: 'Refresh Media',
+              child: InkWell(
+                onTap: projectController.isMediaLoading ? null : () {
+                  projectController.getAllProjectMedia(widget.projectId);
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh_rounded, 
+                    size: 20, 
+                    color: colorScheme.onSurface.withOpacity(0.7)
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      )
+    );
+  }
+
+  Widget _buildGroupHeader(dynamic group) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.camera_alt_rounded, size: 18, color: Colors.blue),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Inspection as of ${formatInspectionDate(group.createTime)}",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            Text(
+              "${group.items.length} Images",
+              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildSkeletonGrid(int crossAxisCount) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      physics: const NeverScrollableScrollPhysics(), // Disable scrolling while loading
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      shrinkWrap: true, 
+      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
         childAspectRatio: 0.75,
       ),
-      itemCount: 10, // Show 10 skeleton cards
+      itemCount: 10,
       itemBuilder: (context, index) => Container(
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: colorScheme.onSurface.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: Container(color: Colors.white10)), // Image area
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.onSurface.withOpacity(0.03), 
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12))
+                )
+              )
+            ),
             Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Container(width: 60, height: 12, color: Colors.white10), // Tag area
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 60, 
+                    height: 10, 
+                    decoration: BoxDecoration(
+                      color: colorScheme.onSurface.withOpacity(0.05), 
+                      borderRadius: BorderRadius.circular(4)
+                    )
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 80),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.inventory_2_outlined, 
+              size: 48, 
+              color: colorScheme.onSurfaceVariant.withOpacity(0.2)
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "No Records Found", 
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withOpacity(0.6)
+              )
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 
@@ -165,7 +299,6 @@ class MediaCard extends StatelessWidget {
               imageUrl,
               width: double.infinity,
               fit: BoxFit.cover,
-              // 1. SMOOTH FADE: Prevents the image from "flashing" in
               frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded) return child;
                 return AnimatedOpacity(
@@ -175,7 +308,6 @@ class MediaCard extends StatelessWidget {
                   child: child,
                 );
               },
-              // 2. INNER LOADER: Small indicator while image downloads
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
                 return Center(

@@ -106,7 +106,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final bool isDesktop = AppResponsive.isDesktopScreen(context);
 
     return ListenableBuilder(
       listenable: projectController,
@@ -117,7 +116,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
 
               SizedBox(height: 10),
 
-              _buildHeader(context, isDesktop, theme),
+              _buildHeader(context, theme),
 
               SizedBox(height: 20),
 
@@ -128,7 +127,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch, 
                   children: [
                     // 1. HEADER SECTION
-                    _buildTopToolbar(isDesktop, theme),
+                    _buildTopToolbar(theme),
                     
                     // 2. TABLE SECTION
                     ListenableBuilder(
@@ -187,6 +186,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                         );
                       },
                     ),
+                    
                   ],
                 ),
               )
@@ -197,7 +197,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 
   // --- UI CONCEPT HELPERS ---
-  Widget _buildHeader(BuildContext context, bool isDesktop, ThemeData theme) {
+  Widget _buildHeader(BuildContext context, ThemeData theme) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -255,7 +255,10 @@ class _ProjectScreenState extends State<ProjectScreen> {
     );
   }
 
-  Widget _buildTopToolbar(bool isDesktop, ThemeData theme) {
+  Widget _buildTopToolbar(ThemeData theme) {
+    final isDesktop = AppResponsive.isDesktopScreen(context);
+    final colorScheme = theme.colorScheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
@@ -265,7 +268,32 @@ class _ProjectScreenState extends State<ProjectScreen> {
               width: 350,
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
-          )
+          ),
+
+          if (isDesktop) ...[
+            const Spacer(),
+            Tooltip(
+              message: 'Refresh Projects',
+              child: InkWell(
+                onTap: projectController.isLoading ? null : () {
+                  projectController.getAllProjects();
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh_rounded, 
+                    size: 20, 
+                    color: colorScheme.onSurface.withOpacity(0.7)
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       )
     );

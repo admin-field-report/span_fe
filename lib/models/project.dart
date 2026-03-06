@@ -29,13 +29,13 @@ class Project {
 // -- Inspections 
 class ProjectInspection {
   final String id;
-  final String? name;
+  final String name;
   final DateTime createTime;
   final String creatorId;
 
   ProjectInspection({
     required this.id,
-    this.name,
+    required this.name,
     required this.createTime,
     required this.creatorId,
   });
@@ -43,7 +43,7 @@ class ProjectInspection {
   factory ProjectInspection.fromJson(Map<String, dynamic> json) {
     return ProjectInspection(
       id: json['id'],
-      name: json['name'],
+      name: json['name'] ?? 'Unknown',
       createTime: DateTime.parse(json['create_time']),
       creatorId: json['created_by'],
     );
@@ -55,7 +55,7 @@ class ProjectDocument {
   final String id;
   final String templateId;
   final String documentUrl;
-  final String? documentName;
+  final String documentName;
   final DateTime createTime;
   final String createdBy;
 
@@ -63,7 +63,7 @@ class ProjectDocument {
     required this.id,
     required this.templateId,
     required this.documentUrl,
-    this.documentName,
+    required this.documentName,
     required this.createTime,
     required this.createdBy,
   });
@@ -73,7 +73,7 @@ class ProjectDocument {
       id: json['id'] ?? '', 
       templateId: json['template_id'] ?? '',
       documentUrl: json['document_url'] ?? '',
-      documentName: json['document_name'],
+      documentName: json['document_name'] ?? 'Unknown',
       createTime: DateTime.parse(json['create_time'] ?? DateTime.now().toIso8601String()),
       createdBy: json['created_by'] ?? 'Unknown',
     );
@@ -88,7 +88,7 @@ class ProjectMediaTag {
 
   ProjectMediaTag({required this.name, required this.color});
 
-factory ProjectMediaTag.fromJson(Map<String, dynamic> json) {
+  factory ProjectMediaTag.fromJson(Map<String, dynamic> json) {
     final tagMap = json['tag'] ?? {};
     String hexColor = tagMap['color'] ?? "#FFFFFF";
     

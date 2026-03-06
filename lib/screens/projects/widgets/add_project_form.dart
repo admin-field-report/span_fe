@@ -189,14 +189,10 @@ class _AddProjectFormState extends State<AddProjectForm> {
         children: [
           SizedBox(
             width: 120,
-            child: OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                side: BorderSide(color: colorScheme.outlineVariant),
-              ),
-              child: const Text("Close"),
+            child: Button(
+              label: "Close",
+              variant: ButtonVariant.outline,
+              onPressed: _isCreating ? null : () => Navigator.pop(context),
             ),
           ),
           const SizedBox(width: 12),
@@ -217,13 +213,10 @@ class _AddProjectFormState extends State<AddProjectForm> {
     return Row(
       children: [
         Expanded(
-          child: OutlinedButton(
-            onPressed: () => Navigator.pop(context),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            child: const Text("Close"),
+          child: Button(
+            label: "Close",
+            variant: ButtonVariant.outline,
+            onPressed: _isCreating ? null : () => Navigator.pop(context),
           ),
         ),
         const SizedBox(width: 12),

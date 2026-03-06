@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
+import '../../../utils/app_responsive.dart';
 
 class ProjectInspectionsTab extends StatefulWidget {
     final String projectId;
@@ -16,41 +17,46 @@ class ProjectInspectionsTab extends StatefulWidget {
 }
 
 class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
-
+  String _searchQuery = "";
   final ApiService _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
-    // Fetch inspections for the project
     projectController.getAllInspections(widget.projectId);
   }
 
-  Future<void> removeInspection(BuildContext context, String id) async {
-  try {
-    final response = await _apiService.delete('/inspection/$id');
-    if (!context.mounted) return;
+  List<ProjectInspection> _getFilteredInspections() {
+    return projectController.inspections.where((p) {
+      return p.name.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+  }
 
-    if (response.statusCode == 200) {
+  Future<void> removeInspection(BuildContext context, String id) async {
+    try {
+      final response = await _apiService.delete('/inspection/$id');
+      if (!context.mounted) return;
+
+      if (response.statusCode == 200) {
+        ToastService.show(context, 
+          message: "Inspection deleted successfully", 
+          type: ToastType.success
+        );
+        projectController.getAllInspections(widget.projectId);
+      } else {
+        ToastService.show(context, 
+          message: "Unexpected error occurred", 
+          type: ToastType.error
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
       ToastService.show(context, 
-        message: "Inspection deleted successfully", 
-        type: ToastType.success
-      );
-      projectController.getAllInspections(widget.projectId);
-    } else {
-      ToastService.show(context, 
-        message: "Unexpected error occurred", 
+        message: "Failed to delete inspection: $e", 
         type: ToastType.error
       );
     }
-  } catch (e) {
-    if (!context.mounted) return;
-    ToastService.show(context, 
-      message: "Failed to delete inspection: $e", 
-      type: ToastType.error
-    );
   }
-}
 
   void _confirmDelete(BuildContext context,  ProjectInspection project) {
     showDialog(
@@ -75,76 +81,119 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-     return ListenableBuilder(
+    return ListenableBuilder(
       listenable: projectController,
       builder: (context, child) {
         return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 20),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, 
-                  crossAxisAlignment: CrossAxisAlignment.stretch, 
-                  children: [
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 20),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                mainAxisSize: MainAxisSize.min, 
+                crossAxisAlignment: CrossAxisAlignment.stretch, 
+                children: [
+                  _buildTopToolbar(theme),
+                  const SizedBox(height: 10),
+
                     ListenableBuilder(
-                      listenable: projectController,
-                      builder: (context, child) {
-                        return CommonTable<ProjectInspection>(
-                          isLoading: projectController.isInspectionsLoading,
-                          data: projectController.inspections.toList(),
-                          showCheckboxes: false,
-                          // onRowTap: (item) => debugPrint("Navigating to ${item['id']}"),
-                          columns: [
-                            TableColumn(
-                              title: 'Sr No.',
-                              flex: 1,
-                              minWidth: 60,
-                              builder: (item) {
-                                final index = projectController.inspections.indexOf(item) + 1;
-                                return Text(index.toString().padLeft(2, '0'));
-                              },
+                    listenable: projectController,
+                    builder: (context, child) {
+                    final displayData = _getFilteredInspections();
+                    return CommonTable<ProjectInspection>(
+                        isLoading: projectController.isInspectionsLoading,
+                        data: displayData,
+                        showCheckboxes: false,
+                        columns: [
+                          TableColumn(
+                            title: 'Sr No.',
+                            flex: 1,
+                            minWidth: 60,
+                            builder: (item) {
+                              final index = projectController.inspections.indexOf(item) + 1;
+                              return Text(index.toString().padLeft(2, '0'));
+                            },
+                          ),
+                          TableColumn(
+                            title: 'Inspector',
+                            flex: 2,
+                            sortable: false,
+                            builder: (item) => Text(item.name),
+                          ),
+                          TableColumn(
+                            title: 'Date',
+                            flex: 2,
+                            sortable: true,
+                            sortValue: (item) => item.createTime,
+                            builder: (item) => Text(
+                              DateFormat('dd MMM yyyy').format(item.createTime),
                             ),
-                            TableColumn(
-                              title: 'Inspector',
-                              flex: 2,
-                              sortable: true,
-                              builder: (item) => Text(
-                                "Unknown", 
-                                style: TextStyle(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6)),
-                              ),
+                          ),
+                          TableColumn(
+                            title: "Actions",
+                            flex: 0,
+                            minWidth: 100,
+                            builder: (p) => IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20),
+                              color: colorScheme.error,
+                              onPressed: () => _confirmDelete(context, p),
                             ),
-                            TableColumn(
-                              title: 'Date',
-                              flex: 2,
-                              sortable: true,
-                              sortValue: (item) => item.createTime,
-                              builder: (item) {
-                                final date = item.createTime;
-                                return Text(DateFormat('dd MMM yyyy').format(date));
-                              },
-                            ),
-                            TableColumn(
-                              title: "Actions",
-                              flex: 0,
-                              minWidth: 150,
-                              builder: (p) => IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 20),
-                                color: colorScheme.error,
-                                onPressed: () => _confirmDelete(context, p),
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-                    )
-                  ]
-                )
+                          ),
+                        ],
+                      );
+                    }
+                  )  
+                ]
               )
-            ]
+            ),
+          ],
         );
-      }
-     );
+      },
+    );
+  }
+
+Widget _buildTopToolbar(ThemeData theme) {
+    final isDesktop = AppResponsive.isDesktopScreen(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
+      child: Row(
+        children: [
+          Expanded(
+            child: SearchField(
+              width: 350,
+              onChanged: (val) => setState(() => _searchQuery = val),
+            ),
+          ),
+
+          if (isDesktop) ...[
+            const Spacer(),
+            Tooltip(
+              message: 'Refresh Inspections',
+              child: InkWell(
+                onTap: projectController.isInspectionsLoading ? null : () {
+                  projectController.getAllInspections(widget.projectId);
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh_rounded, 
+                    size: 20, 
+                    color: colorScheme.onSurface.withOpacity(0.7)
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      )
+    );
   }
 }

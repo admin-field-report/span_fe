@@ -121,12 +121,16 @@ class ProjectController extends ChangeNotifier {
 
       for (var item in canvasItems) {
         final List images = item['canvas_page_item_image'] ?? [];
-        if (images.isNotEmpty) {
-          final List tagsJson = item['canvas_page_item_tag'] ?? [];
+        final List tagsJson = item['canvas_page_item_tag'] ?? [];
+        
+        final List<ProjectMediaTag> itemTags = 
+            tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList();
+
+        for (var img in images) {
           itemsInThisInspection.add(ProjectMedia(
-            id: item['id'],
-            imageUrl: images[0]['signedUrl'],
-            tags: tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList(),
+            id: "${item['id']}_${img['id'] ?? itemsInThisInspection.length}",
+            imageUrl: img['signedUrl'],
+            tags: itemTags,
           ));
         }
       }

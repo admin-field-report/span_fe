@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../models/template.dart';
 import '../../../core/api_service.dart';
-import '../../auth/controllers/auth_controller.dart';
 
 
 class TemplateController extends ChangeNotifier {

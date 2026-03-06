@@ -7,6 +7,7 @@ import '../screens/settings/settings_screen.dart';
 import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
+import '../screens/layout/not_found_screen.dart';
 
 // final _rootNavigatorKey = GlobalKey<NavigatorState>();
 // final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -14,6 +15,7 @@ import '../screens/projects/project_detail_screen.dart';
 final router = GoRouter(
   refreshListenable: authController,
   initialLocation: '/',
+  errorBuilder: (context, state) => const NotFoundScreen(),
   routes: [
     // --- PUBLIC ROUTES ---
     GoRoute(

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
+import '../../../utils/app_responsive.dart';
 
 class ProjectDocuments extends StatefulWidget {
     final String projectId;
@@ -16,13 +17,19 @@ class ProjectDocuments extends StatefulWidget {
 }
 
 class _ProjectDocumentsState extends State<ProjectDocuments> {
-
+  String _searchQuery = "";
   final ApiService _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
     projectController.getAllDocuments(widget.projectId);
+  }
+
+  List<ProjectDocument> _getFilteredDocuments() {
+    return projectController.documents.where((p) {
+      return p.documentName.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
   }
 
   Future<void> removeDocument(BuildContext context, String id) async {
@@ -78,23 +85,25 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
       listenable: projectController,
       builder: (context, child) {
         return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 20),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, 
-                  crossAxisAlignment: CrossAxisAlignment.stretch, 
-                  children: [
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 20),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                mainAxisSize: MainAxisSize.min, 
+                crossAxisAlignment: CrossAxisAlignment.stretch, 
+                children: [
+                  _buildTopToolbar(theme),
+                  const SizedBox(height: 10),
                     ListenableBuilder(
                       listenable: projectController,
                       builder: (context, child) {
-                        return CommonTable<ProjectDocument>(
+                      final displayData = _getFilteredDocuments();
+                      return CommonTable<ProjectDocument>(
                         isLoading: projectController.isDocumentsLoading,
-                        data: projectController.documents.toList(),
+                        data: displayData,
                         showCheckboxes: false,
-                        // onRowTap: (item) => debugPrint("Navigating to ${item['id']}"),
                         columns: [
                           TableColumn(
                             title: 'Sr No.',
@@ -108,9 +117,9 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                           TableColumn(
                             title: 'Document Name',
                             flex: 2,
-                            sortable: true,
+                            sortable: false,
                             builder: (item) => Text(
-                              item.documentName ?? "Unknown", 
+                              item.documentName,
                               style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                             ),
                           ),
@@ -119,31 +128,74 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                             flex: 2,
                             sortable: true,
                             sortValue: (item) => item.createTime,
-                            builder: (item) {
-                              final date = item.createTime;
-                              return Text(DateFormat('dd MMM yyyy').format(date));
-                            },
+                            builder: (item) => Text(
+                              DateFormat('dd MMM yyyy').format(item.createTime),
+                            ),
                           ),
                           TableColumn(
                             title: "Actions",
                             flex: 0,
-                            minWidth: 150,
-                            builder: (p) => IconButton(
+                            minWidth: 100,
+                            builder: (doc) => IconButton(
                               icon: const Icon(Icons.delete_outline, size: 20),
                               color: colorScheme.error,
-                              onPressed: () => _confirmDelete(context, p),
+                              onPressed: () => _confirmDelete(context, doc),
                             ),
                           ),
                         ],
                       );
-                      }
-                    )
-                  ]
-                )
+                    }
+                  )  
+                ]
               )
-            ]
+            ),
+          ],
         );
-      }
+      },
+    );
+  }
+
+Widget _buildTopToolbar(ThemeData theme) {
+    final isDesktop = AppResponsive.isDesktopScreen(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
+      child: Row(
+        children: [
+          Expanded(
+            child: SearchField(
+              width: 350,
+              onChanged: (val) => setState(() => _searchQuery = val),
+            ),
+          ),
+
+          if (isDesktop) ...[
+            const Spacer(),
+            Tooltip(
+              message: 'Refresh Document',
+              child: InkWell(
+                onTap: projectController.isDocumentsLoading ? null : () {
+                  projectController.getAllDocuments(widget.projectId);
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh_rounded, 
+                    size: 20, 
+                    color: colorScheme.onSurface.withOpacity(0.7)
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      )
     );
   }
 }

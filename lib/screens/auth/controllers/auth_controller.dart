@@ -12,26 +12,41 @@ class AuthController extends ChangeNotifier {
 
 
   // --- State Variables ---
+  bool _isInitialized = false;
+
   UserModel? _user;
+  bool _isAuthenticated = false;
+
   bool _isLoading = false;
   String? _errorMessage;
-  bool _isInitialized = false;
-  bool _isAuthenticated = false;
+
+  bool _isCreatingUser = false;
+  String? _errorMessageCreatingUser;
+
   Timer? _refreshTimer;
+
   String? _targetPath;
 
-
   bool _resetingPassword = false;
+    String? _errorMessageResetingPassword;
 
   // --- Getters ---
+  bool get isInitialized => _isInitialized;
+
   UserModel? get user => _user;
+  bool get isAuthenticated => _isAuthenticated;
+
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get isInitialized => _isInitialized;
-  bool get isAuthenticated => _isAuthenticated;
+
+  bool get isCreatingUser => _isCreatingUser;
+  String? get errorMessageCreatingUser => _errorMessageCreatingUser;
+
+
   String get targetPath => _targetPath ?? '/';
 
   bool get resetingPassword => _resetingPassword;
+  String? get errorMessageResetingPassword => _errorMessageResetingPassword;
 
   @override
   void dispose() {
@@ -105,8 +120,8 @@ class AuthController extends ChangeNotifier {
     required String firstName,
     required String lastName,
   }) async {
-    _isLoading = true;
-    _errorMessage = null;
+    _isCreatingUser = true;
+    _errorMessageCreatingUser = null;
     notifyListeners();
 
     try {
@@ -117,19 +132,19 @@ class AuthController extends ChangeNotifier {
       });
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        _isLoading = false;
+        _isCreatingUser = false;
         notifyListeners();
         return true;
       } else {
         final Map<String, dynamic> responseData = jsonDecode(response.body);
-        _errorMessage = responseData['message'] ?? "Signup failed";
-        _isLoading = false;
+        _errorMessageCreatingUser = responseData['message'] ?? "Signup failed";
+        _isCreatingUser = false;
         notifyListeners();
         return false;
       }
     } catch (e) {
-      _errorMessage = "An unexpected error occurred. Please try again.";
-      _isLoading = false;
+      _errorMessageCreatingUser = "An unexpected error occurred. Please try again.";
+      _isCreatingUser = false;
       notifyListeners();
       return false;
     }
@@ -180,7 +195,7 @@ class AuthController extends ChangeNotifier {
    Future<void> resetPassword(String email, String password, String tempPassword) async {
     try {
       _resetingPassword = true;
-      _errorMessage = '';
+      _errorMessageResetingPassword = '';
       notifyListeners();
 
       final response = await apiService.post('/user/signup-verify', {
@@ -191,8 +206,8 @@ class AuthController extends ChangeNotifier {
 
       if (response.statusCode != 200) {
         final errorData = jsonDecode(response.body);
-        _errorMessage = errorData['message'] ?? 'An unknown error occurred';
-        throw Exception(_errorMessage);
+        _errorMessageResetingPassword = errorData['message'] ?? 'An unknown error occurred';
+        throw Exception(_errorMessageResetingPassword);
       }
 
       final loginData = jsonDecode(response.body);
@@ -210,7 +225,7 @@ class AuthController extends ChangeNotifier {
       manageSession(); 
       notifyListeners();
     } catch (error) {
-      _errorMessage = error.toString().replaceAll('Exception: ', '');
+      _errorMessageResetingPassword = error.toString().replaceAll('Exception: ', '');
       _isAuthenticated = false;
       _user = null;
       rethrow;
