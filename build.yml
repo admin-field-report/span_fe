@@ -13,7 +13,6 @@ phases:
 
   pre_build:
     commands:
-      - flutter config --no-analytics
       - flutter --version
       - flutter precache --web
       - flutter pub get
