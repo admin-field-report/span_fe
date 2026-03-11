@@ -1,0 +1,53 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - echo Installing Flutter SDK
+      - git clone https://github.com/flutter/flutter.git -b stable
+      - export PATH="$PATH:`pwd`/flutter/bin"
+      - echo $STACK_ENV
+      - echo $SPAN_FE_WEB_BUCKET_NAME
+
+  pre_build:
+    commands:
+      - echo Pre-build started at `date`
+      - flutter config --enable-web
+      - flutter precache --web
+      - flutter doctor
+      - flutter pub get
+
+  build:
+    commands:
+      - echo Building Flutter Web App
+      - flutter build web --release
+
+  post_build:
+    commands:
+      - echo Deploying Flutter Web to S3
+      # Upload static assets with long cache
+      - aws s3 sync build/web/assets s3://$S3_BUCKET/assets --delete --cache-control "public,max-age=31536000,immutable"
+
+      # Upload JS with long cache
+      - aws s3 cp build/web/main.dart.js s3://$S3_BUCKET/main.dart.js --cache-control "public,max-age=31536000,immutable"
+
+      # Upload Flutter engine files
+      - aws s3 cp build/web/flutter.js s3://$S3_BUCKET/flutter.js --cache-control "public,max-age=31536000,immutable"
+
+      # Upload remaining files
+      - aws s3 sync build/web s3://$S3_BUCKET --exclude "assets/*" --exclude "main.dart.js" --exclude "flutter.js"
+
+      # Ensure index.html is never cached
+      - aws s3 cp build/web/index.html s3://$S3_BUCKET/index.html --cache-control "no-cache"
+
+      - echo Create CloudFront invalidation here
+      # - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+
+      - echo Deployment completed at `date`
+
+artifacts:
+base-directory: build/web
+files:
+  - '**/*'
