@@ -14,9 +14,9 @@ phases:
   pre_build:
     commands:
       - echo Pre-build started at `date`
-      - flutter config --enable-web
+      # - flutter config --enable-web
       - flutter precache --web
-      - flutter doctor
+      # - flutter doctor
       - flutter pub get
 
   build:
