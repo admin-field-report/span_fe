@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
-enum DrawingType { line, rect, circle, pencil } // Added pencil
+enum DrawingType { line, rect, circle, pencil, text }
 enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, none }
 
 class DrawingObject {
   Offset start;
   Offset end;
-  List<Offset>? points; // Added for Pencil tool
+  List<Offset>? points; 
+  String? text; 
   double strokeWidth;
   Color color;
   Color fillColor;
@@ -23,7 +24,8 @@ class DrawingObject {
     required this.start,
     required this.end,
     required this.type,
-    this.points, // Initialize points
+    this.points,
+    this.text,
     this.strokeWidth = 2.0,
     this.color = Colors.black,
     this.fillColor = Colors.transparent,
@@ -32,7 +34,6 @@ class DrawingObject {
     this.rotation = 0.0,
   });
 
-  // Calculate Rect based on points for Pencil, otherwise use start/end
   Rect get rect {
     if (type == DrawingType.pencil && points != null && points!.isNotEmpty) {
       double minX = points![0].dx;
@@ -56,7 +57,8 @@ class DrawingObject {
         start: start,
         end: end,
         type: type,
-        points: points != null ? List.from(points!) : null, // Copy points list
+        points: points != null ? List.from(points!) : null,
+        text: text,
         strokeWidth: strokeWidth,
         color: color,
         fillColor: fillColor,
@@ -66,10 +68,8 @@ class DrawingObject {
       );
 }
 
-// --- MAIN SCREEN ---
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
-
   @override
   State<CanvasScreen> createState() => _CanvasScreenState();
 }
@@ -95,6 +95,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   ResizeHandle _hoveredHandle = ResizeHandle.none;
   Offset _dragOffset = Offset.zero;
   double _initialRotationAngle = 0.0;
+  DateTime? _lastTapTime; 
 
   final List<Color> _availableColors = [
     Colors.transparent, Colors.black, Colors.white, Colors.grey, Colors.red, 
@@ -107,7 +108,76 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _currentPage = _pages.first;
   }
 
-  // --- UNDO / REDO LOGIC ---
+  // --- TEXT TOOL DIALOG (Updated for Editing) ---
+  Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject}) async {
+    final TextEditingController controller = TextEditingController(text: existingObject?.text ?? "");
+    
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existingObject == null ? "Enter Text" : "Edit Text"),
+        content: SizedBox(
+          width: 400, // Fixed width for the dialog entry
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: null, // Allows multi-line input
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              hintText: "Type your text here...",
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () {
+              if (controller.text.isNotEmpty) {
+                _saveSnapshot();
+                setState(() {
+                  // Calculate size based on the text content
+                  final textPainter = TextPainter(
+                    text: TextSpan(
+                      text: controller.text,
+                      style: TextStyle(fontSize: _strokeWidth * 10), // Font size linked to stroke width or a default
+                    ),
+                    textDirection: TextDirection.ltr,
+                  )..layout(maxWidth: 500); // Max width before wrapping
+
+                  final calculatedSize = Offset(textPainter.width + 20, textPainter.height + 20);
+
+                  if (existingObject != null) {
+                    existingObject.text = controller.text;
+                    // Update the bounding box to fit the new text
+                    existingObject.end = existingObject.start + calculatedSize;
+                  } else {
+                    final textObj = DrawingObject(
+                      start: position,
+                      end: position + calculatedSize,
+                      type: DrawingType.text,
+                      text: controller.text,
+                      color: _activeColor,
+                      opacity: _opacity,
+                      isSelected: true,
+                      strokeWidth: _strokeWidth, // Using this to control font scale
+                    );
+                    for (var obj in _drawingObjects) obj.isSelected = false;
+                    _drawingObjects.add(textObj);
+                    _activeObject = textObj;
+                    _selectedTool = 'Select';
+                  }
+                });
+              }
+              Navigator.pop(context);
+            },
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _saveSnapshot() {
     _undoStack.add(_drawingObjects.map((e) => e.copy()).toList());
     if (_undoStack.length > 50) _undoStack.removeAt(0);
@@ -144,20 +214,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  // --- MATH HELPERS ---
   Offset _toLocalSpace(Offset point, DrawingObject obj) {
     final double cos = math.cos(-obj.rotation);
     final double sin = math.sin(-obj.rotation);
     final double dx = point.dx - obj.center.dx;
     final double dy = point.dy - obj.center.dy;
-    return Offset(
-      cos * dx - sin * dy + obj.center.dx,
-      sin * dx + cos * dy + obj.center.dy,
-    );
+    return Offset(cos * dx - sin * dy + obj.center.dx, sin * dx + cos * dy + obj.center.dy);
   }
 
-  // --- GESTURE HELPERS ---
   MouseCursor _getCursor(ResizeHandle handle) {
+    if (_selectedTool == 'Eraser') return SystemMouseCursors.none; // Fixed 'nocursor'
+    if (_selectedTool == 'Text') return SystemMouseCursors.text;
+    
     switch (handle) {
       case ResizeHandle.topLeft:
       case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
@@ -181,7 +249,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     if (obj.isSelected) {
       Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
       if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
-
       if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
       if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
       if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
@@ -191,8 +258,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
       if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
       if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
     }
+    
     if (obj.type == DrawingType.line) {
       if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
+    } else if (obj.type == DrawingType.pencil && obj.points != null) {
+      for (int i = 0; i < obj.points!.length - 1; i++) {
+        if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < 15) return ResizeHandle.body;
+      }
     } else {
       if (r.inflate(5).contains(localP)) return ResizeHandle.body;
     }
@@ -201,20 +273,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _handlePointerDown(PointerDownEvent details) {
     final pos = details.localPosition;
+    final now = DateTime.now();
+
     setState(() {
-      if (_selectedTool != 'Select') {
+      if (_selectedTool == 'Text') {
+        _showTextDialog(position: pos);
+      } else if (_selectedTool == 'Eraser') {
+        _saveSnapshot();
+        _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
+      } else if (_selectedTool != 'Select') {
         _saveSnapshot();
         for (var obj in _drawingObjects) obj.isSelected = false;
         
-        DrawingType type;
-        List<Offset>? pts;
-        
-        if (_selectedTool == 'Pencil') {
-          type = DrawingType.pencil;
-          pts = [pos];
-        } else {
-          type = _selectedTool == 'Rect' ? DrawingType.rect : (_selectedTool == 'Circle' ? DrawingType.circle : DrawingType.line);
-        }
+        DrawingType type = (_selectedTool == 'Pencil') ? DrawingType.pencil : 
+                           (_selectedTool == 'Rect' ? DrawingType.rect : (_selectedTool == 'Circle' ? DrawingType.circle : DrawingType.line));
+        List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts,
@@ -232,6 +305,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
 
         if (hitObj != null) {
+          // Double tap to edit text
+          if (hitObj.type == DrawingType.text && 
+              _lastTapTime != null && 
+              now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
+            _showTextDialog(position: pos, existingObject: hitObj);
+            return;
+          }
+          _lastTapTime = now;
+
           if (!hitObj.isSelected) _saveSnapshot();
           for (var obj in _drawingObjects) obj.isSelected = false;
           hitObj.isSelected = true;
@@ -253,29 +335,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
     final pos = details.localPosition;
-    final double maxWidth = constraints.maxWidth;
-    final double maxHeight = constraints.maxHeight;
-
     setState(() {
-      if (_currentPreview != null) {
+      if (_selectedTool == 'Eraser') {
+        _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
+      } else if (_currentPreview != null) {
         if (_currentPreview!.type == DrawingType.pencil) {
           _currentPreview!.points!.add(pos);
         } else {
-          _currentPreview!.end = Offset(pos.dx.clamp(0.0, maxWidth), pos.dy.clamp(0.0, maxHeight));
+          _currentPreview!.end = pos;
         }
       } else if (_activeObject != null && _activeHandle != ResizeHandle.none) {
-        
         if (_activeHandle == ResizeHandle.rotation) {
           _activeObject!.rotation = math.atan2(pos.dy - _activeObject!.center.dy, pos.dx - _activeObject!.center.dx) - _initialRotationAngle;
         } else if (_activeHandle == ResizeHandle.body) {
           Offset delta = _activeObject!.end - _activeObject!.start;
-          double newX = (pos.dx - _dragOffset.dx).clamp(0.0, maxWidth - delta.dx.abs());
-          double newY = (pos.dy - _dragOffset.dy).clamp(0.0, maxHeight - delta.dy.abs());
-          
-          Offset moveDelta = Offset(newX, newY) - _activeObject!.start;
-          _activeObject!.start = Offset(newX, newY);
-          _activeObject!.end = Offset(newX + delta.dx, newY + delta.dy);
-          
+          Offset moveDelta = (pos - _dragOffset) - _activeObject!.start;
+          _activeObject!.start = pos - _dragOffset;
+          _activeObject!.end = _activeObject!.start + delta;
           if (_activeObject!.type == DrawingType.pencil) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
@@ -283,7 +359,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           final localP = _toLocalSpace(pos, _activeObject!);
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
-
           switch (_activeHandle) {
             case ResizeHandle.topLeft: left = localP.dx; top = localP.dy; break;
             case ResizeHandle.topCenter: top = localP.dy; break;
@@ -444,10 +519,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _colorButton("Border", _activeColor, false), const SizedBox(width: 12),
         _colorButton("Fill", _fillColor, true), _vDiv(theme),
         _toolIcon(Icons.near_me, "Select", theme),
-        _toolIcon(Icons.edit, "Pencil", theme), // Added Pencil after Select
+        _toolIcon(Icons.edit, "Pencil", theme),
         _toolIcon(Icons.show_chart, "Line", theme),
         _toolIcon(Icons.crop_square, "Rect", theme), 
         _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
+        _toolIcon(Icons.title, "Text", theme),
         _vDiv(theme), 
         _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
         _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
@@ -543,44 +619,65 @@ class MainPainter extends CustomPainter {
 
     void drawShape(DrawingObject obj) {
       canvas.save();
-      
       canvas.translate(obj.center.dx, obj.center.dy);
       canvas.rotate(obj.rotation);
       canvas.translate(-obj.center.dx, -obj.center.dy);
 
       final Rect rect = obj.rect;
       
-      // 1. FILL
-      if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
-        final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
-        if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
-        if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
-      }
+      // --- RESPONSIVE TEXT HANDLING ---
+      if (obj.type == DrawingType.text && obj.text != null) {
+        // Calculate font size based on the current height of the bounding box.
+        // 0.8 is a safety factor to keep text within the selection handles.
+        double dynamicFontSize = rect.height * 0.8;
+        
+        // Prevent font size from becoming zero or negative during weird drags
+        if (dynamicFontSize < 1) dynamicFontSize = 1;
 
-      // 2. STROKE
-      final strokePaint = Paint()
-        ..color = obj.color
-        ..strokeWidth = obj.strokeWidth
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-
-      if (obj.type == DrawingType.pencil && obj.points != null && obj.points!.isNotEmpty) {
-        Path path = Path();
-        path.moveTo(obj.points![0].dx, obj.points![0].dy);
-        for (var i = 1; i < obj.points!.length; i++) {
-          path.lineTo(obj.points![i].dx, obj.points![i].dy);
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: obj.text,
+            style: TextStyle(
+              color: obj.color.withOpacity(obj.opacity),
+              fontSize: dynamicFontSize, 
+              fontWeight: FontWeight.normal,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.left,
+        );
+        
+        // Use the width of the box to handle wrapping
+        textPainter.layout(maxWidth: rect.width > 0 ? rect.width : 1);
+        textPainter.paint(canvas, rect.topLeft);
+      } else {
+        if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
+          final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
+          if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
+          if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
         }
-        canvas.drawPath(path, strokePaint);
-      } else if (obj.type == DrawingType.line) {
-        canvas.drawLine(obj.start, obj.end, strokePaint);
-      } else if (obj.type == DrawingType.rect) {
-        canvas.drawRect(rect, strokePaint);
-      } else if (obj.type == DrawingType.circle) {
-        canvas.drawOval(rect, strokePaint);
+
+        final strokePaint = Paint()
+          ..color = obj.color.withOpacity(obj.opacity)
+          ..strokeWidth = obj.strokeWidth
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+
+        if (obj.type == DrawingType.pencil && obj.points != null && obj.points!.isNotEmpty) {
+          Path path = Path();
+          path.moveTo(obj.points![0].dx, obj.points![0].dy);
+          for (var i = 1; i < obj.points!.length; i++) path.lineTo(obj.points![i].dx, obj.points![i].dy);
+          canvas.drawPath(path, strokePaint);
+        } else if (obj.type == DrawingType.line) {
+          canvas.drawLine(obj.start, obj.end, strokePaint);
+        } else if (obj.type == DrawingType.rect) {
+          canvas.drawRect(rect, strokePaint);
+        } else if (obj.type == DrawingType.circle) {
+          canvas.drawOval(rect, strokePaint);
+        }
       }
 
-      // 3. SELECTION HANDLES
       if (obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
@@ -590,12 +687,12 @@ class MainPainter extends CustomPainter {
         canvas.drawCircle(rotPos, 12, wP);
         canvas.drawCircle(rotPos, 10, hP);
 
-        final textPainter = TextPainter(
+        final rotIcon = TextPainter(
           text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
           textDirection: TextDirection.ltr,
         );
-        textPainter.layout();
-        textPainter.paint(canvas, rotPos - Offset(textPainter.width / 2, textPainter.height / 2));
+        rotIcon.layout();
+        rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
 
         final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
         for (var p in points) { canvas.drawCircle(p, 7, wP); canvas.drawCircle(p, 5, hP); }
