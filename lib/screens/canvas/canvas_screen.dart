@@ -13,9 +13,9 @@ class DrawingObject {
   List<Offset>? points; 
   String? text; 
   double strokeWidth;
-  Color color;
-  Color fillColor;
-  double opacity; 
+  Color color;      
+  Color fillColor;  
+  double opacity;   
   bool isSelected;
   DrawingType type;
   double rotation; 
@@ -78,8 +78,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   String _selectedTool = 'Select';
   double _strokeWidth = 2.0;
   double _opacity = 1.0; 
-  Color _activeColor = Colors.black; 
-  Color _fillColor = Colors.transparent;
+  
+  Color _activeColor = Colors.black;       
+  Color _activeBorderColor = Colors.black; 
+  Color _fillColor = Colors.transparent;   
   
   List<String> _pages = ['Page 1'];
   late String _currentPage;
@@ -108,7 +110,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _currentPage = _pages.first;
   }
 
-  // --- TEXT TOOL DIALOG (Updated for Editing) ---
   Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject}) async {
     final TextEditingController controller = TextEditingController(text: existingObject?.text ?? "");
     
@@ -117,11 +118,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
       builder: (context) => AlertDialog(
         title: Text(existingObject == null ? "Enter Text" : "Edit Text"),
         content: SizedBox(
-          width: 400, // Fixed width for the dialog entry
+          width: 400,
           child: TextField(
             controller: controller,
             autofocus: true,
-            maxLines: null, // Allows multi-line input
+            maxLines: null,
             keyboardType: TextInputType.multiline,
             decoration: const InputDecoration(
               hintText: "Type your text here...",
@@ -136,20 +137,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
               if (controller.text.isNotEmpty) {
                 _saveSnapshot();
                 setState(() {
-                  // Calculate size based on the text content
                   final textPainter = TextPainter(
                     text: TextSpan(
                       text: controller.text,
-                      style: TextStyle(fontSize: _strokeWidth * 10), // Font size linked to stroke width or a default
+                      style: TextStyle(fontSize: _strokeWidth * 10),
                     ),
                     textDirection: TextDirection.ltr,
-                  )..layout(maxWidth: 500); // Max width before wrapping
+                  )..layout(maxWidth: 500);
 
                   final calculatedSize = Offset(textPainter.width + 20, textPainter.height + 20);
 
                   if (existingObject != null) {
                     existingObject.text = controller.text;
-                    // Update the bounding box to fit the new text
                     existingObject.end = existingObject.start + calculatedSize;
                   } else {
                     final textObj = DrawingObject(
@@ -160,7 +159,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       color: _activeColor,
                       opacity: _opacity,
                       isSelected: true,
-                      strokeWidth: _strokeWidth, // Using this to control font scale
+                      strokeWidth: _strokeWidth,
                     );
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
@@ -223,7 +222,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   MouseCursor _getCursor(ResizeHandle handle) {
-    if (_selectedTool == 'Eraser') return SystemMouseCursors.none; // Fixed 'nocursor'
+    if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
     if (_selectedTool == 'Text') return SystemMouseCursors.text;
     
     switch (handle) {
@@ -249,14 +248,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
     if (obj.isSelected) {
       Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
       if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
-      if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
-      if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
-      if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
-      if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
-      if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
-      if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
-      if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
-      if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+
+      // --- CRITICAL CHANGE: Disable resize hits for Pencil ---
+      if (obj.type != DrawingType.pencil) {
+        if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
+        if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
+        if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
+        if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
+        if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
+        if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
+        if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
+        if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+      }
     }
     
     if (obj.type == DrawingType.line) {
@@ -291,7 +294,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts,
-          strokeWidth: _strokeWidth, color: _activeColor,
+          strokeWidth: _strokeWidth, 
+          color: (type == DrawingType.pencil || type == DrawingType.line) ? _activeColor : _activeBorderColor,
           fillColor: _fillColor, opacity: _opacity,
         );
       } else {
@@ -305,7 +309,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
 
         if (hitObj != null) {
-          // Double tap to edit text
           if (hitObj.type == DrawingType.text && 
               _lastTapTime != null && 
               now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
@@ -356,6 +359,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
         } else {
+          // Resize logic - only reachable if not Pencil
           final localP = _toLocalSpace(pos, _activeObject!);
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
@@ -399,36 +403,212 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
   }
 
-  void _showColorPicker(bool isFill) {
+  void _showColorPicker(int mode) {
+    final List<Color> pickerPresets = [
+      const Color(0xFFFF5252), const Color(0xFFFF9800), const Color(0xFFFFEB3B), 
+      const Color(0xFFCDDC39), const Color(0xFF4CAF50), const Color(0xFF009688), 
+      const Color(0xFF00BCD4), const Color(0xFF03A9F4), const Color(0xFF2196F3), 
+      const Color(0xFF3F51B5), const Color(0xFF9C27B0), const Color(0xFFE91E63), 
+      const Color(0xFF795548), const Color(0xFF9E9E9E), const Color(0xFF000000), 
+      const Color(0xFFFFFFFF),
+    ];
+
+    Color currentColor = mode == 0 ? _activeColor : (mode == 1 ? _activeBorderColor : _fillColor);
+    HSVColor hsvColor = HSVColor.fromColor(currentColor == Colors.transparent ? Colors.red : currentColor);
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isFill ? "Select Fill Color" : "Select Border Color"),
-        content: Wrap(
-          spacing: 10, runSpacing: 10,
-          children: _availableColors.map((color) => GestureDetector(
-            onTap: () {
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            
+            void updateColor(Color newColor) {
+              setDialogState(() => hsvColor = HSVColor.fromColor(newColor));
               setState(() {
-                if (isFill) {
-                  _fillColor = color;
-                  if (_activeObject != null) { _saveSnapshot(); _activeObject!.fillColor = color; }
+                _saveSnapshot();
+                if (mode == 0) {
+                  _activeColor = newColor;
+                  if (_activeObject != null && (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.text)) {
+                    _activeObject!.color = newColor;
+                  }
+                } else if (mode == 1) {
+                  _activeBorderColor = newColor;
+                  if (_activeObject != null && (_activeObject!.type == DrawingType.rect || _activeObject!.type == DrawingType.circle)) {
+                    _activeObject!.color = newColor;
+                  }
                 } else {
-                  _activeColor = color;
-                  if (_activeObject != null) { _saveSnapshot(); _activeObject!.color = color; }
+                  _fillColor = newColor;
+                  if (_activeObject != null) _activeObject!.fillColor = newColor;
                 }
               });
-              Navigator.pop(context);
-            },
-            child: CircleAvatar(
-              backgroundColor: color == Colors.transparent ? Colors.white : color,
-              radius: 20,
-              child: color == Colors.transparent 
-                ? const Icon(Icons.block, size: 16, color: Colors.red) 
-                : (isFill ? _fillColor : _activeColor) == color ? const Icon(Icons.check, color: Colors.white) : null,
-            ),
-          )).toList(),
-        ),
-      ),
+            }
+
+            String colorToHex(Color c) => c == Colors.transparent 
+                ? "NONE" 
+                : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
+
+            // Constants for the square size to ensure thumb positioning is accurate
+            const double squareWidth = 240.0;
+            const double squareHeight = 200.0;
+
+            return AlertDialog(
+              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // --- SELECTED COLOR PREVIEW AREA ---
+                  Row(
+                    children: [
+                      Container(
+                        width: 50, height: 50,
+                        decoration: BoxDecoration(
+                          color: hsvColor.toColor(),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                        ),
+                        child: hsvColor.toColor() == Colors.transparent 
+                            ? const Icon(Icons.block, color: Colors.red) : null,
+                      ),
+                      const SizedBox(width: 15),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Selected Color", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                          Text(colorToHex(hsvColor.toColor()), 
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // --- Saturation/Value Box with Thumb ---
+                  GestureDetector(
+                    onPanDown: (details) {
+                      double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
+                      double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
+                      updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
+                    },
+                    onPanUpdate: (details) {
+                      double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
+                      double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
+                      updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
+                    },
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: squareWidth, height: squareHeight,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            gradient: LinearGradient(
+                              colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()],
+                              begin: Alignment.centerLeft, end: Alignment.centerRight,
+                            ),
+                          ),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.transparent, Colors.black],
+                                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // THE SELECTION THUMB (INDICATOR)
+                        Positioned(
+                          left: (hsvColor.saturation * squareWidth) - 8,
+                          top: ((1 - hsvColor.value) * squareHeight) - 8,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // --- Hue Slider ---
+                  Container(
+                    width: 240, height: 12,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      gradient: const LinearGradient(
+                        colors: [
+                          Colors.red, Colors.yellow, Colors.green, 
+                          Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red
+                        ],
+                      ),
+                    ),
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 12,
+                        activeTrackColor: Colors.transparent,
+                        inactiveTrackColor: Colors.transparent,
+                        thumbColor: Colors.white,
+                      ),
+                      child: Slider(
+                        value: hsvColor.hue,
+                        min: 0, max: 360,
+                        onChanged: (v) => updateColor(hsvColor.withHue(v).toColor()),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  const Text("Preset Colors", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  
+                  // --- Presets Grid ---
+                  SizedBox(
+                    width: 260,
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8, runSpacing: 8,
+                      children: [
+                        if (mode == 2)
+                          GestureDetector(
+                            onTap: () => updateColor(Colors.transparent),
+                            child: CircleAvatar(
+                              radius: 14, backgroundColor: Colors.grey[200],
+                              child: const Icon(Icons.block, size: 16, color: Colors.red),
+                            ),
+                          ),
+                        ...pickerPresets.map((color) => GestureDetector(
+                          onTap: () => updateColor(color),
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context), 
+                  child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold))
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -516,8 +696,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
         _buildStrokeSlider(theme), _vDiv(theme),
         _buildOpacitySlider(theme), _vDiv(theme),
-        _colorButton("Border", _activeColor, false), const SizedBox(width: 12),
-        _colorButton("Fill", _fillColor, true), _vDiv(theme),
+        _colorButton("Color", _activeColor, 0), const SizedBox(width: 12),
+        _colorButton("Border", _activeBorderColor, 1), const SizedBox(width: 12),
+        _colorButton("Fill", _fillColor, 2), _vDiv(theme),
         _toolIcon(Icons.near_me, "Select", theme),
         _toolIcon(Icons.edit, "Pencil", theme),
         _toolIcon(Icons.show_chart, "Line", theme),
@@ -532,9 +713,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  Widget _colorButton(String label, Color color, bool isFill) {
+  Widget _colorButton(String label, Color color, int mode) {
     return GestureDetector(
-      onTap: () => _showColorPicker(isFill),
+      onTap: () => _showColorPicker(mode),
       child: Column(children: [
         CircleAvatar(radius: 16, backgroundColor: color == Colors.transparent ? Colors.grey[200] : color, child: color == Colors.transparent ? const Icon(Icons.block, size: 12, color: Colors.red) : null),
         const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 8)),
@@ -625,20 +806,15 @@ class MainPainter extends CustomPainter {
 
       final Rect rect = obj.rect;
       
-      // --- RESPONSIVE TEXT HANDLING ---
       if (obj.type == DrawingType.text && obj.text != null) {
-        // Calculate font size based on the current height of the bounding box.
-        // 0.8 is a safety factor to keep text within the selection handles.
         double dynamicFontSize = rect.height * 0.8;
-        
-        // Prevent font size from becoming zero or negative during weird drags
         if (dynamicFontSize < 1) dynamicFontSize = 1;
 
         final textPainter = TextPainter(
           text: TextSpan(
             text: obj.text,
             style: TextStyle(
-              color: obj.color.withOpacity(obj.opacity),
+              color: obj.color, 
               fontSize: dynamicFontSize, 
               fontWeight: FontWeight.normal,
             ),
@@ -647,7 +823,6 @@ class MainPainter extends CustomPainter {
           textAlign: TextAlign.left,
         );
         
-        // Use the width of the box to handle wrapping
         textPainter.layout(maxWidth: rect.width > 0 ? rect.width : 1);
         textPainter.paint(canvas, rect.topLeft);
       } else {
@@ -658,7 +833,7 @@ class MainPainter extends CustomPainter {
         }
 
         final strokePaint = Paint()
-          ..color = obj.color.withOpacity(obj.opacity)
+          ..color = obj.color 
           ..strokeWidth = obj.strokeWidth
           ..style = PaintingStyle.stroke
           ..strokeCap = StrokeCap.round
@@ -682,6 +857,7 @@ class MainPainter extends CustomPainter {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
         
+        // Rotation handle remains for all
         Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
         canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
         canvas.drawCircle(rotPos, 12, wP);
@@ -694,8 +870,17 @@ class MainPainter extends CustomPainter {
         rotIcon.layout();
         rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
 
-        final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
-        for (var p in points) { canvas.drawCircle(p, 7, wP); canvas.drawCircle(p, 5, hP); }
+        // --- CRITICAL CHANGE: Only draw resize handles if NOT a Pencil ---
+        if (obj.type != DrawingType.pencil) {
+          final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
+          for (var p in points) { 
+            canvas.drawCircle(p, 7, wP); 
+            canvas.drawCircle(p, 5, hP); 
+          }
+        } else {
+          // Optional: draw just a simple bounding box for pencil to show it's selected
+          canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
+        }
       }
       canvas.restore();
     }
