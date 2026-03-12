@@ -7,6 +7,9 @@ import '../screens/settings/settings_screen.dart';
 import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
+
+import '../screens/canvas/canvas_screen.dart';
+
 import '../screens/layout/not_found_screen.dart';
 
 // final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -29,6 +32,10 @@ final router = GoRouter(
     GoRoute(
       path: '/loading',
       builder: (context, state) => const AppLoadingScreen(),
+    ),
+    GoRoute(
+      path: '/canvas',
+      builder:(context, state) => const CanvasScreen(),
     ),
 
     // --- PRIVATE ROUTES (Wrapped in ShellRoute) ---
@@ -59,6 +66,10 @@ final router = GoRouter(
             ),
           ],
         ),
+        // GoRoute(
+        //   path: '/canvas',
+        //   builder:(context, state) => const CanvasScreen(),
+        // )
       ],
     ),
   ],
