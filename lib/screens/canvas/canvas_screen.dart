@@ -1,43 +1,68 @@
 import 'dart:ui' as ui;
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
-enum DrawingType { line, rect, circle }
-enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, body, none }
+enum DrawingType { line, rect, circle, pencil } // Added pencil
+enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, none }
 
 class DrawingObject {
   Offset start;
   Offset end;
+  List<Offset>? points; // Added for Pencil tool
   double strokeWidth;
   Color color;
   Color fillColor;
   double opacity; 
   bool isSelected;
   DrawingType type;
+  double rotation; 
 
   DrawingObject({
     required this.start,
     required this.end,
     required this.type,
+    this.points, // Initialize points
     this.strokeWidth = 2.0,
     this.color = Colors.black,
     this.fillColor = Colors.transparent,
     this.opacity = 1.0,
     this.isSelected = false,
+    this.rotation = 0.0,
   });
 
-  Rect get rect => Rect.fromPoints(start, end);
+  // Calculate Rect based on points for Pencil, otherwise use start/end
+  Rect get rect {
+    if (type == DrawingType.pencil && points != null && points!.isNotEmpty) {
+      double minX = points![0].dx;
+      double maxX = points![0].dx;
+      double minY = points![0].dy;
+      double maxY = points![0].dy;
+      for (var p in points!) {
+        minX = math.min(minX, p.dx);
+        maxX = math.max(maxX, p.dx);
+        minY = math.min(minY, p.dy);
+        maxY = math.max(maxY, p.dy);
+      }
+      return Rect.fromLTRB(minX, minY, maxX, maxY);
+    }
+    return Rect.fromPoints(start, end);
+  }
+
+  Offset get center => rect.center;
 
   DrawingObject copy() => DrawingObject(
         start: start,
         end: end,
         type: type,
+        points: points != null ? List.from(points!) : null, // Copy points list
         strokeWidth: strokeWidth,
         color: color,
         fillColor: fillColor,
         opacity: opacity,
         isSelected: isSelected,
+        rotation: rotation,
       );
 }
 
@@ -69,6 +94,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   ResizeHandle _activeHandle = ResizeHandle.none;
   ResizeHandle _hoveredHandle = ResizeHandle.none;
   Offset _dragOffset = Offset.zero;
+  double _initialRotationAngle = 0.0;
 
   final List<Color> _availableColors = [
     Colors.transparent, Colors.black, Colors.white, Colors.grey, Colors.red, 
@@ -85,7 +111,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _saveSnapshot() {
     _undoStack.add(_drawingObjects.map((e) => e.copy()).toList());
     if (_undoStack.length > 50) _undoStack.removeAt(0);
-    _redoStack.clear(); // New action invalidates redo history
+    _redoStack.clear(); 
   }
 
   void _undo() {
@@ -118,7 +144,186 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  // --- COLOR PICKER ---
+  // --- MATH HELPERS ---
+  Offset _toLocalSpace(Offset point, DrawingObject obj) {
+    final double cos = math.cos(-obj.rotation);
+    final double sin = math.sin(-obj.rotation);
+    final double dx = point.dx - obj.center.dx;
+    final double dy = point.dy - obj.center.dy;
+    return Offset(
+      cos * dx - sin * dy + obj.center.dx,
+      sin * dx + cos * dy + obj.center.dy,
+    );
+  }
+
+  // --- GESTURE HELPERS ---
+  MouseCursor _getCursor(ResizeHandle handle) {
+    switch (handle) {
+      case ResizeHandle.topLeft:
+      case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
+      case ResizeHandle.topRight:
+      case ResizeHandle.bottomLeft: return SystemMouseCursors.resizeUpRightDownLeft;
+      case ResizeHandle.topCenter:
+      case ResizeHandle.bottomCenter: return SystemMouseCursors.resizeUpDown;
+      case ResizeHandle.centerLeft:
+      case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
+      case ResizeHandle.rotation: return SystemMouseCursors.grab;
+      case ResizeHandle.body: return SystemMouseCursors.move;
+      default: return SystemMouseCursors.basic;
+    }
+  }
+
+  ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
+    const double hSize = 25.0; 
+    final localP = _toLocalSpace(p, obj);
+    final r = obj.rect;
+
+    if (obj.isSelected) {
+      Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
+      if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
+
+      if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
+      if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
+      if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
+      if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
+      if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
+      if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
+      if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
+      if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+    }
+    if (obj.type == DrawingType.line) {
+      if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
+    } else {
+      if (r.inflate(5).contains(localP)) return ResizeHandle.body;
+    }
+    return ResizeHandle.none;
+  }
+
+  void _handlePointerDown(PointerDownEvent details) {
+    final pos = details.localPosition;
+    setState(() {
+      if (_selectedTool != 'Select') {
+        _saveSnapshot();
+        for (var obj in _drawingObjects) obj.isSelected = false;
+        
+        DrawingType type;
+        List<Offset>? pts;
+        
+        if (_selectedTool == 'Pencil') {
+          type = DrawingType.pencil;
+          pts = [pos];
+        } else {
+          type = _selectedTool == 'Rect' ? DrawingType.rect : (_selectedTool == 'Circle' ? DrawingType.circle : DrawingType.line);
+        }
+
+        _currentPreview = DrawingObject(
+          start: pos, end: pos, type: type, points: pts,
+          strokeWidth: _strokeWidth, color: _activeColor,
+          fillColor: _fillColor, opacity: _opacity,
+        );
+      } else {
+        _activeHandle = ResizeHandle.none;
+        DrawingObject? hitObj;
+        ResizeHandle hitHandle = ResizeHandle.none;
+
+        for (var obj in _drawingObjects.reversed) {
+          hitHandle = _getHitHandle(pos, obj);
+          if (hitHandle != ResizeHandle.none) { hitObj = obj; break; }
+        }
+
+        if (hitObj != null) {
+          if (!hitObj.isSelected) _saveSnapshot();
+          for (var obj in _drawingObjects) obj.isSelected = false;
+          hitObj.isSelected = true;
+          _activeObject = hitObj;
+          _activeHandle = hitHandle;
+          
+          if (hitHandle == ResizeHandle.rotation) {
+             _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
+          } else if (hitHandle == ResizeHandle.body) {
+            _dragOffset = pos - hitObj.start;
+          }
+        } else {
+          for (var obj in _drawingObjects) obj.isSelected = false;
+          _activeObject = null;
+        }
+      }
+    });
+  }
+
+  void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
+    final pos = details.localPosition;
+    final double maxWidth = constraints.maxWidth;
+    final double maxHeight = constraints.maxHeight;
+
+    setState(() {
+      if (_currentPreview != null) {
+        if (_currentPreview!.type == DrawingType.pencil) {
+          _currentPreview!.points!.add(pos);
+        } else {
+          _currentPreview!.end = Offset(pos.dx.clamp(0.0, maxWidth), pos.dy.clamp(0.0, maxHeight));
+        }
+      } else if (_activeObject != null && _activeHandle != ResizeHandle.none) {
+        
+        if (_activeHandle == ResizeHandle.rotation) {
+          _activeObject!.rotation = math.atan2(pos.dy - _activeObject!.center.dy, pos.dx - _activeObject!.center.dx) - _initialRotationAngle;
+        } else if (_activeHandle == ResizeHandle.body) {
+          Offset delta = _activeObject!.end - _activeObject!.start;
+          double newX = (pos.dx - _dragOffset.dx).clamp(0.0, maxWidth - delta.dx.abs());
+          double newY = (pos.dy - _dragOffset.dy).clamp(0.0, maxHeight - delta.dy.abs());
+          
+          Offset moveDelta = Offset(newX, newY) - _activeObject!.start;
+          _activeObject!.start = Offset(newX, newY);
+          _activeObject!.end = Offset(newX + delta.dx, newY + delta.dy);
+          
+          if (_activeObject!.type == DrawingType.pencil) {
+            _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
+          }
+        } else {
+          final localP = _toLocalSpace(pos, _activeObject!);
+          Rect r = _activeObject!.rect;
+          double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+
+          switch (_activeHandle) {
+            case ResizeHandle.topLeft: left = localP.dx; top = localP.dy; break;
+            case ResizeHandle.topCenter: top = localP.dy; break;
+            case ResizeHandle.topRight: right = localP.dx; top = localP.dy; break;
+            case ResizeHandle.centerLeft: left = localP.dx; break;
+            case ResizeHandle.centerRight: right = localP.dx; break;
+            case ResizeHandle.bottomLeft: left = localP.dx; bottom = localP.dy; break;
+            case ResizeHandle.bottomCenter: bottom = localP.dy; break;
+            case ResizeHandle.bottomRight: right = localP.dx; bottom = localP.dy; break;
+            default: break;
+          }
+          _activeObject!.start = Offset(left, top);
+          _activeObject!.end = Offset(right, bottom);
+        }
+      }
+    });
+  }
+
+  void _handlePointerUp(PointerUpEvent details) {
+    setState(() {
+      if (_currentPreview != null) {
+        for (var obj in _drawingObjects) obj.isSelected = false;
+        _currentPreview!.isSelected = true;
+        _drawingObjects.add(_currentPreview!);
+        _activeObject = _currentPreview;
+        _selectedTool = 'Select'; 
+        _currentPreview = null;
+      }
+      _activeHandle = ResizeHandle.none;
+    });
+  }
+
+  double _distToSegment(Offset p, Offset v, Offset w) {
+    double l2 = (v - w).distanceSquared;
+    if (l2 == 0) return (p - v).distance;
+    double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
+    t = t.clamp(0.0, 1.0);
+    return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
+  }
+
   void _showColorPicker(bool isFill) {
     showDialog(
       context: context,
@@ -152,159 +357,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  // --- GESTURE HELPERS ---
-  MouseCursor _getCursor(ResizeHandle handle) {
-    switch (handle) {
-      case ResizeHandle.topLeft:
-      case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
-      case ResizeHandle.topRight:
-      case ResizeHandle.bottomLeft: return SystemMouseCursors.resizeUpRightDownLeft;
-      case ResizeHandle.topCenter:
-      case ResizeHandle.bottomCenter: return SystemMouseCursors.resizeUpDown;
-      case ResizeHandle.centerLeft:
-      case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
-      case ResizeHandle.body: return SystemMouseCursors.move;
-      default: return SystemMouseCursors.basic;
-    }
-  }
-
-  ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    const double hSize = 25.0; 
-    final r = obj.rect;
-    if (obj.isSelected) {
-      if ((p - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
-      if ((p - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
-      if ((p - r.topRight).distance < hSize) return ResizeHandle.topRight;
-      if ((p - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
-      if ((p - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
-      if ((p - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
-      if ((p - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
-      if ((p - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
-    }
-    if (obj.type == DrawingType.line) {
-      if (_distToSegment(p, obj.start, obj.end) < 15) return ResizeHandle.body;
-    } else {
-      if (obj.rect.inflate(5).contains(p)) return ResizeHandle.body;
-    }
-    return ResizeHandle.none;
-  }
-
-  void _handlePointerDown(PointerDownEvent details) {
-    final pos = details.localPosition;
-    setState(() {
-      if (_selectedTool != 'Select') {
-        _saveSnapshot();
-        for (var obj in _drawingObjects) obj.isSelected = false;
-        DrawingType type = _selectedTool == 'Rect' ? DrawingType.rect : (_selectedTool == 'Circle' ? DrawingType.circle : DrawingType.line);
-
-        _currentPreview = DrawingObject(
-          start: pos, end: pos, type: type,
-          strokeWidth: _strokeWidth, color: _activeColor,
-          fillColor: _fillColor, opacity: _opacity,
-        );
-      } else {
-        _activeHandle = ResizeHandle.none;
-        DrawingObject? hitObj;
-        ResizeHandle hitHandle = ResizeHandle.none;
-
-        for (var obj in _drawingObjects.reversed) {
-          if (obj.isSelected) {
-            hitHandle = _getHitHandle(pos, obj);
-            if (hitHandle != ResizeHandle.none && hitHandle != ResizeHandle.body) { hitObj = obj; break; }
-          }
-        }
-        if (hitObj == null) {
-          for (var obj in _drawingObjects.reversed) {
-            hitHandle = _getHitHandle(pos, obj);
-            if (hitHandle != ResizeHandle.none) { hitObj = obj; break; }
-          }
-        }
-
-        if (hitObj != null) {
-          for (var obj in _drawingObjects) obj.isSelected = false;
-          hitObj.isSelected = true;
-          _activeObject = hitObj;
-          _activeHandle = hitHandle;
-          _strokeWidth = hitObj.strokeWidth;
-          _activeColor = hitObj.color;
-          _fillColor = hitObj.fillColor;
-          _opacity = hitObj.opacity;
-          if (hitHandle == ResizeHandle.body) _dragOffset = pos - hitObj.start;
-        } else {
-          for (var obj in _drawingObjects) obj.isSelected = false;
-          _activeObject = null;
-        }
-      }
-    });
-  }
-
-  void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
-    final pos = details.localPosition;
-    final double maxWidth = constraints.maxWidth;
-    final double maxHeight = constraints.maxHeight;
-
-    setState(() {
-      if (_currentPreview != null) {
-        _currentPreview!.end = Offset(pos.dx.clamp(0.0, maxWidth), pos.dy.clamp(0.0, maxHeight));
-      } else if (_activeObject != null && _activeHandle != ResizeHandle.none) {
-        // Save snapshot only once when movement starts
-        if (details.delta.distance > 0.1 && _undoStack.isEmpty || (_undoStack.isNotEmpty && _undoStack.last != _drawingObjects)) {
-           // Movement logic usually handles snapshotting on PointerDown or PointerUp to avoid filling stack
-        }
-
-        Rect r = _activeObject!.rect;
-        double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
-
-        if (_activeHandle == ResizeHandle.body) {
-          Offset delta = _activeObject!.end - _activeObject!.start;
-          double newX = (pos.dx - _dragOffset.dx).clamp(0.0, maxWidth - delta.dx.abs());
-          double newY = (pos.dy - _dragOffset.dy).clamp(0.0, maxHeight - delta.dy.abs());
-          _activeObject!.start = Offset(newX, newY);
-          _activeObject!.end = Offset(newX + delta.dx, newY + delta.dy);
-        } else {
-          double px = pos.dx.clamp(0.0, maxWidth);
-          double py = pos.dy.clamp(0.0, maxHeight);
-          switch (_activeHandle) {
-            case ResizeHandle.topLeft: left = px; top = py; break;
-            case ResizeHandle.topCenter: top = py; break;
-            case ResizeHandle.topRight: right = px; top = py; break;
-            case ResizeHandle.centerLeft: left = px; break;
-            case ResizeHandle.centerRight: right = px; break;
-            case ResizeHandle.bottomLeft: left = px; bottom = py; break;
-            case ResizeHandle.bottomCenter: bottom = py; break;
-            case ResizeHandle.bottomRight: right = px; bottom = py; break;
-            default: break;
-          }
-          _activeObject!.start = Offset(left, top);
-          _activeObject!.end = Offset(right, bottom);
-        }
-      }
-    });
-  }
-
-  void _handlePointerUp(PointerUpEvent details) {
-    setState(() {
-      if (_currentPreview != null) {
-        for (var obj in _drawingObjects) obj.isSelected = false;
-        _currentPreview!.isSelected = true;
-        _drawingObjects.add(_currentPreview!);
-        _activeObject = _currentPreview;
-        _selectedTool = 'Select'; 
-        _currentPreview = null;
-      }
-      _activeHandle = ResizeHandle.none;
-    });
-  }
-
-  double _distToSegment(Offset p, Offset v, Offset w) {
-    double l2 = (v - w).distanceSquared;
-    if (l2 == 0) return (p - v).distance;
-    double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
-    t = t.clamp(0.0, 1.0);
-    return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
-  }
-
-  // --- KEYBOARD SHORTCUTS WRAPPER ---
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -391,8 +443,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _buildOpacitySlider(theme), _vDiv(theme),
         _colorButton("Border", _activeColor, false), const SizedBox(width: 12),
         _colorButton("Fill", _fillColor, true), _vDiv(theme),
-        _toolIcon(Icons.near_me, "Select", theme), _toolIcon(Icons.show_chart, "Line", theme),
-        _toolIcon(Icons.crop_square, "Rect", theme), _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
+        _toolIcon(Icons.near_me, "Select", theme),
+        _toolIcon(Icons.edit, "Pencil", theme), // Added Pencil after Select
+        _toolIcon(Icons.show_chart, "Line", theme),
+        _toolIcon(Icons.crop_square, "Rect", theme), 
+        _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
         _vDiv(theme), 
         _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
         _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
@@ -487,29 +542,67 @@ class MainPainter extends CustomPainter {
     for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
 
     void drawShape(DrawingObject obj) {
+      canvas.save();
+      
+      canvas.translate(obj.center.dx, obj.center.dy);
+      canvas.rotate(obj.rotation);
+      canvas.translate(-obj.center.dx, -obj.center.dy);
+
       final Rect rect = obj.rect;
       
-      // 1. FILL (Inside)
-      if (obj.type != DrawingType.line && obj.fillColor != Colors.transparent) {
+      // 1. FILL
+      if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
         final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
         if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
         if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
       }
 
-      // 2. STROKE (Border)
-      final strokePaint = Paint()..color = obj.color..strokeWidth = obj.strokeWidth..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-      if (obj.type == DrawingType.line) canvas.drawLine(obj.start, obj.end, strokePaint);
-      else if (obj.type == DrawingType.rect) canvas.drawRect(rect, strokePaint);
-      else if (obj.type == DrawingType.circle) canvas.drawOval(rect, strokePaint);
+      // 2. STROKE
+      final strokePaint = Paint()
+        ..color = obj.color
+        ..strokeWidth = obj.strokeWidth
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+      if (obj.type == DrawingType.pencil && obj.points != null && obj.points!.isNotEmpty) {
+        Path path = Path();
+        path.moveTo(obj.points![0].dx, obj.points![0].dy);
+        for (var i = 1; i < obj.points!.length; i++) {
+          path.lineTo(obj.points![i].dx, obj.points![i].dy);
+        }
+        canvas.drawPath(path, strokePaint);
+      } else if (obj.type == DrawingType.line) {
+        canvas.drawLine(obj.start, obj.end, strokePaint);
+      } else if (obj.type == DrawingType.rect) {
+        canvas.drawRect(rect, strokePaint);
+      } else if (obj.type == DrawingType.circle) {
+        canvas.drawOval(rect, strokePaint);
+      }
 
       // 3. SELECTION HANDLES
       if (obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
+        
+        Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
+        canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
+        canvas.drawCircle(rotPos, 12, wP);
+        canvas.drawCircle(rotPos, 10, hP);
+
+        final textPainter = TextPainter(
+          text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        textPainter.paint(canvas, rotPos - Offset(textPainter.width / 2, textPainter.height / 2));
+
         final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
         for (var p in points) { canvas.drawCircle(p, 7, wP); canvas.drawCircle(p, 5, hP); }
       }
+      canvas.restore();
     }
+    
     for (var obj in objects) drawShape(obj);
     if (preview != null) drawShape(preview!);
   }
