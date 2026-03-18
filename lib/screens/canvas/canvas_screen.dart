@@ -99,11 +99,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   double _initialRotationAngle = 0.0;
   DateTime? _lastTapTime; 
 
-  final List<Color> _availableColors = [
-    Colors.transparent, Colors.black, Colors.white, Colors.grey, Colors.red, 
-    Colors.orange, Colors.yellow, Colors.green, Colors.blue, Colors.purple,
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -682,36 +677,148 @@ class _CanvasScreenState extends State<CanvasScreen> {
       height: 64, padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)))),
       child: Row(children: [
-        const Icon(Icons.arrow_back), const SizedBox(width: 15),
-        Text("Canvas Designer Pro", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        // const Icon(Icons.arrow_back), const SizedBox(width: 15),
+        Text("Canvas", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         const Spacer(),
         _buildPageSelector(theme), const SizedBox(width: 20), const Icon(Icons.save_outlined),
       ]),
     );
   }
 
-  Widget _buildFullWidthToolbar(ThemeData theme) {
-    return Container(
-      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8), color: theme.colorScheme.surface,
-      child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-        _buildStrokeSlider(theme), _vDiv(theme),
-        _buildOpacitySlider(theme), _vDiv(theme),
-        _colorButton("Color", _activeColor, 0), const SizedBox(width: 12),
-        _colorButton("Border", _activeBorderColor, 1), const SizedBox(width: 12),
-        _colorButton("Fill", _fillColor, 2), _vDiv(theme),
-        _toolIcon(Icons.near_me, "Select", theme),
-        _toolIcon(Icons.edit, "Pencil", theme),
-        _toolIcon(Icons.show_chart, "Line", theme),
-        _toolIcon(Icons.crop_square, "Rect", theme), 
-        _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
-        _toolIcon(Icons.title, "Text", theme),
-        _vDiv(theme), 
-        _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-        _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-        _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-      ])),
+
+  IconData _getShapeIcon(String tool) {
+    switch (tool) {
+      case 'Line': return Icons.show_chart;
+      case 'Rect': return Icons.crop_square;
+      case 'Circle': return Icons.panorama_fish_eye;
+      default: return Icons.crop_square; // Default look when no shape is picked
+    }
+  }
+ 
+  bool _isShapeSelected(String tool) {
+    return ['Rect', 'Line', 'Circle'].contains(tool);
+  }
+
+  PopupMenuItem<String> _buildPopupItem(String value, IconData icon, String label, String shortcut) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label)),
+          Text(shortcut, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
+      ),
     );
   }
+  
+  Widget _buildFullWidthToolbar(ThemeData theme) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    color: theme.colorScheme.surface,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _buildStrokeSlider(theme),
+          _vDiv(theme),
+          _buildOpacitySlider(theme),
+          _vDiv(theme),
+          _colorButton("Color", _activeColor, 0),
+          const SizedBox(width: 12),
+          _colorButton("Border", _activeBorderColor, 1),
+          const SizedBox(width: 12),
+          _colorButton("Fill", _fillColor, 2),
+          _vDiv(theme),
+          
+          // Selection and Pencil tools stay as direct icons 🖱️
+          _toolIcon(Icons.near_me, "Select", theme),
+          _toolIcon(Icons.edit, "Pencil", theme),
+
+          // 🔽 THE SHAPE DROPDOWN 🔽
+          // This replaces the individual Line, Rect, and Circle icons
+          PopupMenuButton<String>(
+            tooltip: "Shapes",
+            onSelected: (String value) => setState(() => _selectedTool = value),
+            // 1. Using 'child' lets us define the custom UI of the button itself
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // The main tool icon in the circle ⭕
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: _isShapeSelected(_selectedTool) 
+                            ? theme.colorScheme.primary 
+                            : theme.colorScheme.surfaceContainer,
+                        child: Icon(
+                          _getShapeIcon(_selectedTool),
+                          color: _isShapeSelected(_selectedTool) 
+                              ? theme.colorScheme.onPrimary 
+                              : theme.colorScheme.onSurface,
+                          size: 16,
+                        ),
+                      ),
+                      // 2. The dropdown arrow icon 🔽
+                      Icon(
+                        Icons.arrow_drop_down,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text("Shapes", style: TextStyle(fontSize: 9)),
+                ],
+              ),
+            ),
+            itemBuilder: (context) => [
+              _buildPopupItem('Rect', Icons.crop_square, 'Rectangle', 'R'),
+              _buildPopupItem('Line', Icons.show_chart, 'Line', 'L'),
+              _buildPopupItem('Circle', Icons.panorama_fish_eye, 'Ellipse', 'O'),
+            ],
+          ),
+
+          _toolIcon(Icons.title, "Text", theme),
+          _vDiv(theme),
+          _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+          _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+          _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, 
+              isDestructive: true, isEnabled: _activeObject != null),
+        ],
+      ),
+    ),
+  );
+}
+
+  // Widget _buildFullWidthToolbar(ThemeData theme) {
+  //   return Container(
+  //     width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8), color: theme.colorScheme.surface,
+  //     child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+  //       _buildStrokeSlider(theme), _vDiv(theme),
+  //       _buildOpacitySlider(theme), _vDiv(theme),
+  //       _colorButton("Color", _activeColor, 0), const SizedBox(width: 12),
+  //       _colorButton("Border", _activeBorderColor, 1), const SizedBox(width: 12),
+  //       _colorButton("Fill", _fillColor, 2), _vDiv(theme),
+  //       _toolIcon(Icons.near_me, "Select", theme),
+  //       _toolIcon(Icons.edit, "Pencil", theme),
+  //       _toolIcon(Icons.show_chart, "Line", theme),
+  //       _toolIcon(Icons.crop_square, "Rect", theme), 
+  //       _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
+  //       _toolIcon(Icons.title, "Text", theme),
+  //       _vDiv(theme), 
+  //       _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+  //       _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+  //       _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
+  //     ])),
+  //   );
+  // }
 
   Widget _colorButton(String label, Color color, int mode) {
     return GestureDetector(
@@ -765,6 +872,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _vDiv(ThemeData theme) => VerticalDivider(width: 32, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
   Widget _buildRightPanel(ThemeData theme) => Container(width: 240, color: theme.colorScheme.surfaceContainer, child: const Center(child: Text("Properties")));
+
 }
 
 // --- PAINTERS ---
