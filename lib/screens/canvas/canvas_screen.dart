@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
-enum DrawingType { line, rect, circle, pencil, text, arrow }
+enum DrawingType { line, rect, circle, pencil, text, arrow, pen } // 👈 Added pen
 enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, none }
 
 class DrawingObject {
@@ -48,7 +48,8 @@ class DrawingObject {
   });
 
   Rect get rect {
-    if (type == DrawingType.pencil && points != null && points!.isNotEmpty) {
+    // 🔽 ADDED DrawingType.pen HERE 🔽
+    if ((type == DrawingType.pencil || type == DrawingType.pen) && points != null && points!.isNotEmpty) {
       double minX = points![0].dx;
       double maxX = points![0].dx;
       double minY = points![0].dy;
@@ -96,18 +97,34 @@ class CanvasScreen extends StatefulWidget {
 
 class _CanvasScreenState extends State<CanvasScreen> {
   String _selectedTool = 'Select';
-  double _strokeWidth = 2.0;
-  double _opacity = 1.0; 
+
+  double _pencilStrokeWidth = 2.0;
+  double _shapeStrokeWidth = 2.0;
+  double _textStrokeWidth = 2.0;
   
+  // 1. Pencil & Pen State
   Color _pencilColor = Colors.black;
-  
+  Color _penFillColor = Colors.transparent;
+  double _pencilOpacity = 1.0; 
+
+  // 2. Shapes State (Rect, Circle, Line, Arrow)
   Color _shapeLineColor = Colors.black;
   Color _shapeBorderColor = Colors.black;
   Color _shapeFillColor = Colors.transparent;
-  
+  double _shapeOpacity = 1.0;
+
+  // 3. Text State
   Color _textColor = Colors.black;
   Color _textBorderColor = Colors.transparent;
-  Color _textFillColor = Colors.transparent;   
+  Color _textFillColor = Colors.transparent;
+  double _textOpacity = 1.0;
+
+  // Text Formatting State
+  double _textSize = 24.0;
+  bool _textIsBold = false;
+  bool _textIsItalic = false;
+  bool _textIsUnderline = false;
+  bool _textIsStrikethrough = false;   
   
   List<String> _pages = ['Page 1'];
   late String _currentPage;
@@ -126,13 +143,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   DateTime? _lastTapTime;
   bool _showShapeToolbar = false;
   bool _showTextToolbar = false; 
+  bool _showPencilToolbar = false; // 👈 Add this new line!
 
-  // --- Text Formatting State ---
-  double _textSize = 24.0;
-  bool _textIsBold = false;
-  bool _textIsItalic = false;
-  bool _textIsUnderline = false;
-  bool _textIsStrikethrough = false;
 
   @override
   void initState() {
@@ -170,7 +182,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   final textPainter = TextPainter(
                     text: TextSpan(
                       text: controller.text,
-                      style: TextStyle(fontSize: _strokeWidth * 10),
+                      style: TextStyle(fontSize: _textStrokeWidth * 10),
                     ),
                     textDirection: TextDirection.ltr,
                   )..layout(maxWidth: 500);
@@ -189,9 +201,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       color: _textColor,         // 👈 Now uses the dedicated Text Color!
                       fillColor: _textFillColor, // 👈 Now applies the Text Fill Color!
                       borderColor: _textBorderColor, // 👈 NEW: Border color
-                      opacity: _opacity,
+                      opacity: _textOpacity, // 👈 Now uses dedicated Text Opacity!
                       isSelected: true,
-                      strokeWidth: _strokeWidth,
+                      strokeWidth: _textStrokeWidth,
                     );
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
@@ -273,7 +285,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    const double hSize = 25.0; 
+    const double hSize = 25.0; // Tip: Increase this to 40.0 for better touch device support!
     final localP = _toLocalSpace(p, obj);
     final r = obj.rect;
 
@@ -281,8 +293,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
       if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
-      // --- CRITICAL CHANGE: Disable resize hits for Pencil ---
-      if (obj.type != DrawingType.pencil) {
+      // 🔽 EXCLUDE PEN AND PENCIL FROM RESIZE HANDLES 🔽
+      if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
         if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
         if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
         if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
@@ -294,12 +306,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
       }
     }
     
+    // 🔽 LINE-BASED HIT DETECTION 🔽
     if (obj.type == DrawingType.line) {
       if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
-    } else if (obj.type == DrawingType.pencil && obj.points != null) {
+    } 
+    // Both Pencil and Pen use line-segment distance for selection!
+    else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
       for (int i = 0; i < obj.points!.length - 1; i++) {
+        // Distance check threshold is 15px. Click within 15px of any line to select.
         if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < 15) return ResizeHandle.body;
       }
+      // Optional: If the pen shape has a solid fill, also allow clicking inside it
+      if (obj.fillColor != Colors.transparent && r.contains(localP)) return ResizeHandle.body;
     } else {
       if (r.inflate(5).contains(localP)) return ResizeHandle.body;
     }
@@ -316,41 +334,60 @@ class _CanvasScreenState extends State<CanvasScreen> {
       } else if (_selectedTool == 'Eraser') {
         _saveSnapshot();
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
+      } else if (_selectedTool == 'Pen') {
+        if (_currentPreview == null) {
+          // 1st Click: Start a new Pen shape
+          _currentPreview = DrawingObject(
+            start: pos, end: pos, type: DrawingType.pen,
+            points: [pos, pos], 
+            strokeWidth: _pencilStrokeWidth, 
+            color: _pencilColor,
+            fillColor: _penFillColor, 
+            opacity: _pencilOpacity, // 👈 Dedicated Pen Opacity
+          );
+        } else {
+          if (_currentPreview!.points!.length > 2 && (pos - _currentPreview!.points!.first).distance < 15) {
+            _currentPreview!.points!.last = _currentPreview!.points!.first;
+            _finalizeCurrentPreview();
+          } else {
+            _currentPreview!.points!.last = pos;
+            _currentPreview!.points!.add(pos);
+          }
+        }
       } else if (_selectedTool != 'Select') {
         _saveSnapshot();
         for (var obj in _drawingObjects) obj.isSelected = false;
         
         DrawingType type = (_selectedTool == 'Pencil') ? DrawingType.pencil : 
-                   (_selectedTool == 'Rect') ? DrawingType.rect : 
-                   (_selectedTool == 'Circle') ? DrawingType.circle : 
-                   (_selectedTool == 'Arrow') ? DrawingType.arrow : DrawingType.line;
-                           
+                           (_selectedTool == 'Rect') ? DrawingType.rect : 
+                           (_selectedTool == 'Circle') ? DrawingType.circle : 
+                           (_selectedTool == 'Arrow') ? DrawingType.arrow : DrawingType.line;
+        
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
-
+        
         Color objColor = Colors.black;
         Color objFill = Colors.transparent;
+        double objOpacity = 1.0; 
+        double objStroke = 2.0; // 👈 Setup local stroke router
 
-        // Route the correct color based on the selected tool
         if (type == DrawingType.pencil) {
-          objColor = _pencilColor;
+          objColor = _pencilColor; objFill = _penFillColor; objOpacity = _pencilOpacity; 
+          objStroke = _pencilStrokeWidth; // 👈 Route Pencil Stroke
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
-          objColor = _shapeLineColor;
-        } else if (type == DrawingType.rect || type == DrawingType.circle) {
-          objColor = _shapeBorderColor;
-          objFill = _shapeFillColor;
-        } else if (type == DrawingType.text) {
-          objColor = _textColor; 
-          objFill = _textFillColor;
+          objColor = _shapeLineColor; objOpacity = _shapeOpacity;  
+          objStroke = _shapeStrokeWidth;  // 👈 Route Shape Stroke
+        } else if (type == DrawingType.rect || type == DrawingType.circle) { 
+          objColor = _shapeBorderColor; objFill = _shapeFillColor; objOpacity = _shapeOpacity;  
+          objStroke = _shapeStrokeWidth;  // 👈 Route Shape Stroke
         }
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts,
-          strokeWidth: _strokeWidth, 
-          color: objColor,
-          fillColor: objFill, 
-          opacity: _opacity,
+          strokeWidth: objStroke, // 👈 Assign the routed stroke!
+          color: objColor, fillColor: objFill, opacity: objOpacity,
         );
       } else {
+        // ... (Keep your existing Select Tool resizing/hit-testing logic here) ...
         _activeHandle = ResizeHandle.none;
         DrawingObject? hitObj;
         ResizeHandle hitHandle = ResizeHandle.none;
@@ -361,25 +398,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
 
         if (hitObj != null) {
-          if (hitObj.type == DrawingType.text && 
-              _lastTapTime != null && 
-              now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
-            _showTextDialog(position: pos, existingObject: hitObj);
-            return;
+          if (hitObj.type == DrawingType.text && _lastTapTime != null && now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
+            _showTextDialog(position: pos, existingObject: hitObj); return;
           }
           _lastTapTime = now;
-
           if (!hitObj.isSelected) _saveSnapshot();
           for (var obj in _drawingObjects) obj.isSelected = false;
           hitObj.isSelected = true;
-          _activeObject = hitObj;
-          _activeHandle = hitHandle;
-          
-          if (hitHandle == ResizeHandle.rotation) {
-             _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
-          } else if (hitHandle == ResizeHandle.body) {
-            _dragOffset = pos - hitObj.start;
-          }
+          _activeObject = hitObj; _activeHandle = hitHandle;
+          if (hitHandle == ResizeHandle.rotation) _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
+          else if (hitHandle == ResizeHandle.body) _dragOffset = pos - hitObj.start;
         } else {
           for (var obj in _drawingObjects) obj.isSelected = false;
           _activeObject = null;
@@ -387,7 +415,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       }
     });
   }
-
+  
   void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
     final pos = details.localPosition;
     setState(() {
@@ -407,7 +435,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           Offset moveDelta = (pos - _dragOffset) - _activeObject!.start;
           _activeObject!.start = pos - _dragOffset;
           _activeObject!.end = _activeObject!.start + delta;
-          if (_activeObject!.type == DrawingType.pencil) {
+          // 🔽 ADDED DrawingType.pen HERE 🔽
+          if (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.pen) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
         } else {
@@ -435,7 +464,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _handlePointerUp(PointerUpEvent details) {
     setState(() {
-      if (_currentPreview != null) {
+      // 🔽 Block Pen from finishing when releasing the mouse! 🔽
+      if (_currentPreview != null && _currentPreview!.type != DrawingType.pen) {
         for (var obj in _drawingObjects) obj.isSelected = false;
         _currentPreview!.isSelected = true;
         _drawingObjects.add(_currentPreview!);
@@ -456,7 +486,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _showColorPicker(int mode) {
-    // Save snapshot ONCE when the dialog opens, not while dragging the slider!
     _saveSnapshot(); 
 
     final List<Color> pickerPresets = [
@@ -469,19 +498,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
     ];
 
     Color currentColor;
+    double currentOpacity = 1.0;
+
+    // Route the Colors AND the Opacities based on the mode
     switch(mode) {
-      case 0: currentColor = _pencilColor; break;
-      case 1: currentColor = _shapeLineColor; break;
-      case 2: currentColor = _shapeBorderColor; break;
-      case 3: currentColor = _shapeFillColor; break;
-      case 4: currentColor = _textColor; break;
-      case 5: currentColor = _textBorderColor; break;
-      case 6: currentColor = _textFillColor; break;
+      case 0: currentColor = _pencilColor; currentOpacity = _pencilOpacity; break;
+      case 1: currentColor = _shapeLineColor; currentOpacity = _shapeOpacity; break;
+      case 2: currentColor = _shapeBorderColor; currentOpacity = _shapeOpacity; break;
+      case 3: currentColor = _shapeFillColor; currentOpacity = _shapeOpacity; break;
+      case 4: currentColor = _textColor; currentOpacity = _textOpacity; break;
+      case 5: currentColor = _textBorderColor; currentOpacity = _textOpacity; break;
+      case 6: currentColor = _textFillColor; currentOpacity = _textOpacity; break;
+      case 7: currentColor = _penFillColor; currentOpacity = _pencilOpacity; break;
       default: currentColor = Colors.black;
     }
     
     HSVColor hsvColor = HSVColor.fromColor(currentColor == Colors.transparent ? Colors.red : currentColor);
-    double localOpacity = _opacity;
+    double localOpacity = currentOpacity; // 👈 Set the slider to the correct tool's opacity
 
     showDialog(
       context: context,
@@ -494,7 +527,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               setState(() {
                 if (mode == 0) {
                   _pencilColor = newColor;
-                  if (_activeObject?.type == DrawingType.pencil) _activeObject!.color = newColor;
+                  if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor;
                 } else if (mode == 1) {
                   _shapeLineColor = newColor;
                   if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor;
@@ -503,7 +536,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.color = newColor;
                 } else if (mode == 3) {
                   _shapeFillColor = newColor;
-                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.fillColor = newColor;
+                  // ONLY applies to Rect and Circle
+                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) {
+                    _activeObject!.fillColor = newColor;
+                  }
                 } else if (mode == 4) {
                   _textColor = newColor;
                   if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor;
@@ -513,6 +549,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 } else if (mode == 6) {
                   _textFillColor = newColor;
                   if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor;
+                } else if (mode == 7) {
+                  _penFillColor = newColor;
+                  // ONLY applies to Pen and Pencil
+                  if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) {
+                    _activeObject!.fillColor = newColor;
+                  }
                 }
               });
             }
@@ -522,11 +564,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             const double squareWidth = 240.0;
             const double squareHeight = 200.0;
             
-            // Opacity should show for Shape Fill (3) and Text Fill (6)
-            bool showOpacity = (mode == 3 || mode == 6); 
-            
-            // "None" option shows for Fills AND Borders (Shape Border 2, Shape Fill 3, Text Border 5, Text Fill 6)
-            bool showNone = (mode == 2 || mode == 3 || mode == 5 || mode == 6); 
+            bool showOpacity = (mode == 3 || mode == 6 || mode == 7); 
+            bool showNone = (mode == 2 || mode == 3 || mode == 5 || mode == 6 || mode == 7); 
 
             return AlertDialog(
               contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
@@ -623,15 +662,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.withOpacity(0.3)),
                         gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()]),
                       ),
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white),
-                        child: Slider(
-                          value: localOpacity, min: 0.0, max: 1.0,
-                          onChanged: (v) {
-                            setDialogState(() => localOpacity = v);
-                            setState(() { _opacity = v; if (_activeObject != null) _activeObject!.opacity = v; });
-                          },
-                        ),
+                      child: Slider(
+                        value: localOpacity, min: 0.0, max: 1.0,
+                        onChanged: (v) {
+                          setDialogState(() => localOpacity = v);
+                          setState(() { 
+                            if (mode == 3) {
+                              _shapeOpacity = v;
+                              if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.opacity = v;
+                            } else if (mode == 6) {
+                              _textOpacity = v;
+                              if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v;
+                            } else if (mode == 7) {
+                              _pencilOpacity = v;
+                              if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.opacity = v;
+                            }
+                          });
+                        },
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -645,12 +692,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     child: Wrap(
                       alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
                       children: [
-                          // 🔽 CHANGED THIS TO showNone 🔽
-                          if (showNone)
-                            GestureDetector(
-                              onTap: () => updateColor(Colors.transparent),
-                              child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red)),
-                            ),
+                        if (showNone)
+                          GestureDetector(
+                            onTap: () => updateColor(Colors.transparent),
+                            child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red)),
+                          ),
                         ...pickerPresets.map((color) => GestureDetector(
                           onTap: () => updateColor(color),
                           child: Container(
@@ -676,6 +722,46 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
   
+  Widget _mainMenuToggle({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required bool hasDropdown,
+    required VoidCallback onTap,
+    required ThemeData theme,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: isActive ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
+                  child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
+                ),
+                if (hasDropdown) ...[
+                  const SizedBox(width: 2),
+                  Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                ] else ...[
+                  // Adds a tiny bit of invisible spacing so the "Select" icon aligns perfectly with dropdowns
+                  const SizedBox(width: 18), 
+                ]
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(fontSize: 9)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -688,6 +774,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
         const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
         const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
+        // 🔽 Press ESC to finalize the Pen tool instantly 🔽
+        const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+          if (_selectedTool == 'Pen') _finalizeCurrentPreview();
+        }),
       },
       child: Focus(
         autofocus: true,
@@ -713,6 +803,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                       return MouseRegion(
                                         cursor: _getCursor(_hoveredHandle),
                                         onHover: (d) {
+                                          // 🔽 Live Preview Line for the Pen Tool 🔽
+                                          if (_selectedTool == 'Pen' && _currentPreview != null) {
+                                            setState(() => _currentPreview!.points!.last = d.localPosition);
+                                            return;
+                                          }
+
                                           if (_selectedTool != 'Select') return;
                                           ResizeHandle hit = ResizeHandle.none;
                                           for (var obj in _drawingObjects.reversed) {
@@ -739,6 +835,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                     }
                                   ),
                                 ),
+
+                                // 1. The Floating Pencil Menu 🎈
+                                if (_showPencilToolbar)
+                                  Positioned(
+                                    top: 8,     
+                                    left: 80,  // Aligns roughly under the Pencil toggle
+                                    child: _buildFloatingPencilMenu(theme),
+                                  ),
                                 
                                 // 2. The Floating Shape Menu 🎈
                                 if (_showShapeToolbar)
@@ -785,7 +889,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-
   bool _isShapeSelected(String tool) {
     return ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
   }
@@ -798,6 +901,34 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case 'Arrow': return Icons.arrow_outward; 
       default: return Icons.crop_square; 
     }
+  }
+
+  Widget _buildFloatingPencilMenu(ThemeData theme) {
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("DRAW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
+            _toolIcon(Icons.edit, "Pencil", theme),
+            _toolIcon(Icons.polyline, "Pen", theme), 
+            _vDiv(theme),
+            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
+            
+            _colorButton("Color", _pencilColor, 0),     // 👈 MUST BE MODE 0
+            const SizedBox(width: 12),
+            _colorButton("Fill", _penFillColor, 7),     // 👈 MUST BE MODE 7
+            
+            _vDiv(theme), _buildStrokeSlider(theme, 0), 
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildFloatingTextMenu(ThemeData theme) {
@@ -842,7 +973,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _colorButton("Fill", _textFillColor, 6),     
             
             _vDiv(theme),
-            _buildStrokeSlider(theme), // Border thickness
+            _buildStrokeSlider(theme, 2), // Border thickness
           ],
         ),
       ),
@@ -851,15 +982,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   
   Widget _buildFloatingShapeMenu(ThemeData theme) {
     return Material(
-      elevation: 8,
-      borderRadius: BorderRadius.circular(8),
-      color: theme.colorScheme.surface,
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -869,21 +995,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
             _toolIcon(Icons.show_chart, "Line", theme),
             _toolIcon(Icons.arrow_outward, "Arrow", theme),
-            
             _vDiv(theme),
-            
             const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             const SizedBox(width: 8),
             
-            // 🔽 Added Color (Mode 0) for Lines and Arrows 🔽
-            _colorButton("Color", _shapeLineColor, 1),   // Mode 1: Line/Arrow
+            _colorButton("Color", _shapeLineColor, 1),   // 👈 MUST BE MODE 1
             const SizedBox(width: 12),
-            _colorButton("Border", _shapeBorderColor, 2),// Mode 2: Rect/Circle Border
+            _colorButton("Border", _shapeBorderColor, 2),// 👈 MUST BE MODE 2
             const SizedBox(width: 12),
-            _colorButton("Fill", _shapeFillColor, 3),    // Mode 3: Rect/Circle Fill
+            _colorButton("Fill", _shapeFillColor, 3),    // 👈 MUST BE MODE 3
             
-            _vDiv(theme),
-            _buildStrokeSlider(theme), 
+            _vDiv(theme), _buildStrokeSlider(theme, 1), 
           ],
         ),
       ),
@@ -900,81 +1022,76 @@ class _CanvasScreenState extends State<CanvasScreen> {
         child: Row(
           children: [
 
-            _toolIcon(Icons.near_me, "Select", theme),
-            _toolIcon(Icons.edit, "Pencil", theme),
-
-            // 🔽 SHAPE MENU TOGGLE 🔽
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showShapeToolbar = !_showShapeToolbar;
-                  if (_showShapeToolbar) {
-                    _showTextToolbar = false; // 👈 Closes text menu if open
-                    if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect';
-                  }
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: _isShapeSelected(_selectedTool) || _showShapeToolbar
-                              ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
-                          child: Icon(_getShapeIcon(_selectedTool),
-                            color: _isShapeSelected(_selectedTool) || _showShapeToolbar
-                                ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
-                        ),
-                        Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text("Shapes", style: TextStyle(fontSize: 9)),
-                  ],
-                ),
-              ),
+            // 🔽 1. SELECT TOOL (Closes everything) 🔽
+            _mainMenuToggle(
+              icon: Icons.near_me,
+              label: "Select",
+              isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar,
+              hasDropdown: false,
+              theme: theme,
+              onTap: () => setState(() {
+                _selectedTool = 'Select';
+                _showPencilToolbar = false;
+                _showShapeToolbar = false;
+                _showTextToolbar = false;
+              }),
             ),
 
-            // 🔽 TEXT MENU TOGGLE 🔽
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _showTextToolbar = !_showTextToolbar;
-                  if (_showTextToolbar) {
-                    _selectedTool = 'Text';
-                    _showShapeToolbar = false; // 👈 Closes shape menu if open
-                  }
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: _selectedTool == 'Text' || _showTextToolbar
-                              ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
-                          child: Icon(Icons.title,
-                            color: _selectedTool == 'Text' || _showTextToolbar
-                                ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
-                        ),
-                        Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text("Text", style: TextStyle(fontSize: 9)),
-                  ],
-                ),
-              ),
+            // 🔽 2. DRAW TOGGLE 🔽
+            _mainMenuToggle(
+              icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit,
+              label: _selectedTool == 'Pen' ? "Pen" : "Pencil",
+              isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen',
+              hasDropdown: true,
+              theme: theme,
+              onTap: () => setState(() {
+                _showPencilToolbar = !_showPencilToolbar;
+                if (_showPencilToolbar) {
+                  _showShapeToolbar = false; // Strictly close others
+                  _showTextToolbar = false;
+                  if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil';
+                } else {
+                  _selectedTool = 'Select'; // Revert to select if closed
+                }
+              }),
+            ),
+
+            // 🔽 3. SHAPES TOGGLE 🔽
+            _mainMenuToggle(
+              icon: _getShapeIcon(_selectedTool),
+              label: "Shapes",
+              isActive: _showShapeToolbar || _isShapeSelected(_selectedTool),
+              hasDropdown: true,
+              theme: theme,
+              onTap: () => setState(() {
+                _showShapeToolbar = !_showShapeToolbar;
+                if (_showShapeToolbar) {
+                  _showPencilToolbar = false; // Strictly close others
+                  _showTextToolbar = false;
+                  if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect';
+                } else {
+                  _selectedTool = 'Select'; // Revert to select if closed
+                }
+              }),
+            ),
+
+            // 🔽 4. TEXT TOGGLE 🔽
+            _mainMenuToggle(
+              icon: Icons.title,
+              label: "Text",
+              isActive: _showTextToolbar || _selectedTool == 'Text',
+              hasDropdown: true,
+              theme: theme,
+              onTap: () => setState(() {
+                _showTextToolbar = !_showTextToolbar;
+                if (_showTextToolbar) {
+                  _showPencilToolbar = false; // Strictly close others
+                  _showShapeToolbar = false;
+                  _selectedTool = 'Text';
+                } else {
+                  _selectedTool = 'Select'; // Revert to select if closed
+                }
+              }),
             ),
 
             _vDiv(theme),
@@ -1027,16 +1144,37 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  Widget _buildStrokeSlider(ThemeData theme) {
+  Widget _buildStrokeSlider(ThemeData theme, int mode) {
+    double currentWidth;
+    switch (mode) {
+      case 0: currentWidth = _pencilStrokeWidth; break; // Pencil/Pen
+      case 1: currentWidth = _shapeStrokeWidth; break;  // Shapes
+      case 2: currentWidth = _textStrokeWidth; break;   // Text Border
+      default: currentWidth = 2.0;
+    }
+
     return SizedBox(
-      width: 140, // Fixed total width for the whole slider component
+      width: 170, // Slightly wider to fit the label
       child: Row(children: [
-        // Fixed width for the text label so the slider never jumps!
-        SizedBox(width: 32, child: Text("${_strokeWidth.toInt()}px", style: theme.textTheme.labelSmall)),
+        // 🔽 The new "Border" label you requested 🔽
+        const Text("Border: ", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+        SizedBox(width: 28, child: Text("${currentWidth.toInt()}px", style: theme.textTheme.labelSmall)),
         Expanded(
-          child: Slider(value: _strokeWidth, min: 1, max: 15, onChanged: (v) => setState(() {
-            _strokeWidth = v; if (_activeObject != null) _activeObject!.strokeWidth = v;
-          }))
+          child: Slider(
+            value: currentWidth, min: 1, max: 20, 
+            onChanged: (v) => setState(() {
+              if (mode == 0) {
+                _pencilStrokeWidth = v;
+                if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v;
+              } else if (mode == 1) {
+                _shapeStrokeWidth = v;
+                if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.strokeWidth = v;
+              } else if (mode == 2) {
+                _textStrokeWidth = v;
+                if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v;
+              }
+            })
+          )
         ),
       ]),
     );
@@ -1065,8 +1203,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Widget _vDiv(ThemeData theme) => VerticalDivider(width: 32, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
+
   Widget _buildRightPanel(ThemeData theme) => Container(width: 240, color: theme.colorScheme.surfaceContainer, child: const Center(child: Text("Properties")));
 
+  void _finalizeCurrentPreview() {
+    if (_currentPreview != null) {
+      _saveSnapshot();
+      for (var obj in _drawingObjects) obj.isSelected = false;
+      _currentPreview!.isSelected = true;
+
+      // If it's a Pen and it has fewer than 3 points, it's just a dot/line, so discard it.
+      if (_currentPreview!.type == DrawingType.pen && _currentPreview!.points!.length < 3) {
+        _currentPreview = null;
+        return;
+      }
+
+      // Remove the floating "mouse preview" point from the end of the array
+      if (_currentPreview!.type == DrawingType.pen) {
+        _currentPreview!.points!.removeLast();
+      }
+
+      _drawingObjects.add(_currentPreview!);
+      _activeObject = _currentPreview;
+      _selectedTool = 'Select';
+      _currentPreview = null;
+    }
+  }
 }
 
 // --- PAINTERS ---
@@ -1191,11 +1353,30 @@ class MainPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round;
 
-        if (obj.type == DrawingType.pencil && obj.points != null && obj.points!.isNotEmpty) {
+        if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
           Path path = Path();
           path.moveTo(obj.points![0].dx, obj.points![0].dy);
-          for (var i = 1; i < obj.points!.length; i++) path.lineTo(obj.points![i].dx, obj.points![i].dy);
-          canvas.drawPath(path, strokePaint);
+          for (var i = 1; i < obj.points!.length; i++) {
+            path.lineTo(obj.points![i].dx, obj.points![i].dy);
+          }
+          
+          // 🔽 THE BUG FIX: Force the fill path to close! 🔽
+          if (obj.fillColor != Colors.transparent && obj.points!.length > 2) {
+             Path fillPath = Path.from(path); // Create a copy
+             fillPath.close(); // Force it to close so Flutter knows it's a solid shape
+             
+             final fillPaint = Paint()
+               ..color = obj.fillColor.withOpacity(obj.opacity)
+               ..style = PaintingStyle.fill;
+             canvas.drawPath(fillPath, fillPaint);
+          }
+          
+          canvas.drawPath(path, strokePaint); // Draw the stroke on top
+
+          // Draw the close node indicator for Pen
+          if (obj == preview && obj.type == DrawingType.pen) {
+            canvas.drawCircle(obj.points![0], 6, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2);
+          }
         } else if (obj.type == DrawingType.line) {
           canvas.drawLine(obj.start, obj.end, strokePaint);
         } else if (obj.type == DrawingType.arrow) {
@@ -1248,15 +1429,15 @@ class MainPainter extends CustomPainter {
         rotIcon.layout();
         rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
 
-        // --- CRITICAL CHANGE: Only draw resize handles if NOT a Pencil ---
-        if (obj.type != DrawingType.pencil) {
+        // 🔽 HIDE RESIZE DOTS FOR PEN AND PENCIL 🔽
+        if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
           final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
           for (var p in points) { 
             canvas.drawCircle(p, 7, wP); 
             canvas.drawCircle(p, 5, hP); 
           }
         } else {
-          // Optional: draw just a simple bounding box for pencil to show it's selected
+          // Draw just a simple bounding box to show it's selected
           canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
         }
       }
