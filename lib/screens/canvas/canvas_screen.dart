@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
-enum DrawingType { line, rect, circle, pencil, text }
+enum DrawingType { line, rect, circle, pencil, text, arrow }
 enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, none }
 
 class DrawingObject {
@@ -15,10 +15,17 @@ class DrawingObject {
   double strokeWidth;
   Color color;      
   Color fillColor;  
+  Color borderColor; // 👈 NEW: Added dedicated border color
   double opacity;   
   bool isSelected;
   DrawingType type;
   double rotation; 
+  // 🔽 NEW TEXT FORMATTING PROPERTIES 🔽
+  double fontSize;
+  bool isBold;
+  bool isItalic;
+  bool isUnderline;
+  bool isStrikethrough;
 
   DrawingObject({
     required this.start,
@@ -29,9 +36,15 @@ class DrawingObject {
     this.strokeWidth = 2.0,
     this.color = Colors.black,
     this.fillColor = Colors.transparent,
+    this.borderColor = Colors.transparent, // 👈 NEW: Default to transparent
     this.opacity = 1.0,
     this.isSelected = false,
-    this.rotation = 0.0,
+    this.rotation = 0.0,// 🔽 NEW DEFAULTS 🔽
+    this.fontSize = 24.0,
+    this.isBold = false,
+    this.isItalic = false,
+    this.isUnderline = false,
+    this.isStrikethrough = false,
   });
 
   Rect get rect {
@@ -62,9 +75,16 @@ class DrawingObject {
         strokeWidth: strokeWidth,
         color: color,
         fillColor: fillColor,
+        borderColor: borderColor, // 👈 NEW: Don't forget to copy it!
         opacity: opacity,
         isSelected: isSelected,
         rotation: rotation,
+        // 🔽 NEW COPY FIELDS 🔽
+        fontSize: fontSize,
+        isBold: isBold,
+        isItalic: isItalic,
+        isUnderline: isUnderline,
+        isStrikethrough: isStrikethrough,
       );
 }
 
@@ -79,9 +99,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
   double _strokeWidth = 2.0;
   double _opacity = 1.0; 
   
-  Color _activeColor = Colors.black;       
-  Color _activeBorderColor = Colors.black; 
-  Color _fillColor = Colors.transparent;   
+  Color _pencilColor = Colors.black;
+  
+  Color _shapeLineColor = Colors.black;
+  Color _shapeBorderColor = Colors.black;
+  Color _shapeFillColor = Colors.transparent;
+  
+  Color _textColor = Colors.black;
+  Color _textBorderColor = Colors.transparent;
+  Color _textFillColor = Colors.transparent;   
   
   List<String> _pages = ['Page 1'];
   late String _currentPage;
@@ -97,7 +123,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
   ResizeHandle _hoveredHandle = ResizeHandle.none;
   Offset _dragOffset = Offset.zero;
   double _initialRotationAngle = 0.0;
-  DateTime? _lastTapTime; 
+  DateTime? _lastTapTime;
+  bool _showShapeToolbar = false;
+  bool _showTextToolbar = false; 
+
+  // --- Text Formatting State ---
+  double _textSize = 24.0;
+  bool _textIsBold = false;
+  bool _textIsItalic = false;
+  bool _textIsUnderline = false;
+  bool _textIsStrikethrough = false;
 
   @override
   void initState() {
@@ -151,7 +186,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       end: position + calculatedSize,
                       type: DrawingType.text,
                       text: controller.text,
-                      color: _activeColor,
+                      color: _textColor,         // 👈 Now uses the dedicated Text Color!
+                      fillColor: _textFillColor, // 👈 Now applies the Text Fill Color!
+                      borderColor: _textBorderColor, // 👈 NEW: Border color
                       opacity: _opacity,
                       isSelected: true,
                       strokeWidth: _strokeWidth,
@@ -284,14 +321,34 @@ class _CanvasScreenState extends State<CanvasScreen> {
         for (var obj in _drawingObjects) obj.isSelected = false;
         
         DrawingType type = (_selectedTool == 'Pencil') ? DrawingType.pencil : 
-                           (_selectedTool == 'Rect' ? DrawingType.rect : (_selectedTool == 'Circle' ? DrawingType.circle : DrawingType.line));
+                   (_selectedTool == 'Rect') ? DrawingType.rect : 
+                   (_selectedTool == 'Circle') ? DrawingType.circle : 
+                   (_selectedTool == 'Arrow') ? DrawingType.arrow : DrawingType.line;
+                           
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
+
+        Color objColor = Colors.black;
+        Color objFill = Colors.transparent;
+
+        // Route the correct color based on the selected tool
+        if (type == DrawingType.pencil) {
+          objColor = _pencilColor;
+        } else if (type == DrawingType.line || type == DrawingType.arrow) {
+          objColor = _shapeLineColor;
+        } else if (type == DrawingType.rect || type == DrawingType.circle) {
+          objColor = _shapeBorderColor;
+          objFill = _shapeFillColor;
+        } else if (type == DrawingType.text) {
+          objColor = _textColor; 
+          objFill = _textFillColor;
+        }
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts,
           strokeWidth: _strokeWidth, 
-          color: (type == DrawingType.pencil || type == DrawingType.line) ? _activeColor : _activeBorderColor,
-          fillColor: _fillColor, opacity: _opacity,
+          color: objColor,
+          fillColor: objFill, 
+          opacity: _opacity,
         );
       } else {
         _activeHandle = ResizeHandle.none;
@@ -399,6 +456,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _showColorPicker(int mode) {
+    // Save snapshot ONCE when the dialog opens, not while dragging the slider!
+    _saveSnapshot(); 
+
     final List<Color> pickerPresets = [
       const Color(0xFFFF5252), const Color(0xFFFF9800), const Color(0xFFFFEB3B), 
       const Color(0xFFCDDC39), const Color(0xFF4CAF50), const Color(0xFF009688), 
@@ -408,8 +468,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
       const Color(0xFFFFFFFF),
     ];
 
-    Color currentColor = mode == 0 ? _activeColor : (mode == 1 ? _activeBorderColor : _fillColor);
+    Color currentColor;
+    switch(mode) {
+      case 0: currentColor = _pencilColor; break;
+      case 1: currentColor = _shapeLineColor; break;
+      case 2: currentColor = _shapeBorderColor; break;
+      case 3: currentColor = _shapeFillColor; break;
+      case 4: currentColor = _textColor; break;
+      case 5: currentColor = _textBorderColor; break;
+      case 6: currentColor = _textFillColor; break;
+      default: currentColor = Colors.black;
+    }
+    
     HSVColor hsvColor = HSVColor.fromColor(currentColor == Colors.transparent ? Colors.red : currentColor);
+    double localOpacity = _opacity;
 
     showDialog(
       context: context,
@@ -420,65 +492,71 @@ class _CanvasScreenState extends State<CanvasScreen> {
             void updateColor(Color newColor) {
               setDialogState(() => hsvColor = HSVColor.fromColor(newColor));
               setState(() {
-                _saveSnapshot();
                 if (mode == 0) {
-                  _activeColor = newColor;
-                  if (_activeObject != null && (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.text)) {
-                    _activeObject!.color = newColor;
-                  }
+                  _pencilColor = newColor;
+                  if (_activeObject?.type == DrawingType.pencil) _activeObject!.color = newColor;
                 } else if (mode == 1) {
-                  _activeBorderColor = newColor;
-                  if (_activeObject != null && (_activeObject!.type == DrawingType.rect || _activeObject!.type == DrawingType.circle)) {
-                    _activeObject!.color = newColor;
-                  }
-                } else {
-                  _fillColor = newColor;
-                  if (_activeObject != null) _activeObject!.fillColor = newColor;
+                  _shapeLineColor = newColor;
+                  if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor;
+                } else if (mode == 2) {
+                  _shapeBorderColor = newColor;
+                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.color = newColor;
+                } else if (mode == 3) {
+                  _shapeFillColor = newColor;
+                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.fillColor = newColor;
+                } else if (mode == 4) {
+                  _textColor = newColor;
+                  if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor;
+                } else if (mode == 5) {
+                  _textBorderColor = newColor;
+                  if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor;
+                } else if (mode == 6) {
+                  _textFillColor = newColor;
+                  if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor;
                 }
               });
             }
 
-            String colorToHex(Color c) => c == Colors.transparent 
-                ? "NONE" 
-                : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
+            String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
 
-            // Constants for the square size to ensure thumb positioning is accurate
             const double squareWidth = 240.0;
             const double squareHeight = 200.0;
+            
+            // Opacity should show for Shape Fill (3) and Text Fill (6)
+            bool showOpacity = (mode == 3 || mode == 6); 
+            
+            // "None" option shows for Fills AND Borders (Shape Border 2, Shape Fill 3, Text Border 5, Text Fill 6)
+            bool showNone = (mode == 2 || mode == 3 || mode == 5 || mode == 6); 
 
             return AlertDialog(
               contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // --- SELECTED COLOR PREVIEW AREA ---
                   Row(
                     children: [
                       Container(
                         width: 50, height: 50,
                         decoration: BoxDecoration(
-                          color: hsvColor.toColor(),
+                          color: showOpacity ? hsvColor.toColor().withOpacity(localOpacity) : hsvColor.toColor(), 
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
                         ),
-                        child: hsvColor.toColor() == Colors.transparent 
-                            ? const Icon(Icons.block, color: Colors.red) : null,
+                        child: hsvColor.toColor() == Colors.transparent ? const Icon(Icons.block, color: Colors.red) : null,
                       ),
                       const SizedBox(width: 15),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text("Selected Color", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                          Text(colorToHex(hsvColor.toColor()), 
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
+                          Text(colorToHex(hsvColor.toColor()), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
                         ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 20),
 
-                  // --- Saturation/Value Box with Thumb ---
                   GestureDetector(
                     onPanDown: (details) {
                       double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
@@ -496,32 +574,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           width: squareWidth, height: squareHeight,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
-                            gradient: LinearGradient(
-                              colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()],
-                              begin: Alignment.centerLeft, end: Alignment.centerRight,
-                            ),
+                            gradient: LinearGradient(colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()]),
                           ),
                           child: Container(
                             decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.transparent, Colors.black],
-                                begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                              ),
+                              gradient: LinearGradient(colors: [Colors.transparent, Colors.black], begin: Alignment.topCenter, end: Alignment.bottomCenter),
                             ),
                           ),
                         ),
-                        // THE SELECTION THUMB (INDICATOR)
                         Positioned(
                           left: (hsvColor.saturation * squareWidth) - 8,
                           top: ((1 - hsvColor.value) * squareHeight) - 8,
                           child: Container(
-                            width: 16,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
-                            ),
+                            width: 16, height: 16,
+                            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
                           ),
                         ),
                       ],
@@ -529,63 +595,69 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // --- Hue Slider ---
                   Container(
                     width: 240, height: 12,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(6),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Colors.red, Colors.yellow, Colors.green, 
-                          Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red
-                        ],
-                      ),
+                      gradient: const LinearGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red]),
                     ),
                     child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 12,
-                        activeTrackColor: Colors.transparent,
-                        inactiveTrackColor: Colors.transparent,
-                        thumbColor: Colors.white,
-                      ),
-                      child: Slider(
-                        value: hsvColor.hue,
-                        min: 0, max: 360,
-                        onChanged: (v) => updateColor(hsvColor.withHue(v).toColor()),
-                      ),
+                      data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white),
+                      child: Slider(value: hsvColor.hue, min: 0, max: 360, onChanged: (v) => updateColor(hsvColor.withHue(v).toColor())),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+
+                  if (showOpacity) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Opacity", style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                        Text("${(localOpacity * 100).toInt()}%", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: 240, height: 12,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                        gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()]),
+                      ),
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white),
+                        child: Slider(
+                          value: localOpacity, min: 0.0, max: 1.0,
+                          onChanged: (v) {
+                            setDialogState(() => localOpacity = v);
+                            setState(() { _opacity = v; if (_activeObject != null) _activeObject!.opacity = v; });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
                   
                   const Text("Preset Colors", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
                   const SizedBox(height: 10),
                   
-                  // --- Presets Grid ---
                   SizedBox(
                     width: 260,
                     child: Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 8, runSpacing: 8,
+                      alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
                       children: [
-                        if (mode == 2)
-                          GestureDetector(
-                            onTap: () => updateColor(Colors.transparent),
-                            child: CircleAvatar(
-                              radius: 14, backgroundColor: Colors.grey[200],
-                              child: const Icon(Icons.block, size: 16, color: Colors.red),
+                          // 🔽 CHANGED THIS TO showNone 🔽
+                          if (showNone)
+                            GestureDetector(
+                              onTap: () => updateColor(Colors.transparent),
+                              child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red)),
                             ),
-                          ),
                         ...pickerPresets.map((color) => GestureDetector(
                           onTap: () => updateColor(color),
                           child: Container(
                             width: 28, height: 28,
                             decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent),
-                                width: 2,
-                              ),
+                              color: color, shape: BoxShape.circle,
+                              border: Border.all(color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent), width: 2),
                             ),
                           ),
                         )),
@@ -595,10 +667,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 ],
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context), 
-                  child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold))
-                ),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold))),
               ],
             );
           },
@@ -606,7 +675,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       },
     );
   }
-
+  
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -635,27 +704,58 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         children: [
                           _buildFullWidthToolbar(theme),
                           Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                return MouseRegion(
-                                  cursor: _getCursor(_hoveredHandle),
-                                  onHover: (d) {
-                                    if (_selectedTool != 'Select') return;
-                                    ResizeHandle hit = ResizeHandle.none;
-                                    for (var obj in _drawingObjects.reversed) {
-                                      hit = _getHitHandle(d.localPosition, obj);
-                                      if (hit != ResizeHandle.none) break;
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned.fill(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return MouseRegion(
+                                        cursor: _getCursor(_hoveredHandle),
+                                        onHover: (d) {
+                                          if (_selectedTool != 'Select') return;
+                                          ResizeHandle hit = ResizeHandle.none;
+                                          for (var obj in _drawingObjects.reversed) {
+                                            hit = _getHitHandle(d.localPosition, obj);
+                                            if (hit != ResizeHandle.none) break;
+                                          }
+                                          if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+                                        },
+                                        child: Listener(
+                                          onPointerDown: _handlePointerDown,
+                                          onPointerMove: (details) => _handlePointerMove(details, constraints),
+                                          onPointerUp: _handlePointerUp,
+                                          child: Container(
+                                            width: constraints.maxWidth, 
+                                            height: constraints.maxHeight,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              border: Border.all(color: theme.colorScheme.outlineVariant, width: 0.5),
+                                            ),
+                                            child: CanvasPaper(objects: _drawingObjects, preview: _currentPreview),
+                                          ),
+                                        ),
+                                      );
                                     }
-                                    if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
-                                  },
-                                  child: Listener(
-                                    onPointerDown: _handlePointerDown,
-                                    onPointerMove: (details) => _handlePointerMove(details, constraints),
-                                    onPointerUp: _handlePointerUp,
-                                    child: CanvasPaper(objects: _drawingObjects, preview: _currentPreview),
                                   ),
-                                );
-                              }
+                                ),
+                                
+                                // 2. The Floating Shape Menu 🎈
+                                if (_showShapeToolbar)
+                                  Positioned(
+                                    top: 8,     
+                                    left: 140,  
+                                    child: _buildFloatingShapeMenu(theme),
+                                  ),
+
+                                // 3. The Floating Text Menu 🎈
+                                if (_showTextToolbar)
+                                  Positioned(
+                                    top: 8,     
+                                    left: 210, // Shifted slightly to align under the Text toggle
+                                    child: _buildFloatingTextMenu(theme),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
@@ -686,139 +786,206 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
 
-  IconData _getShapeIcon(String tool) {
-    switch (tool) {
-      case 'Line': return Icons.show_chart;
-      case 'Rect': return Icons.crop_square;
-      case 'Circle': return Icons.panorama_fish_eye;
-      default: return Icons.crop_square; // Default look when no shape is picked
-    }
-  }
- 
   bool _isShapeSelected(String tool) {
-    return ['Rect', 'Line', 'Circle'].contains(tool);
+    return ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
   }
 
-  PopupMenuItem<String> _buildPopupItem(String value, IconData icon, String label, String shortcut) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 12),
-          Expanded(child: Text(label)),
-          Text(shortcut, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-        ],
+  IconData _getShapeIcon(String tool) {
+    switch (tool) {
+      case 'Rect': return Icons.crop_square;
+      case 'Circle': return Icons.panorama_fish_eye;
+      case 'Line': return Icons.show_chart;
+      case 'Arrow': return Icons.arrow_outward; 
+      default: return Icons.crop_square; 
+    }
+  }
+
+  Widget _buildFloatingTextMenu(ThemeData theme) {
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(8),
+      color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _toolIcon(Icons.title, "Text", theme),
+            _vDiv(theme),
+            
+            // 🔽 FORMATTING TOGGLES 🔽
+            _formatToggle(Icons.format_bold, _textIsBold, () => setState(() {
+              _textIsBold = !_textIsBold; if (_activeObject?.type == DrawingType.text) _activeObject!.isBold = _textIsBold;
+            }), theme),
+            _formatToggle(Icons.format_italic, _textIsItalic, () => setState(() {
+              _textIsItalic = !_textIsItalic; if (_activeObject?.type == DrawingType.text) _activeObject!.isItalic = _textIsItalic;
+            }), theme),
+            _formatToggle(Icons.format_underline, _textIsUnderline, () => setState(() {
+              _textIsUnderline = !_textIsUnderline; if (_activeObject?.type == DrawingType.text) _activeObject!.isUnderline = _textIsUnderline;
+            }), theme),
+            _formatToggle(Icons.format_strikethrough, _textIsStrikethrough, () => setState(() {
+              _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject?.type == DrawingType.text) _activeObject!.isStrikethrough = _textIsStrikethrough;
+            }), theme),
+            
+            _vDiv(theme),
+            _buildTextSizeSlider(theme), // Font size
+            _vDiv(theme),
+            
+            _colorButton("Text", _textColor, 4),         
+            const SizedBox(width: 12),
+            _colorButton("Border", _textBorderColor, 5), 
+            const SizedBox(width: 12),
+            _colorButton("Fill", _textFillColor, 6),     
+            
+            _vDiv(theme),
+            _buildStrokeSlider(theme), // Border thickness
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildFloatingShapeMenu(ThemeData theme) {
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(8),
+      color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
+            _toolIcon(Icons.crop_square, "Rect", theme),
+            _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
+            _toolIcon(Icons.show_chart, "Line", theme),
+            _toolIcon(Icons.arrow_outward, "Arrow", theme),
+            
+            _vDiv(theme),
+            
+            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
+            
+            // 🔽 Added Color (Mode 0) for Lines and Arrows 🔽
+            _colorButton("Color", _shapeLineColor, 1),   // Mode 1: Line/Arrow
+            const SizedBox(width: 12),
+            _colorButton("Border", _shapeBorderColor, 2),// Mode 2: Rect/Circle Border
+            const SizedBox(width: 12),
+            _colorButton("Fill", _shapeFillColor, 3),    // Mode 3: Rect/Circle Fill
+            
+            _vDiv(theme),
+            _buildStrokeSlider(theme), 
+          ],
+        ),
       ),
     );
   }
   
   Widget _buildFullWidthToolbar(ThemeData theme) {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-    color: theme.colorScheme.surface,
-    child: SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _buildStrokeSlider(theme),
-          _vDiv(theme),
-          _buildOpacitySlider(theme),
-          _vDiv(theme),
-          _colorButton("Color", _activeColor, 0),
-          const SizedBox(width: 12),
-          _colorButton("Border", _activeBorderColor, 1),
-          const SizedBox(width: 12),
-          _colorButton("Fill", _fillColor, 2),
-          _vDiv(theme),
-          
-          // Selection and Pencil tools stay as direct icons 🖱️
-          _toolIcon(Icons.near_me, "Select", theme),
-          _toolIcon(Icons.edit, "Pencil", theme),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      color: theme.colorScheme.surface,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
 
-          // 🔽 THE SHAPE DROPDOWN 🔽
-          // This replaces the individual Line, Rect, and Circle icons
-          PopupMenuButton<String>(
-            tooltip: "Shapes",
-            onSelected: (String value) => setState(() => _selectedTool = value),
-            // 1. Using 'child' lets us define the custom UI of the button itself
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // The main tool icon in the circle ⭕
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: _isShapeSelected(_selectedTool) 
-                            ? theme.colorScheme.primary 
-                            : theme.colorScheme.surfaceContainer,
-                        child: Icon(
-                          _getShapeIcon(_selectedTool),
-                          color: _isShapeSelected(_selectedTool) 
-                              ? theme.colorScheme.onPrimary 
-                              : theme.colorScheme.onSurface,
-                          size: 16,
+            _toolIcon(Icons.near_me, "Select", theme),
+            _toolIcon(Icons.edit, "Pencil", theme),
+
+            // 🔽 SHAPE MENU TOGGLE 🔽
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showShapeToolbar = !_showShapeToolbar;
+                  if (_showShapeToolbar) {
+                    _showTextToolbar = false; // 👈 Closes text menu if open
+                    if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect';
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: _isShapeSelected(_selectedTool) || _showShapeToolbar
+                              ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
+                          child: Icon(_getShapeIcon(_selectedTool),
+                            color: _isShapeSelected(_selectedTool) || _showShapeToolbar
+                                ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
                         ),
-                      ),
-                      // 2. The dropdown arrow icon 🔽
-                      Icon(
-                        Icons.arrow_drop_down,
-                        size: 16,
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text("Shapes", style: TextStyle(fontSize: 9)),
-                ],
+                        Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text("Shapes", style: TextStyle(fontSize: 9)),
+                  ],
+                ),
               ),
             ),
-            itemBuilder: (context) => [
-              _buildPopupItem('Rect', Icons.crop_square, 'Rectangle', 'R'),
-              _buildPopupItem('Line', Icons.show_chart, 'Line', 'L'),
-              _buildPopupItem('Circle', Icons.panorama_fish_eye, 'Ellipse', 'O'),
-            ],
-          ),
 
-          _toolIcon(Icons.title, "Text", theme),
-          _vDiv(theme),
-          _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-          _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-          _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, 
-              isDestructive: true, isEnabled: _activeObject != null),
-        ],
+            // 🔽 TEXT MENU TOGGLE 🔽
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showTextToolbar = !_showTextToolbar;
+                  if (_showTextToolbar) {
+                    _selectedTool = 'Text';
+                    _showShapeToolbar = false; // 👈 Closes shape menu if open
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: _selectedTool == 'Text' || _showTextToolbar
+                              ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
+                          child: Icon(Icons.title,
+                            color: _selectedTool == 'Text' || _showTextToolbar
+                                ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
+                        ),
+                        Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text("Text", style: TextStyle(fontSize: 9)),
+                  ],
+                ),
+              ),
+            ),
+
+            _vDiv(theme),
+            _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+            _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+            _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
+          ],
+        ),
       ),
-    ),
-  );
-}
-
-  // Widget _buildFullWidthToolbar(ThemeData theme) {
-  //   return Container(
-  //     width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8), color: theme.colorScheme.surface,
-  //     child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-  //       _buildStrokeSlider(theme), _vDiv(theme),
-  //       _buildOpacitySlider(theme), _vDiv(theme),
-  //       _colorButton("Color", _activeColor, 0), const SizedBox(width: 12),
-  //       _colorButton("Border", _activeBorderColor, 1), const SizedBox(width: 12),
-  //       _colorButton("Fill", _fillColor, 2), _vDiv(theme),
-  //       _toolIcon(Icons.near_me, "Select", theme),
-  //       _toolIcon(Icons.edit, "Pencil", theme),
-  //       _toolIcon(Icons.show_chart, "Line", theme),
-  //       _toolIcon(Icons.crop_square, "Rect", theme), 
-  //       _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
-  //       _toolIcon(Icons.title, "Text", theme),
-  //       _vDiv(theme), 
-  //       _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-  //       _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-  //       _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-  //     ])),
-  //   );
-  // }
+    );
+  }
 
   Widget _colorButton(String label, Color color, int mode) {
     return GestureDetector(
@@ -830,22 +997,49 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  Widget _buildOpacitySlider(ThemeData theme) {
-    return Row(children: [
-      const Icon(Icons.opacity, size: 16),
-      SizedBox(width: 80, child: Slider(value: _opacity, onChanged: (v) => setState(() { 
-        _opacity = v; if (_activeObject != null) _activeObject!.opacity = v;
-      }))),
-    ]);
+  Widget _formatToggle(IconData icon, bool isActive, VoidCallback onTap, ThemeData theme) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isActive ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(icon, size: 18, color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface),
+      ),
+    );
+  }
+
+  Widget _buildTextSizeSlider(ThemeData theme) {
+    return SizedBox(
+      width: 140, 
+      child: Row(children: [
+        SizedBox(width: 32, child: Text("${_textSize.toInt()}pt", style: theme.textTheme.labelSmall)),
+        Expanded(
+          child: Slider(value: _textSize, min: 10, max: 100, onChanged: (v) => setState(() {
+            _textSize = v; 
+            if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v;
+          }))
+        ),
+      ]),
+    );
   }
 
   Widget _buildStrokeSlider(ThemeData theme) {
-    return Row(children: [
-      Text("${_strokeWidth.toInt()}px", style: theme.textTheme.labelSmall),
-      SizedBox(width: 80, child: Slider(value: _strokeWidth, min: 1, max: 15, onChanged: (v) => setState(() {
-        _strokeWidth = v; if (_activeObject != null) _activeObject!.strokeWidth = v;
-      }))),
-    ]);
+    return SizedBox(
+      width: 140, // Fixed total width for the whole slider component
+      child: Row(children: [
+        // Fixed width for the text label so the slider never jumps!
+        SizedBox(width: 32, child: Text("${_strokeWidth.toInt()}px", style: theme.textTheme.labelSmall)),
+        Expanded(
+          child: Slider(value: _strokeWidth, min: 1, max: 15, onChanged: (v) => setState(() {
+            _strokeWidth = v; if (_activeObject != null) _activeObject!.strokeWidth = v;
+          }))
+        ),
+      ]),
+    );
   }
 
   Widget _toolIcon(IconData icon, String label, ThemeData theme) {
@@ -915,24 +1109,74 @@ class MainPainter extends CustomPainter {
       final Rect rect = obj.rect;
       
       if (obj.type == DrawingType.text && obj.text != null) {
-        double dynamicFontSize = rect.height * 0.8;
-        if (dynamicFontSize < 1) dynamicFontSize = 1;
+        
+        // 1. Use the strokeWidth for font size (keeps it consistent with the dialog)
+        double fontSize = obj.strokeWidth * 10;
+        if (fontSize < 1) fontSize = 1;
+
+        // Determine Text Decoration (Underline / Strikethrough)
+        TextDecoration decoration = TextDecoration.none;
+        if (obj.isUnderline && obj.isStrikethrough) {
+          decoration = TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]);
+        } else if (obj.isUnderline) {
+          decoration = TextDecoration.underline;
+        } else if (obj.isStrikethrough) {
+          decoration = TextDecoration.lineThrough;
+        }
 
         final textPainter = TextPainter(
           text: TextSpan(
             text: obj.text,
             style: TextStyle(
               color: obj.color, 
-              fontSize: dynamicFontSize, 
-              fontWeight: FontWeight.normal,
+              fontSize: obj.fontSize, // 👈 Now uses dedicated fontSize
+              fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal,
+              fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal,
+              decoration: decoration, // 👈 Applies Underline/Strikethrough
             ),
           ),
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.left,
         );
         
-        textPainter.layout(maxWidth: rect.width > 0 ? rect.width : 1);
-        textPainter.paint(canvas, rect.topLeft);
+        // 2. Layout the text using the box's current width
+        double availableWidth = rect.width > 20 ? rect.width - 20 : 10;
+        textPainter.layout(maxWidth: availableWidth);
+
+        // 3. 🌟 THE MAGIC FIX: Auto-adjust height 🌟
+        // Calculate the exact height needed for the wrapped text
+        double requiredHeight = textPainter.height + 20;
+        
+        // Automatically adjust the object's bottom edge so the box snaps to fit!
+        if (obj.end.dy >= obj.start.dy) {
+          obj.end = Offset(obj.end.dx, obj.start.dy + requiredHeight);
+        } else {
+          obj.start = Offset(obj.start.dx, obj.end.dy - requiredHeight);
+        }
+        
+        // Grab the updated rectangle with the newly fixed height
+        final updatedRect = obj.rect;
+
+        // 4. Paint Background Fill using the auto-sized rect
+        if (obj.fillColor != Colors.transparent) {
+          final fillPaint = Paint()
+            ..color = obj.fillColor.withOpacity(obj.opacity)
+            ..style = PaintingStyle.fill;
+          canvas.drawRect(updatedRect, fillPaint);
+        }
+
+        // 5. Paint Border using the auto-sized rect
+        if (obj.borderColor != Colors.transparent) {
+          final borderPaint = Paint()
+            ..color = obj.borderColor
+            ..strokeWidth = 2.0 // Keeps the border clean and thin
+            ..style = PaintingStyle.stroke;
+          canvas.drawRect(updatedRect, borderPaint);
+        }
+
+        // 6. Paint the Text exactly inside the padding
+        textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
+        
       } else {
         if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
           final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
@@ -954,6 +1198,32 @@ class MainPainter extends CustomPainter {
           canvas.drawPath(path, strokePaint);
         } else if (obj.type == DrawingType.line) {
           canvas.drawLine(obj.start, obj.end, strokePaint);
+        } else if (obj.type == DrawingType.arrow) {
+          // 1. Draw the main line
+          canvas.drawLine(obj.start, obj.end, strokePaint);
+          
+          // 2. Calculate the arrowhead angle and draw it
+          const double arrowLength = 15.0;
+          const double arrowAngle = math.pi / 6; // 30 degrees
+          double angle = math.atan2(obj.end.dy - obj.start.dy, obj.end.dx - obj.start.dx);
+
+          Offset p1 = Offset(
+            obj.end.dx - arrowLength * math.cos(angle - arrowAngle),
+            obj.end.dy - arrowLength * math.sin(angle - arrowAngle),
+          );
+          Offset p2 = Offset(
+            obj.end.dx - arrowLength * math.cos(angle + arrowAngle),
+            obj.end.dy - arrowLength * math.sin(angle + arrowAngle),
+          );
+
+          Path arrowPath = Path()
+            ..moveTo(obj.end.dx, obj.end.dy)
+            ..lineTo(p1.dx, p1.dy)
+            ..moveTo(obj.end.dx, obj.end.dy)
+            ..lineTo(p2.dx, p2.dy);
+          
+          canvas.drawPath(arrowPath, strokePaint);
+          
         } else if (obj.type == DrawingType.rect) {
           canvas.drawRect(rect, strokePaint);
         } else if (obj.type == DrawingType.circle) {
