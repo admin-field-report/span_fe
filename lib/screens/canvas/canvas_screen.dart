@@ -92,6 +92,12 @@ class DrawingObject {
       );
 }
 
+class PageData {
+  List<DrawingObject> objects = [];
+  List<List<DrawingObject>> undoStack = [];
+  List<List<DrawingObject>> redoStack = [];
+}
+
 class CanvasScreen extends StatefulWidget {
   const CanvasScreen({super.key});
   @override
@@ -128,14 +134,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _textIsItalic = false;
   bool _textIsUnderline = false;
   bool _textIsStrikethrough = false;
-  bool _textIsCallout = false; // 👈 NEW: Callout mode state   
-  
-  List<String> _pages = ['Page 1'];
-  late String _currentPage;
-
-  List<DrawingObject> _drawingObjects = [];
-  List<List<DrawingObject>> _undoStack = [];
-  List<List<DrawingObject>> _redoStack = []; 
 
   DrawingObject? _currentPreview;
   DrawingObject? _activeObject; 
@@ -150,11 +148,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _showTextToolbar = false; 
   bool _showPencilToolbar = false; // 👈 Add this new line!
 
+  // ✅ ADD THESE INSTEAD
+  List<String> _pages = ['Page 1'];
+  String _currentPage = 'Page 1'; 
+  
+  // The master map holding the state for every page
+  Map<String, PageData> _pageDataMap = {'Page 1': PageData()};
+
+  // Smart Getters & Setters! 
+  // These automatically route all your existing drawing code to the correct page's data.
+  List<DrawingObject> get _drawingObjects => _pageDataMap[_currentPage]!.objects;
+  set _drawingObjects(List<DrawingObject> val) => _pageDataMap[_currentPage]!.objects = val;
+
+  List<List<DrawingObject>> get _undoStack => _pageDataMap[_currentPage]!.undoStack;
+  List<List<DrawingObject>> get _redoStack => _pageDataMap[_currentPage]!.redoStack;
+
 
   @override
   void initState() {
     super.initState();
-    _currentPage = _pages.first;
   }
 
   Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject, bool isCallout = false}) async {
@@ -242,6 +254,66 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ],
       ),
     );
+  }
+
+  void _switchPage(String newPage) {
+    setState(() {
+      // 1. Clean up the current page before leaving
+      for (var obj in _drawingObjects) {
+        obj.isSelected = false;
+      }
+      _activeObject = null;
+      _activeHandle = ResizeHandle.none;
+      _currentPreview = null; // Clears any half-drawn pens/shapes
+      
+      // 2. Switch to the new page
+      _currentPage = newPage;
+      
+      // Optional: Revert tool to Select when switching pages
+      _selectedTool = 'Select'; 
+    });
+  }
+
+  void _resequencePages(int? targetIndex) {
+    List<String> updatedNames = [];
+    Map<String, PageData> updatedMap = {};
+
+    for (int i = 0; i < _pages.length; i++) {
+      String newName = "Page ${i + 1}";
+      updatedNames.add(newName);
+      // Move the data from the old reference to the new numbered reference
+      updatedMap[newName] = _pageDataMap[_pages[i]]!;
+    }
+
+    setState(() {
+        _pages = updatedNames;
+        _pageDataMap = updatedMap;
+        // Update current page to the correct index or fallback to last
+        if (targetIndex != null) {
+          _currentPage = _pages[targetIndex.clamp(0, _pages.length - 1)];
+        }
+      });
+    }
+
+  void _addNewPage() {
+    setState(() {
+      int insertIndex = _pages.indexOf(_currentPage) + 1;
+      // Add a temporary entry
+      _pages.insert(insertIndex, "TEMP_${DateTime.now().millisecondsSinceEpoch}");
+      _pageDataMap[_pages[insertIndex]] = PageData();
+      _resequencePages(insertIndex);
+    });
+  }
+
+  void _deleteCurrentPage() {
+    if (_pages.length <= 1) return; // Requirement: At least one page
+
+    setState(() {
+      int currentIndex = _pages.indexOf(_currentPage);
+      _pageDataMap.remove(_currentPage);
+      _pages.removeAt(currentIndex);
+      _resequencePages(currentIndex);
+    });
   }
 
   void _saveSnapshot() {
@@ -1314,8 +1386,63 @@ Widget _mainMenuToggle({
   }
 
   Widget _buildPageSelector(ThemeData theme) {
-    return DropdownButton<String>(value: _currentPage, items: _pages.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _currentPage = v!));
-  }
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 1. The Page Dropdown
+        DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _currentPage,
+            icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurface,
+            ),
+            borderRadius: BorderRadius.circular(8),
+            items: _pages.map((page) => DropdownMenuItem(
+              value: page,
+              child: Text(page),
+            )).toList(),
+            onChanged: (v) => v != null ? _switchPage(v) : null,
+          ),
+        ),
+
+        // Vertical Divider
+        Container(
+          height: 18,
+          width: 1,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+          color: theme.colorScheme.outlineVariant,
+        ),
+
+        // 2. Add Button (Insert after current)
+        IconButton(
+          tooltip: "Add Page",
+          onPressed: _addNewPage,
+          icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
+          color: theme.colorScheme.primary,
+          visualDensity: VisualDensity.compact,
+        ),
+
+        // 3. Delete Button (Current page)
+        if (_pages.length > 1) 
+          IconButton(
+            tooltip: "Delete Current Page",
+            onPressed: _deleteCurrentPage,
+            icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
+            color: theme.colorScheme.error.withOpacity(0.8),
+            visualDensity: VisualDensity.compact,
+          ),
+      ],
+    ),
+  );
+}
 
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
     return IconButton(
