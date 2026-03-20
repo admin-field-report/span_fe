@@ -139,6 +139,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   DrawingObject? _currentPreview;
   DrawingObject? _activeObject; 
+  DrawingObject? _clipboard; // 👈 1. ADD THIS LINE for your clipboard
   
   ResizeHandle _activeHandle = ResizeHandle.none;
   ResizeHandle _hoveredHandle = ResizeHandle.none;
@@ -275,6 +276,47 @@ class _CanvasScreenState extends State<CanvasScreen> {
       setState(() {
         _drawingObjects.removeWhere((o) => o.isSelected);
         _activeObject = null;
+      });
+    }
+  }
+
+  // 🔽 2. ADD THESE TWO METHODS 🔽
+  void _copySelected() {
+    if (_activeObject != null) {
+      setState(() {
+        // Use your existing copy() method to save a deep clone to the clipboard!
+        _clipboard = _activeObject!.copy();
+      });
+    }
+  }
+
+  void _pasteFromClipboard() {
+    if (_clipboard != null) {
+      _saveSnapshot(); // Save state so the user can undo the paste!
+      
+      setState(() {
+        // 1. Deselect everything currently on the canvas
+        for (var obj in _drawingObjects) obj.isSelected = false;
+
+        // 2. Clone the clipboard object
+        DrawingObject pastedObj = _clipboard!.copy();
+
+        // 3. Shift it down and right by 20 pixels so it doesn't hide perfectly under the original
+        const Offset shift = Offset(20, 20);
+        pastedObj.start += shift;
+        pastedObj.end += shift;
+        
+        // If it's a Pen, Pencil, or Callout, we MUST shift the internal points too
+        if (pastedObj.points != null) {
+          pastedObj.points = pastedObj.points!.map((p) => p + shift).toList();
+        }
+
+        pastedObj.isSelected = true; // Select the new object
+
+        // 4. Add to canvas and make it active
+        _drawingObjects.add(pastedObj);
+        _activeObject = pastedObj;
+        _selectedTool = 'Select'; // Switch to select tool so they can move it immediately
       });
     }
   }
@@ -811,6 +853,12 @@ Widget _mainMenuToggle({
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        // 🔽 3. ADD THESE 4 LINES FOR COPY/PASTE SHORTCUTS 🔽
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, // Mac
+        const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
+        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, // Mac
+
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
         const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
@@ -1155,6 +1203,11 @@ Widget _mainMenuToggle({
                 _selectedTool = 'Pin';
               }),
             ),
+            _vDiv(theme),
+
+            // 🔽 4. ADD THESE TWO LINES FOR THE UI BUTTONS 🔽
+            _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
+            _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
 
             _vDiv(theme),
             _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
