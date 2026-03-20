@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 // --- MODELS ---
-enum DrawingType { line, rect, circle, pencil, text, arrow, pen } // 👈 Added pen
-enum ResizeHandle { topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, none }
+enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin }
+enum ResizeHandle { none, topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, calloutKnee, calloutTip }
 
 class DrawingObject {
   Offset start;
@@ -26,6 +26,7 @@ class DrawingObject {
   bool isItalic;
   bool isUnderline;
   bool isStrikethrough;
+  bool isCallout; // 👈 NEW: Flags if this text box has a leader line
 
   DrawingObject({
     required this.start,
@@ -45,6 +46,7 @@ class DrawingObject {
     this.isItalic = false,
     this.isUnderline = false,
     this.isStrikethrough = false,
+    this.isCallout = false, // 👈 NEW: Default to false
   });
 
   Rect get rect {
@@ -86,6 +88,7 @@ class DrawingObject {
         isItalic: isItalic,
         isUnderline: isUnderline,
         isStrikethrough: isStrikethrough,
+        isCallout: isCallout, // 👈 NEW: Don't forget to copy it!
       );
 }
 
@@ -124,7 +127,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _textIsBold = false;
   bool _textIsItalic = false;
   bool _textIsUnderline = false;
-  bool _textIsStrikethrough = false;   
+  bool _textIsStrikethrough = false;
+  bool _textIsCallout = false; // 👈 NEW: Callout mode state   
   
   List<String> _pages = ['Page 1'];
   late String _currentPage;
@@ -152,7 +156,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _currentPage = _pages.first;
   }
 
-  Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject}) async {
+  Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject, bool isCallout = false}) async {
     final TextEditingController controller = TextEditingController(text: existingObject?.text ?? "");
     
     return showDialog(
@@ -189,6 +193,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
                   final calculatedSize = Offset(textPainter.width + 20, textPainter.height + 20);
 
+                  Color initialFill = _textFillColor;
+                  Color initialBorder = _textBorderColor;
+                  
+                  if (isCallout) {
+                    if (initialFill == Colors.transparent) initialFill = const Color(0xFF7F4A46);
+                    if (initialBorder == Colors.transparent) initialBorder = Colors.redAccent;
+                  }
+
                   if (existingObject != null) {
                     existingObject.text = controller.text;
                     existingObject.end = existingObject.start + calculatedSize;
@@ -198,12 +210,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       end: position + calculatedSize,
                       type: DrawingType.text,
                       text: controller.text,
-                      color: _textColor,         // 👈 Now uses the dedicated Text Color!
-                      fillColor: _textFillColor, // 👈 Now applies the Text Fill Color!
-                      borderColor: _textBorderColor, // 👈 NEW: Border color
-                      opacity: _textOpacity, // 👈 Now uses dedicated Text Opacity!
+                      color: _textColor,         
+                      fillColor: initialFill,   
+                      borderColor: initialBorder, 
+                      opacity: _textOpacity,
                       isSelected: true,
                       strokeWidth: _textStrokeWidth,
+                      fontSize: _textSize,
+                      isBold: _textIsBold,
+                      isItalic: _textIsItalic,
+                      isUnderline: _textIsUnderline,
+                      isStrikethrough: _textIsStrikethrough,
+                      isCallout: isCallout, // 👈 Uses the passed parameter
+                      points: isCallout ? [
+                        position + Offset(calculatedSize.dx / 2, calculatedSize.dy + 30), 
+                        position + Offset(calculatedSize.dx / 2 + 40, calculatedSize.dy + 70) 
+                      ] : null,
                     );
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
@@ -280,6 +302,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
       case ResizeHandle.rotation: return SystemMouseCursors.grab;
       case ResizeHandle.body: return SystemMouseCursors.move;
+      case ResizeHandle.calloutKnee:
+      case ResizeHandle.calloutTip: return SystemMouseCursors.move;
       default: return SystemMouseCursors.basic;
     }
   }
@@ -290,6 +314,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final r = obj.rect;
 
     if (obj.isSelected) {
+      // 🔽 NEW: Allow grabbing the Callout Arrow handles 🔽
+      if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
+        if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
+        if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
+      }
+      
       Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
       if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
@@ -329,8 +359,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final now = DateTime.now();
 
     setState(() {
-      if (_selectedTool == 'Text') {
-        _showTextDialog(position: pos);
+      if (_selectedTool == 'Text' || _selectedTool == 'Callout') {
+        _showTextDialog(position: pos, isCallout: _selectedTool == 'Callout');
       } else if (_selectedTool == 'Eraser') {
         _saveSnapshot();
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
@@ -361,7 +391,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         DrawingType type = (_selectedTool == 'Pencil') ? DrawingType.pencil : 
                            (_selectedTool == 'Rect') ? DrawingType.rect : 
                            (_selectedTool == 'Circle') ? DrawingType.circle : 
-                           (_selectedTool == 'Arrow') ? DrawingType.arrow : DrawingType.line;
+                           (_selectedTool == 'Arrow') ? DrawingType.arrow : 
+                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
         
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
         
@@ -430,13 +461,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
       } else if (_activeObject != null && _activeHandle != ResizeHandle.none) {
         if (_activeHandle == ResizeHandle.rotation) {
           _activeObject!.rotation = math.atan2(pos.dy - _activeObject!.center.dy, pos.dx - _activeObject!.center.dx) - _initialRotationAngle;
+        } else if (_activeHandle == ResizeHandle.calloutKnee) {
+          _activeObject!.points![0] = pos; // Move the knee independently
+        } else if (_activeHandle == ResizeHandle.calloutTip) {
+          _activeObject!.points![1] = pos; // Move the tip independently
         } else if (_activeHandle == ResizeHandle.body) {
           Offset delta = _activeObject!.end - _activeObject!.start;
           Offset moveDelta = (pos - _dragOffset) - _activeObject!.start;
           _activeObject!.start = pos - _dragOffset;
           _activeObject!.end = _activeObject!.start + delta;
-          // 🔽 ADDED DrawingType.pen HERE 🔽
+          
           if (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.pen) {
+            _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
+          }
+          // 🔽 NEW: Move the arrow points when dragging the whole Text box 🔽
+          if (_activeObject!.type == DrawingType.text && _activeObject!.isCallout && _activeObject!.points != null) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
         } else {
@@ -890,7 +929,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   bool _isShapeSelected(String tool) {
-    return ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
+    return ['Rect', 'Circle', 'Line', 'Arrow', 'Pin'].contains(tool);
   }
 
   IconData _getShapeIcon(String tool) {
@@ -898,7 +937,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case 'Rect': return Icons.crop_square;
       case 'Circle': return Icons.panorama_fish_eye;
       case 'Line': return Icons.show_chart;
-      case 'Arrow': return Icons.arrow_outward; 
+      case 'Arrow': return Icons.arrow_outward;
+      case 'Pin': return Icons.place;
       default: return Icons.crop_square; 
     }
   }
@@ -933,29 +973,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildFloatingTextMenu(ThemeData theme) {
     return Material(
-      elevation: 8,
-      borderRadius: BorderRadius.circular(8),
-      color: theme.colorScheme.surface,
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 🔽 THE NEW SUB-TOOL SELECTORS 🔽
+            const Text("TOOLS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
             _toolIcon(Icons.title, "Text", theme),
-            _vDiv(theme),
+            _toolIcon(Icons.chat_bubble_outline, "Callout", theme),
             
-            // 🔽 FORMATTING TOGGLES 🔽
+            _vDiv(theme),
+            const Text("FORMAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const SizedBox(width: 8),
+            
+            // 🔽 FORMATTING 🔽
             _formatToggle(Icons.format_bold, _textIsBold, () => setState(() {
               _textIsBold = !_textIsBold; if (_activeObject?.type == DrawingType.text) _activeObject!.isBold = _textIsBold;
             }), theme),
             _formatToggle(Icons.format_italic, _textIsItalic, () => setState(() {
               _textIsItalic = !_textIsItalic; if (_activeObject?.type == DrawingType.text) _activeObject!.isItalic = _textIsItalic;
             }), theme),
-            _formatToggle(Icons.format_underline, _textIsUnderline, () => setState(() {
+            _formatToggle(Icons.format_underlined, _textIsUnderline, () => setState(() {
               _textIsUnderline = !_textIsUnderline; if (_activeObject?.type == DrawingType.text) _activeObject!.isUnderline = _textIsUnderline;
             }), theme),
             _formatToggle(Icons.format_strikethrough, _textIsStrikethrough, () => setState(() {
@@ -963,17 +1005,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }), theme),
             
             _vDiv(theme),
-            _buildTextSizeSlider(theme), // Font size
+            _buildTextSizeSlider(theme), 
             _vDiv(theme),
             
+            // 🔽 COLORS & BORDER 🔽
             _colorButton("Text", _textColor, 4),         
             const SizedBox(width: 12),
             _colorButton("Border", _textBorderColor, 5), 
             const SizedBox(width: 12),
             _colorButton("Fill", _textFillColor, 6),     
-            
             _vDiv(theme),
-            _buildStrokeSlider(theme, 2), // Border thickness
+            _buildStrokeSlider(theme, 2), 
           ],
         ),
       ),
@@ -995,6 +1037,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
             _toolIcon(Icons.show_chart, "Line", theme),
             _toolIcon(Icons.arrow_outward, "Arrow", theme),
+            _toolIcon(Icons.chat_bubble_outline, "Callout", theme), // 👈 NEW
+            _toolIcon(Icons.place, "Pin", theme),
             _vDiv(theme),
             const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             const SizedBox(width: 8),
@@ -1075,21 +1119,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
               }),
             ),
 
-            // 🔽 4. TEXT TOGGLE 🔽
+            // 🔽 4. TEXT/CALLOUT TOGGLE 🔽
             _mainMenuToggle(
-              icon: Icons.title,
-              label: "Text",
-              isActive: _showTextToolbar || _selectedTool == 'Text',
+              icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title,
+              label: _selectedTool == 'Callout' ? "Callout" : "Text",
+              isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout',
               hasDropdown: true,
               theme: theme,
               onTap: () => setState(() {
                 _showTextToolbar = !_showTextToolbar;
                 if (_showTextToolbar) {
-                  _showPencilToolbar = false; // Strictly close others
+                  _showPencilToolbar = false; 
                   _showShapeToolbar = false;
-                  _selectedTool = 'Text';
+                  if (_selectedTool != 'Text' && _selectedTool != 'Callout') {
+                    _selectedTool = 'Text'; // Default to Text when opening
+                  }
                 } else {
-                  _selectedTool = 'Select'; // Revert to select if closed
+                  _selectedTool = 'Select'; 
                 }
               }),
             ),
@@ -1131,14 +1177,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildTextSizeSlider(ThemeData theme) {
     return SizedBox(
-      width: 140, 
+      width: 160,
       child: Row(children: [
-        SizedBox(width: 32, child: Text("${_textSize.toInt()}pt", style: theme.textTheme.labelSmall)),
+        const Text("Size: ", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+        SizedBox(width: 28, child: Text("${_textSize.toInt()}", style: theme.textTheme.labelSmall)),
         Expanded(
-          child: Slider(value: _textSize, min: 10, max: 100, onChanged: (v) => setState(() {
-            _textSize = v; 
-            if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v;
-          }))
+          child: Slider(
+            value: _textSize, min: 10, max: 120, 
+            onChanged: (v) => setState(() {
+              _textSize = v;
+              // 🔽 FIXED: We only need to check for DrawingType.text! 🔽
+              if (_activeObject?.type == DrawingType.text) {
+                _activeObject!.fontSize = v;
+              }
+            })
+          )
         ),
       ]),
     );
@@ -1270,74 +1323,95 @@ class MainPainter extends CustomPainter {
 
       final Rect rect = obj.rect;
       
-      if (obj.type == DrawingType.text && obj.text != null) {
-        
-        // 1. Use the strokeWidth for font size (keeps it consistent with the dialog)
-        double fontSize = obj.strokeWidth * 10;
+      if (obj.type == DrawingType.text && obj.text != null) {        
+        // 1. Text Auto-Height Calculation
+        double fontSize = obj.fontSize ?? 24.0;
         if (fontSize < 1) fontSize = 1;
 
-        // Determine Text Decoration (Underline / Strikethrough)
-        TextDecoration decoration = TextDecoration.none;
-        if (obj.isUnderline && obj.isStrikethrough) {
-          decoration = TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]);
-        } else if (obj.isUnderline) {
-          decoration = TextDecoration.underline;
-        } else if (obj.isStrikethrough) {
-          decoration = TextDecoration.lineThrough;
-        }
-
         final textPainter = TextPainter(
-          text: TextSpan(
-            text: obj.text,
-            style: TextStyle(
-              color: obj.color, 
-              fontSize: obj.fontSize, // 👈 Now uses dedicated fontSize
-              fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal,
-              fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal,
-              decoration: decoration, // 👈 Applies Underline/Strikethrough
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-          textAlign: TextAlign.left,
+          text: TextSpan(text: obj.text, style: TextStyle(color: obj.color, fontSize: fontSize, fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal, fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal)),
+          textDirection: TextDirection.ltr, textAlign: TextAlign.left,
         );
         
-        // 2. Layout the text using the box's current width
         double availableWidth = rect.width > 20 ? rect.width - 20 : 10;
         textPainter.layout(maxWidth: availableWidth);
-
-        // 3. 🌟 THE MAGIC FIX: Auto-adjust height 🌟
-        // Calculate the exact height needed for the wrapped text
         double requiredHeight = textPainter.height + 20;
         
-        // Automatically adjust the object's bottom edge so the box snaps to fit!
+        // 🔽 FIXED: Smoothly snaps the height without moving your arrow points! 🔽
         if (obj.end.dy >= obj.start.dy) {
           obj.end = Offset(obj.end.dx, obj.start.dy + requiredHeight);
         } else {
           obj.start = Offset(obj.start.dx, obj.end.dy - requiredHeight);
         }
         
-        // Grab the updated rectangle with the newly fixed height
         final updatedRect = obj.rect;
+        final borderPaint = Paint()..color = obj.borderColor..strokeWidth = obj.strokeWidth..style = PaintingStyle.stroke;
 
-        // 4. Paint Background Fill using the auto-sized rect
-        if (obj.fillColor != Colors.transparent) {
-          final fillPaint = Paint()
-            ..color = obj.fillColor.withOpacity(obj.opacity)
-            ..style = PaintingStyle.fill;
-          canvas.drawRect(updatedRect, fillPaint);
+        // 2. 🌟 DRAW THE LEADER LINE IF IT'S A CALLOUT 🌟
+        if (obj.isCallout && obj.points != null && obj.points!.length >= 2) {
+          Offset knee = obj.points![0];
+          Offset tip = obj.points![1];
+
+          // Dynamically attach to the nearest edge
+          Offset attach = Offset(updatedRect.center.dx, updatedRect.bottom); 
+          if (knee.dy < updatedRect.top) attach = Offset(updatedRect.center.dx, updatedRect.top);
+          else if (knee.dy > updatedRect.bottom) attach = Offset(updatedRect.center.dx, updatedRect.bottom);
+          else if (knee.dx < updatedRect.left) attach = Offset(updatedRect.left, updatedRect.center.dy);
+          else if (knee.dx > updatedRect.right) attach = Offset(updatedRect.right, updatedRect.center.dy);
+
+          Path leaderPath = Path()..moveTo(attach.dx, attach.dy)..lineTo(knee.dx, knee.dy)..lineTo(tip.dx, tip.dy);
+          canvas.drawPath(leaderPath, borderPaint);
+
+          double angle = math.atan2(tip.dy - knee.dy, tip.dx - knee.dx);
+          Path arrow = Path()
+            ..moveTo(tip.dx, tip.dy)
+            ..lineTo(tip.dx - 15 * math.cos(angle - math.pi / 6), tip.dy - 15 * math.sin(angle - math.pi / 6))
+            ..moveTo(tip.dx, tip.dy)
+            ..lineTo(tip.dx - 15 * math.cos(angle + math.pi / 6), tip.dy - 15 * math.sin(angle + math.pi / 6));
+          canvas.drawPath(arrow, borderPaint);
         }
 
-        // 5. Paint Border using the auto-sized rect
-        if (obj.borderColor != Colors.transparent) {
-          final borderPaint = Paint()
-            ..color = obj.borderColor
-            ..strokeWidth = 2.0 // Keeps the border clean and thin
-            ..style = PaintingStyle.stroke;
-          canvas.drawRect(updatedRect, borderPaint);
-        }
-
-        // 6. Paint the Text exactly inside the padding
+        // 3. Draw Background Box & Border
+        if (obj.fillColor != Colors.transparent) canvas.drawRect(updatedRect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
+        if (obj.borderColor != Colors.transparent) canvas.drawRect(updatedRect, borderPaint);
+        
+        // 4. Draw Text
         textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
+
+        // 5. 🌟 STANDARD RESIZE DOTS FOR CALLOUT ARROW 🌟
+        if (obj.isSelected && obj.isCallout && obj.points != null) {
+          Paint hP = Paint()..color = Colors.blue; 
+          Paint wP = Paint()..color = Colors.white; 
+          canvas.drawCircle(obj.points![0], 7, wP); canvas.drawCircle(obj.points![0], 5, hP); // Knee
+          canvas.drawCircle(obj.points![1], 7, wP); canvas.drawCircle(obj.points![1], 5, hP); // Tip
+        }
+      
+      } else if (obj.type == DrawingType.pin) {
+          // 📍 THE MAP PIN PATH
+          double w = rect.width;
+          double h = rect.height;
+          double r = w / 2; 
+          
+          Path pinPath = Path();
+          pinPath.moveTo(rect.center.dx, rect.bottom); 
+          pinPath.quadraticBezierTo(rect.left, rect.bottom - h * 0.3, rect.left, rect.top + r);
+          pinPath.arcToPoint(Offset(rect.right, rect.top + r), radius: Radius.circular(r), clockwise: true);
+          pinPath.quadraticBezierTo(rect.right, rect.bottom - h * 0.3, rect.center.dx, rect.bottom);
+          pinPath.close();
+
+          // 🔽 Define the border paint dynamically here 🔽
+          final borderPaint = Paint()
+            ..color = obj.color.withOpacity(obj.opacity)
+            ..strokeWidth = obj.strokeWidth
+            ..style = PaintingStyle.stroke;
+
+          if (obj.fillColor != Colors.transparent) {
+            canvas.drawPath(pinPath, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
+          }
+          canvas.drawPath(pinPath, borderPaint);
+          
+          // Draw the little hole in the center of the pin
+          canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, borderPaint);
         
       } else {
         if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
