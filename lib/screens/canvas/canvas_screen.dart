@@ -392,30 +392,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
                            (_selectedTool == 'Rect') ? DrawingType.rect : 
                            (_selectedTool == 'Circle') ? DrawingType.circle : 
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
-                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
+                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line; // 👈 Added Pin routing
         
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
         
         Color objColor = Colors.black;
         Color objFill = Colors.transparent;
         double objOpacity = 1.0; 
-        double objStroke = 2.0; // 👈 Setup local stroke router
+        double objStroke = 2.0; 
 
         if (type == DrawingType.pencil) {
-          objColor = _pencilColor; objFill = _penFillColor; objOpacity = _pencilOpacity; 
-          objStroke = _pencilStrokeWidth; // 👈 Route Pencil Stroke
+          objColor = _pencilColor; objFill = _penFillColor; objOpacity = _pencilOpacity; objStroke = _pencilStrokeWidth; 
+        } else if (type == DrawingType.pin) {
+          // 🔽 FORCE CLASSIC MAP PIN COLORS 🔽
+          objColor = Colors.red[800]!; // Dark red outline
+          objFill = Colors.red;        // Bright red fill
+          objOpacity = 1.0;  
+          objStroke = 2.0;
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
-          objColor = _shapeLineColor; objOpacity = _shapeOpacity;  
-          objStroke = _shapeStrokeWidth;  // 👈 Route Shape Stroke
+          objColor = _shapeLineColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
         } else if (type == DrawingType.rect || type == DrawingType.circle) { 
-          objColor = _shapeBorderColor; objFill = _shapeFillColor; objOpacity = _shapeOpacity;  
-          objStroke = _shapeStrokeWidth;  // 👈 Route Shape Stroke
+          objColor = _shapeBorderColor; objFill = _shapeFillColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
         }
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts,
-          strokeWidth: objStroke, // 👈 Assign the routed stroke!
-          color: objColor, fillColor: objFill, opacity: objOpacity,
+          strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
         );
       } else {
         // ... (Keep your existing Select Tool resizing/hit-testing logic here) ...
@@ -761,7 +763,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
   
-  Widget _mainMenuToggle({
+Widget _mainMenuToggle({
     required IconData icon,
     required String label,
     required bool isActive,
@@ -775,6 +777,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -789,7 +792,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
                 ] else ...[
                   // Adds a tiny bit of invisible spacing so the "Select" icon aligns perfectly with dropdowns
-                  const SizedBox(width: 18), 
+                  const SizedBox(width: 5), 
                 ]
               ],
             ),
@@ -929,7 +932,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   bool _isShapeSelected(String tool) {
-    return ['Rect', 'Circle', 'Line', 'Arrow', 'Pin'].contains(tool);
+    return ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
   }
 
   IconData _getShapeIcon(String tool) {
@@ -938,7 +941,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case 'Circle': return Icons.panorama_fish_eye;
       case 'Line': return Icons.show_chart;
       case 'Arrow': return Icons.arrow_outward;
-      case 'Pin': return Icons.place;
       default: return Icons.crop_square; 
     }
   }
@@ -1038,7 +1040,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _toolIcon(Icons.show_chart, "Line", theme),
             _toolIcon(Icons.arrow_outward, "Arrow", theme),
             _toolIcon(Icons.chat_bubble_outline, "Callout", theme), // 👈 NEW
-            _toolIcon(Icons.place, "Pin", theme),
             _vDiv(theme),
             const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             const SizedBox(width: 8),
@@ -1137,6 +1138,21 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 } else {
                   _selectedTool = 'Select'; 
                 }
+              }),
+            ),
+
+            // 🔽 5. PIN MARKER TOGGLE 🔽
+            _mainMenuToggle(
+              icon: Icons.place,
+              label: "Pin",
+              isActive: _selectedTool == 'Pin',
+              hasDropdown: false,
+              theme: theme,
+              onTap: () => setState(() {
+                _showPencilToolbar = false; 
+                _showShapeToolbar = false;
+                _showTextToolbar = false;
+                _selectedTool = 'Pin';
               }),
             ),
 
@@ -1390,27 +1406,32 @@ class MainPainter extends CustomPainter {
           // 📍 THE MAP PIN PATH
           double w = rect.width;
           double h = rect.height;
-          double r = w / 2; 
+          double r = w / 2; // Radius of the top curve
           
           Path pinPath = Path();
-          pinPath.moveTo(rect.center.dx, rect.bottom); 
-          pinPath.quadraticBezierTo(rect.left, rect.bottom - h * 0.3, rect.left, rect.top + r);
+          pinPath.moveTo(rect.center.dx, rect.bottom); // Start at the pointy bottom tip
+          // Curve up the left side
+          pinPath.quadraticBezierTo(rect.left, rect.bottom - h * 0.4, rect.left, rect.top + r);
+          // Draw the perfect semi-circle on top
           pinPath.arcToPoint(Offset(rect.right, rect.top + r), radius: Radius.circular(r), clockwise: true);
-          pinPath.quadraticBezierTo(rect.right, rect.bottom - h * 0.3, rect.center.dx, rect.bottom);
+          // Curve down the right side back to the tip
+          pinPath.quadraticBezierTo(rect.right, rect.bottom - h * 0.4, rect.center.dx, rect.bottom);
           pinPath.close();
 
-          // 🔽 Define the border paint dynamically here 🔽
           final borderPaint = Paint()
             ..color = obj.color.withOpacity(obj.opacity)
             ..strokeWidth = obj.strokeWidth
             ..style = PaintingStyle.stroke;
 
+          // Draw the solid red body
           if (obj.fillColor != Colors.transparent) {
             canvas.drawPath(pinPath, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
           }
+          // Draw the dark red border
           canvas.drawPath(pinPath, borderPaint);
           
-          // Draw the little hole in the center of the pin
+          // Draw the classic white hole in the center of the top circle
+          canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, Paint()..color = Colors.white..style = PaintingStyle.fill);
           canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, borderPaint);
         
       } else {
