@@ -3,6 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+// export pdf
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 // --- MODELS ---
 enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin }
 enum ResizeHandle { none, topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, calloutKnee, calloutTip }
@@ -91,6 +96,7 @@ class DrawingObject {
         isCallout: isCallout, // 👈 NEW: Don't forget to copy it!
       );
 }
+
 
 class PageData {
   List<DrawingObject> objects = [];
@@ -352,7 +358,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  // 🔽 2. ADD THESE TWO METHODS 🔽
   void _copySelected() {
     if (_activeObject != null) {
       setState(() {
@@ -877,7 +882,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
   
-Widget _mainMenuToggle({
+  Widget _mainMenuToggle({
     required IconData icon,
     required String label,
     required bool isActive,
@@ -1046,7 +1051,36 @@ Widget _mainMenuToggle({
         // const Icon(Icons.arrow_back), const SizedBox(width: 15),
         Text("Canvas", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         const Spacer(),
-        _buildPageSelector(theme), const SizedBox(width: 20), const Icon(Icons.save_outlined),
+        _buildPageSelector(theme), 
+        const SizedBox(width: 20), 
+        
+        // 🔽 REPLACED YOUR SAVE ICON WITH THIS 🔽
+        PopupMenuButton<String>(
+          tooltip: "Export PDF",
+          icon: const Icon(Icons.picture_as_pdf_outlined), 
+          offset: const Offset(0, 45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (val) => _exportToPdf(exportAll: val == 'all'),
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'current',
+              child: ListTile(
+                leading: Icon(Icons.insert_drive_file_outlined, size: 18),
+                title: Text("Export Current Page"),
+                dense: true,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'all',
+              child: ListTile(
+                leading: Icon(Icons.copy_all_rounded, size: 18),
+                title: Text("Export All Pages"),
+                dense: true,
+              ),
+            ),
+          ],
+        ),
+        // 🔼 END OF REPLACEMENT 🔼
       ]),
     );
   }
@@ -1477,6 +1511,213 @@ Widget _mainMenuToggle({
       _selectedTool = 'Select';
       _currentPreview = null;
     }
+  }
+
+  Future<void> _exportToPdf({required bool exportAll}) async {
+    final pdf = pw.Document();
+    
+    // Determine which pages to process
+    final List<String> targets = exportAll ? _pages : [_currentPage];
+
+    // Grab the exact screen size so the PDF maps 1:1 with what the user sees
+    final Size screenSize = MediaQuery.of(context).size;
+    final pdfFormat = PdfPageFormat(screenSize.width, screenSize.height);
+
+    for (var pageName in targets) {
+      final data = _pageDataMap[pageName]!;
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pdfFormat,
+          margin: pw.EdgeInsets.zero, // NO MARGINS so coordinates map exactly
+          build: (pw.Context context) {
+            return pw.SizedBox(
+              width: pdfFormat.width,
+              height: pdfFormat.height,
+              child: pw.Stack(
+                children: [
+                  // 1. Force a solid white background so the stack doesn't collapse
+                  pw.Positioned.fill(child: pw.Container(color: PdfColors.white)),
+
+                  // 2. LAYER 1: ALL SHAPES, LINES, PATHS, AND BACKGROUNDS
+                  pw.Positioned.fill(
+                    child: pw.CustomPaint(
+                      painter: (PdfGraphics canvas, PdfPoint size) {
+                        for (var obj in data.objects) {
+                          final pdfColor = PdfColor.fromInt(obj.color.value);
+                          final pdfFill = PdfColor.fromInt(obj.fillColor.value);
+                          final pdfBorder = PdfColor.fromInt(obj.borderColor.value);
+                          final double stroke = obj.strokeWidth;
+
+                          // --- MANUAL ROTATION MATH ---
+                          final cx = obj.center.dx;
+                          final cy = obj.center.dy;
+                          final double angle = obj.rotation;
+
+                          // This helper rotates any point around the object's center perfectly
+                          Offset rot(Offset p) {
+                            if (angle == 0) return p;
+                            final dx = p.dx - cx;
+                            final dy = p.dy - cy;
+                            return Offset(
+                              dx * math.cos(angle) - dy * math.sin(angle) + cx,
+                              dx * math.sin(angle) + dy * math.cos(angle) + cy
+                            );
+                          }
+
+                          // --- DRAW LEADER LINE FOR CALLOUTS ---
+                          if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
+                            final strokeC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : PdfColor.fromInt(Colors.redAccent.value);
+                            canvas.setStrokeColor(strokeC);
+                            canvas.setLineWidth(stroke);
+                            
+                            final basePoint = rot(Offset(obj.rect.center.dx, obj.rect.bottom));
+                            final knee = rot(obj.points![0]);
+                            final tip = rot(obj.points![1]);
+
+                            canvas.moveTo(basePoint.dx, basePoint.dy);
+                            canvas.lineTo(knee.dx, knee.dy);
+                            canvas.lineTo(tip.dx, tip.dy);
+                            canvas.strokePath();
+                          }
+
+                          // --- DRAW TEXT BACKGROUND BOX (Text itself is drawn later) ---
+                          if (obj.type == DrawingType.text) {
+                            if (obj.fillColor != Colors.transparent || obj.borderColor != Colors.transparent) {
+                              final tl = rot(obj.rect.topLeft);
+                              final tr = rot(obj.rect.topRight);
+                              final br = rot(obj.rect.bottomRight);
+                              final bl = rot(obj.rect.bottomLeft);
+                              
+                              canvas.moveTo(tl.dx, tl.dy);
+                              canvas.lineTo(tr.dx, tr.dy);
+                              canvas.lineTo(br.dx, br.dy);
+                              canvas.lineTo(bl.dx, bl.dy);
+                              canvas.lineTo(tl.dx, tl.dy); // Close box
+                              
+                              final strokeC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : pdfColor;
+                              canvas.setStrokeColor(strokeC);
+                              canvas.setLineWidth(stroke);
+
+                              if (obj.fillColor != Colors.transparent) {
+                                canvas.setFillColor(pdfFill);
+                                canvas.fillAndStrokePath();
+                              } else {
+                                canvas.strokePath();
+                              }
+                            }
+                            continue; // Skip the rest of the loop for text
+                          }
+
+                          canvas.setLineWidth(stroke);
+                          final actualBorderC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : pdfColor;
+
+                          // --- RECTANGLE ---
+                          if (obj.type == DrawingType.rect) {
+                            final tl = rot(obj.rect.topLeft);
+                            final tr = rot(obj.rect.topRight);
+                            final br = rot(obj.rect.bottomRight);
+                            final bl = rot(obj.rect.bottomLeft);
+
+                            canvas.moveTo(tl.dx, tl.dy);
+                            canvas.lineTo(tr.dx, tr.dy);
+                            canvas.lineTo(br.dx, br.dy);
+                            canvas.lineTo(bl.dx, bl.dy);
+                            canvas.lineTo(tl.dx, tl.dy);
+                            
+                            canvas.setStrokeColor(actualBorderC);
+                            if (obj.fillColor != Colors.transparent) {
+                              canvas.setFillColor(pdfFill);
+                              canvas.fillAndStrokePath();
+                            } else {
+                              canvas.strokePath();
+                            }
+                          } 
+                          // --- CIRCLE ---
+                          else if (obj.type == DrawingType.circle) {
+                            canvas.setStrokeColor(actualBorderC);
+                            canvas.drawEllipse(cx, cy, obj.rect.width / 2, obj.rect.height / 2);
+                            if (obj.fillColor != Colors.transparent) {
+                              canvas.setFillColor(pdfFill);
+                              canvas.fillAndStrokePath();
+                            } else {
+                              canvas.strokePath();
+                            }
+                          } 
+                          // --- LINE OR ARROW ---
+                          else if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
+                            canvas.setStrokeColor(pdfColor);
+                            final rStart = rot(obj.start);
+                            final rEnd = rot(obj.end);
+                            
+                            canvas.moveTo(rStart.dx, rStart.dy);
+                            canvas.lineTo(rEnd.dx, rEnd.dy);
+
+                            if (obj.type == DrawingType.arrow) {
+                              const double arrowLength = 15.0;
+                              const double arrowAngle = math.pi / 6;
+                              double angle2 = math.atan2(rEnd.dy - rStart.dy, rEnd.dx - rStart.dx);
+                              
+                              canvas.moveTo(rEnd.dx, rEnd.dy);
+                              canvas.lineTo(rEnd.dx - arrowLength * math.cos(angle2 - arrowAngle), rEnd.dy - arrowLength * math.sin(angle2 - arrowAngle));
+                              canvas.moveTo(rEnd.dx, rEnd.dy);
+                              canvas.lineTo(rEnd.dx - arrowLength * math.cos(angle2 + arrowAngle), rEnd.dy - arrowLength * math.sin(angle2 + arrowAngle));
+                            }
+                            canvas.strokePath();
+                          } 
+                          // --- PENCIL / PEN ---
+                          else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
+                            canvas.setStrokeColor(pdfColor);
+                            final firstPoint = rot(obj.points!.first);
+                            canvas.moveTo(firstPoint.dx, firstPoint.dy);
+                            
+                            for (var p in obj.points!) {
+                              final rp = rot(p);
+                              canvas.lineTo(rp.dx, rp.dy);
+                            }
+
+                            if (obj.fillColor != Colors.transparent && obj.points!.length > 2) {
+                              canvas.setFillColor(pdfFill);
+                              canvas.fillAndStrokePath();
+                            } else {
+                              canvas.strokePath();
+                            }
+                          }
+                        }
+                      },
+                    ),
+                  ),
+
+                  // 3. LAYER 2: TEXT WIDGETS
+                  // Drawn on top of the graphics layer natively so the fonts stay crisp
+                  ...data.objects.where((o) => o.type == DrawingType.text && o.text != null).map((obj) {
+                    return pw.Positioned(
+                      left: obj.rect.left + 10, // Match your canvas padding
+                      top: obj.rect.top + 10,
+                      child: pw.Text(
+                        obj.text!,
+                        style: pw.TextStyle(
+                          color: PdfColor.fromInt(obj.color.value),
+                          fontSize: obj.fontSize,
+                          fontWeight: obj.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                          fontStyle: obj.isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    // Opens the native print/save dialog automatically!
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+      name: exportAll ? 'Project_Full_Export' : '${_currentPage}_Export',
+    );
   }
 }
 
