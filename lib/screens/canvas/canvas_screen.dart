@@ -1,140 +1,64 @@
-import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
-// export pdf
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
+import '../../../core/api_service.dart';
 
-// --- MODELS ---
-enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin }
-enum ResizeHandle { none, topLeft, topCenter, topRight, centerLeft, centerRight, bottomLeft, bottomCenter, bottomRight, rotation, body, calloutKnee, calloutTip }
-
-class DrawingObject {
-  Offset start;
-  Offset end;
-  List<Offset>? points; 
-  String? text; 
-  double strokeWidth;
-  Color color;      
-  Color fillColor;  
-  Color borderColor; // 👈 NEW: Added dedicated border color
-  double opacity;   
-  bool isSelected;
-  DrawingType type;
-  double rotation; 
-  // 🔽 NEW TEXT FORMATTING PROPERTIES 🔽
-  double fontSize;
-  bool isBold;
-  bool isItalic;
-  bool isUnderline;
-  bool isStrikethrough;
-  bool isCallout; // 👈 NEW: Flags if this text box has a leader line
-
-  DrawingObject({
-    required this.start,
-    required this.end,
-    required this.type,
-    this.points,
-    this.text,
-    this.strokeWidth = 2.0,
-    this.color = Colors.black,
-    this.fillColor = Colors.transparent,
-    this.borderColor = Colors.transparent, // 👈 NEW: Default to transparent
-    this.opacity = 1.0,
-    this.isSelected = false,
-    this.rotation = 0.0,// 🔽 NEW DEFAULTS 🔽
-    this.fontSize = 24.0,
-    this.isBold = false,
-    this.isItalic = false,
-    this.isUnderline = false,
-    this.isStrikethrough = false,
-    this.isCallout = false, // 👈 NEW: Default to false
-  });
-
-  Rect get rect {
-    // 🔽 ADDED DrawingType.pen HERE 🔽
-    if ((type == DrawingType.pencil || type == DrawingType.pen) && points != null && points!.isNotEmpty) {
-      double minX = points![0].dx;
-      double maxX = points![0].dx;
-      double minY = points![0].dy;
-      double maxY = points![0].dy;
-      for (var p in points!) {
-        minX = math.min(minX, p.dx);
-        maxX = math.max(maxX, p.dx);
-        minY = math.min(minY, p.dy);
-        maxY = math.max(maxY, p.dy);
-      }
-      return Rect.fromLTRB(minX, minY, maxX, maxY);
-    }
-    return Rect.fromPoints(start, end);
-  }
-
-  Offset get center => rect.center;
-
-  DrawingObject copy() => DrawingObject(
-        start: start,
-        end: end,
-        type: type,
-        points: points != null ? List.from(points!) : null,
-        text: text,
-        strokeWidth: strokeWidth,
-        color: color,
-        fillColor: fillColor,
-        borderColor: borderColor, // 👈 NEW: Don't forget to copy it!
-        opacity: opacity,
-        isSelected: isSelected,
-        rotation: rotation,
-        // 🔽 NEW COPY FIELDS 🔽
-        fontSize: fontSize,
-        isBold: isBold,
-        isItalic: isItalic,
-        isUnderline: isUnderline,
-        isStrikethrough: isStrikethrough,
-        isCallout: isCallout, // 👈 NEW: Don't forget to copy it!
-      );
-}
-
-
-class PageData {
-  List<DrawingObject> objects = [];
-  List<List<DrawingObject>> undoStack = [];
-  List<List<DrawingObject>> redoStack = [];
-}
+import 'models/canvas_models.dart';
+import 'widgets/canvas_painter.dart';
+import 'widgets/properties_panel.dart';
+import 'utils/canvas_export.dart';
 
 class CanvasScreen extends StatefulWidget {
-  const CanvasScreen({super.key});
+  final String documentId;
+  final String projectId;
+  final String inspectionId;
+  final String page;
+
+  const CanvasScreen({
+    super.key,
+    required this.projectId,
+    required this.inspectionId,
+    required this.documentId,
+    this.page = '1',
+  });
+
   @override
   State<CanvasScreen> createState() => _CanvasScreenState();
 }
 
 class _CanvasScreenState extends State<CanvasScreen> {
+  final ApiService _apiService = ApiService();
+
+  final FocusNode _canvasFocusNode = FocusNode();
+  
+  // State for our API Loading
+  bool _isPageLoading = false;
+  bool _isLoadingDocument = true;
+  bool _isSaving = false;
+
   String _selectedTool = 'Select';
 
   double _pencilStrokeWidth = 2.0;
   double _shapeStrokeWidth = 2.0;
   double _textStrokeWidth = 2.0;
   
-  // 1. Pencil & Pen State
   Color _pencilColor = Colors.black;
   Color _penFillColor = Colors.transparent;
   double _pencilOpacity = 1.0; 
 
-  // 2. Shapes State (Rect, Circle, Line, Arrow)
   Color _shapeLineColor = Colors.black;
   Color _shapeBorderColor = Colors.black;
   Color _shapeFillColor = Colors.transparent;
   double _shapeOpacity = 1.0;
 
-  // 3. Text State
   Color _textColor = Colors.black;
   Color _textBorderColor = Colors.transparent;
   Color _textFillColor = Colors.transparent;
   double _textOpacity = 1.0;
 
-  // Text Formatting State
   double _textSize = 24.0;
   bool _textIsBold = false;
   bool _textIsItalic = false;
@@ -143,38 +67,424 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   DrawingObject? _currentPreview;
   DrawingObject? _activeObject; 
-  DrawingObject? _clipboard; // 👈 1. ADD THIS LINE for your clipboard
+  DrawingObject? _clipboard; 
   
   ResizeHandle _activeHandle = ResizeHandle.none;
   ResizeHandle _hoveredHandle = ResizeHandle.none;
   Offset _dragOffset = Offset.zero;
   double _initialRotationAngle = 0.0;
   DateTime? _lastTapTime;
+  
   bool _showShapeToolbar = false;
   bool _showTextToolbar = false; 
-  bool _showPencilToolbar = false; // 👈 Add this new line!
+  bool _showPencilToolbar = false; 
 
-  // ✅ ADD THESE INSTEAD
-  List<String> _pages = ['Page 1'];
-  String _currentPage = 'Page 1'; 
-  
-  // The master map holding the state for every page
-  Map<String, PageData> _pageDataMap = {'Page 1': PageData()};
+  // 🔽 API-Driven Page Management 🔽
+  List<String> _pages = [];
+  String _currentPage = ''; 
+  Map<String, PageData> _pageDataMap = {};
 
-  // Smart Getters & Setters! 
-  // These automatically route all your existing drawing code to the correct page's data.
-  List<DrawingObject> get _drawingObjects => _pageDataMap[_currentPage]!.objects;
-  set _drawingObjects(List<DrawingObject> val) => _pageDataMap[_currentPage]!.objects = val;
+  List<DrawingObject> get _drawingObjects => _pageDataMap[_currentPage]?.objects ?? [];
+  set _drawingObjects(List<DrawingObject> val) {
+    if (_pageDataMap.containsKey(_currentPage)) {
+      _pageDataMap[_currentPage]!.objects = val;
+    }
+  }
+  List<List<DrawingObject>> get _undoStack => _pageDataMap[_currentPage]?.undoStack ?? [];
+  List<List<DrawingObject>> get _redoStack => _pageDataMap[_currentPage]?.redoStack ?? [];
 
-  List<List<DrawingObject>> get _undoStack => _pageDataMap[_currentPage]!.undoStack;
-  List<List<DrawingObject>> get _redoStack => _pageDataMap[_currentPage]!.redoStack;
+  List<ProjectTag> _availableTags = [];
 
+  @override
+  void dispose() {
+    _canvasFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    _initializeCanvas();
   }
 
+  Future<void> _fetchAvailableTags() async {
+    try {
+      final response = await _apiService.get('/project/tags/${widget.projectId}');
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        setState(() {
+          _availableTags = (responseData['data'] as List)
+              .map((tagJson) => ProjectTag.fromJson(tagJson))
+              .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching tags: $e");
+    }
+  }
+
+  Future<void> _initializeCanvas() async {
+    setState(() => _isLoadingDocument = true);
+    
+    await _fetchAvailableTags(); 
+    await _fetchPageList();
+    
+    if (_pages.isEmpty) {
+      _pages = ['Page 1'];
+      _currentPage = 'Page 1';
+      _pageDataMap = {'Page 1': PageData(pageId: 'fallback_id')};
+    }
+    
+    if (_pages.isNotEmpty) {
+      await _fetchPageImage(_currentPage);
+      await _fetchSavedAnnotations(_currentPage);
+    }
+    
+    setState(() => _isLoadingDocument = false);
+  }
+
+  // ==========================================
+  // API 1: Gets the list of pages and their unique IDs
+  // ==========================================
+  Future<void> _fetchPageList() async {
+    try {
+      final response = await _apiService.get('/templateDocumentPage/template-document/${widget.documentId}');
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        final List pagesData = responseData['data'];
+        
+        _pages.clear();
+        _pageDataMap.clear();
+
+        for (var page in pagesData) {
+          final String pageId = page['id'];
+          final String pageName = page['name'] ?? 'Page ${page['page_number']}';
+          
+          _pages.add(pageName);
+          // Initialize with the ID, but keep the image bytes null for now!
+          _pageDataMap[pageName] = PageData(pageId: pageId); 
+        }
+
+        // Set the active page based on the URL parameter (e.g., ?page=1)
+        if (_pages.isNotEmpty) {
+          String targetPage = 'Page ${widget.page}';
+          _currentPage = _pages.contains(targetPage) ? targetPage : _pages.first;
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading page list: $e");
+    }
+  }
+
+  // ==========================================
+  // API 2: Gets the Base64 image using the specific page ID
+  // ==========================================
+  Future<void> _fetchPageImage(String pageName) async {
+    final pageData = _pageDataMap[pageName];
+    
+    // If the page doesn't exist or we already downloaded the image, skip the API call!
+    if (pageData == null || pageData.backgroundImageBytes != null) return;
+
+    setState(() => _isPageLoading = true);
+    
+    try {
+      // Pass the specific page ID we saved from API 1
+      final response = await _apiService.get('/templateDocumentPage/pdf/${pageData.pageId}');
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        final String base64String = responseData['data']['image'] ?? '';
+        
+        if (base64String.isNotEmpty) {
+          // Decode the string and save it to the map
+          pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading page image: $e");
+    } finally {
+      setState(() => _isPageLoading = false);
+    }
+  }
+  
+  // ==========================================
+  // API 3: GET SAVED ANNOTATIONS
+  // ==========================================
+  Future<void> _fetchSavedAnnotations(String pageName) async {
+    final pageData = _pageDataMap[pageName];
+    if (pageData == null || pageData.hasLoadedAnnotations) return;
+
+    try {
+      final String url = '/canvas/jsonDataFromS3?project_id=${widget.projectId}&page_name=${Uri.encodeComponent(pageName)}&template_document_id=${widget.documentId}&template_document_page_id=${pageData.pageId}&inspection_id=${widget.inspectionId}';
+      
+      final response = await _apiService.get(url);
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        final List dataList = responseData['data'];
+        
+        final pageJson = dataList.firstWhere(
+          (p) => p['page_name'] == pageName, 
+          orElse: () => null
+        );
+
+        if (pageJson != null && pageJson['items'] != null) {
+          List<DrawingObject> loadedObjects = [];
+          
+          for (var item in pageJson['items']) {
+            double startX = (item['start']['dx'] ?? 0.0) * 816.0;
+            double startY = (item['start']['dy'] ?? 0.0) * 1056.0;
+            double endX = (item['end']['dx'] ?? 0.0) * 816.0;
+            double endY = (item['end']['dy'] ?? 0.0) * 1056.0;
+
+            DrawingType parsedType = _parseDrawingType(item['type']);
+
+            loadedObjects.add(DrawingObject(
+              type: parsedType,
+              start: Offset(startX, startY),
+              end: Offset(endX, endY),
+              strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
+              text: item['text']?.isEmpty == true ? null : item['text'],
+              description: item['description'],
+              tagIds: List<String>.from(item['tagIds'] ?? []),
+              imageUrls: List<String>.from(item['imageUrl'] ?? []),
+              
+              // 🌟 RESTORE THE UI PROPERTIES (With Fallbacks!) 🌟
+              color: item['color'] != null ? Color(item['color']) : Colors.red[800]!,
+              fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
+              borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
+              opacity: (item['opacity'] ?? 1.0).toDouble(),
+              rotation: (item['rotation'] ?? 0.0).toDouble(),
+              fontSize: (item['fontSize'] ?? 24.0).toDouble(),
+              isBold: item['isBold'] ?? false,
+              isItalic: item['isItalic'] ?? false,
+              isUnderline: item['isUnderline'] ?? false,
+              isStrikethrough: item['isStrikethrough'] ?? false,
+              isCallout: item['isCallout'] ?? false,
+              
+              // Map points array back to 816x1056 scaling
+              points: item['points'] != null 
+                  ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * 816.0, (p['dy'] ?? 0.0) * 1056.0)).toList() 
+                  : null,
+            ));
+          }
+          
+          setState(() {
+            pageData.objects = loadedObjects;
+          });
+        }
+      }
+      
+      pageData.hasLoadedAnnotations = true;
+      
+    } catch (e) {
+      debugPrint("Error loading saved annotations: $e");
+    }
+  }
+  
+  // ==========================================
+  // API 4: SAVE ANNOTATIONS TO S3
+  // ==========================================
+  Future<void> _saveAnnotations() async {
+    setState(() => _isSaving = true);
+    
+    try {
+      final pageData = _pageDataMap[_currentPage];
+      if (pageData == null) return;
+
+      List<Map<String, dynamic>> itemsList = [];
+
+      for (var obj in pageData.objects) {
+        // Pack ALL properties into the JSON
+        Map<String, dynamic> item = {
+          "type": _getDrawingTypeString(obj.type),
+          "start": {"dx": obj.start.dx / 816.0, "dy": obj.start.dy / 1056.0},
+          "end": {"dx": obj.end.dx / 816.0, "dy": obj.end.dy / 1056.0},
+          "text": obj.text ?? "",
+          "description": obj.description ?? "",
+          "strokeWidth": obj.strokeWidth,
+          "tagIds": obj.tagIds ?? [],
+          "imageUrl": obj.imageUrls ?? [],
+          
+          // 🌟 THE NEW UI PROPERTIES 🌟
+          "color": obj.color.value,             // Saves Color as an integer
+          "fillColor": obj.fillColor.value,
+          "borderColor": obj.borderColor.value,
+          "opacity": obj.opacity,
+          "rotation": obj.rotation,
+          "fontSize": obj.fontSize,
+          "isBold": obj.isBold,
+          "isItalic": obj.isItalic,
+          "isUnderline": obj.isUnderline,
+          "isStrikethrough": obj.isStrikethrough,
+          "isCallout": obj.isCallout,
+        };
+
+        // Handle arrays of points (for Pen, Pencil, and Callouts)
+        if (obj.points != null && obj.points!.isNotEmpty) {
+          item["points"] = obj.points!.map((p) => {
+            "dx": p.dx / 816.0,
+            "dy": p.dy / 1056.0
+          }).toList();
+        }
+
+        itemsList.add(item);
+      }
+
+      List<Map<String, dynamic>> canvasDataObj = [
+        {
+          "page_name": _currentPage,
+          "sort_order": _pages.indexOf(_currentPage), 
+          "items": itemsList
+        }
+      ];
+
+      String canvasDataString = jsonEncode(canvasDataObj);
+
+      Map<String, dynamic> payload = {
+        "project_id": widget.projectId,
+        "page_name": _currentPage,
+        "canvas_data": canvasDataString,
+        "template_document_id": widget.documentId,
+        "template_document_page_id": pageData.pageId,
+        "inspection_id": widget.inspectionId
+      };
+
+      final response = await _apiService.post('/canvas/json/s3', payload);
+      final resData = jsonDecode(response.body);
+
+      if (resData['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Annotations saved successfully!"), backgroundColor: Colors.green),
+          );
+        }
+      } else {
+        throw Exception(resData['message'] ?? 'Failed to save');
+      }
+
+    } catch (e) {
+      debugPrint("Error saving annotations: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error saving annotations."), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // ==========================================
+  // API 5: GET PRESIGNED URL & UPLOAD TO S3
+  // ==========================================
+  Future<void> _uploadImageForObject(String fileName, Uint8List bytes) async {
+    try {
+      // 1. Get the Presigned URL
+      final payload = {
+        "file": fileName,
+        "project_id": widget.projectId,
+        "inspection_id": widget.inspectionId
+      };
+      
+      final response = await _apiService.post('/customTool/tool/Image/presignedUrl', payload);
+      final responseData = jsonDecode(response.body);
+      
+      if (responseData['signedUrl'] != null && responseData['key'] != null) {
+        final String signedUrl = responseData['signedUrl'];
+        final String s3Key = responseData['key'];
+        
+        // 2. Upload the raw file bytes directly to AWS S3
+        final uploadResponse = await http.put(
+          Uri.parse(signedUrl),
+          body: bytes,
+        );
+        
+        if (uploadResponse.statusCode == 200) {
+           // 3. Success! Attach the key to the currently selected object
+           setState((){
+              if (_activeObject != null) {
+                _activeObject!.imageUrls ??= [];
+                _activeObject!.imageUrls!.add(s3Key);
+                // (Optional: _saveSnapshot() here if you want undo/redo to track image uploads)
+              }
+           });
+        } else {
+           throw Exception("S3 upload failed with status: ${uploadResponse.statusCode}");
+        }
+      }
+    } catch(e) {
+      debugPrint("Image upload failed: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to upload image."), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // ==========================================
+  // API 6: DELETE IMAGE FROM S3
+  // ==========================================
+  Future<void> _deleteImageForObject(String s3Key) async {
+    try {
+      // Your API structure: /customTool/tool/Image/{S3_KEY}
+      final response = await _apiService.delete('/customTool/tool/Image/$s3Key');
+      
+      // If we are getting a 200/204, it was successful
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        setState(() {
+          if (_activeObject != null && _activeObject!.imageUrls != null) {
+            _activeObject!.imageUrls!.remove(s3Key);
+          }
+        });
+      } else {
+        throw Exception("Delete failed with status: ${response.statusCode}");
+      }
+    } catch (e) {
+      debugPrint("Image deletion failed: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to delete image."), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // Tiny helper to map API strings to our Enum
+  DrawingType _parseDrawingType(String? typeStr) {
+    switch (typeStr?.toLowerCase()) {
+      case 'rectangle': return DrawingType.rect;
+      case 'circle': return DrawingType.circle;
+      case 'line': return DrawingType.line;
+      case 'arrow': return DrawingType.arrow;
+      case 'text': return DrawingType.text;
+      case 'pencil': return DrawingType.pencil;
+      case 'pen': return DrawingType.pen;
+      default: return DrawingType.rect;
+    }
+  }
+  
+  // Converts our enum back to the API's string format
+  String _getDrawingTypeString(DrawingType type) {
+    switch (type) {
+      case DrawingType.rect: return 'rectangle';
+      case DrawingType.circle: return 'circle';
+      case DrawingType.line: return 'line';
+      case DrawingType.arrow: return 'arrow';
+      case DrawingType.text: return 'text';
+      case DrawingType.pencil: return 'pencil';
+      case DrawingType.pen: return 'pen';
+      case DrawingType.pin: return 'pin';
+    }
+  }
+
+  // ==========================================
+  // DRAWING LOGIC (Unchanged)
+  // ==========================================
+  
   Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject, bool isCallout = false}) async {
     final TextEditingController controller = TextEditingController(text: existingObject?.text ?? "");
     
@@ -203,10 +513,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 _saveSnapshot();
                 setState(() {
                   final textPainter = TextPainter(
-                    text: TextSpan(
-                      text: controller.text,
-                      style: TextStyle(fontSize: _textStrokeWidth * 10),
-                    ),
+                    text: TextSpan(text: controller.text, style: TextStyle(fontSize: _textStrokeWidth * 10)),
                     textDirection: TextDirection.ltr,
                   )..layout(maxWidth: 500);
 
@@ -214,10 +521,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
                   Color initialFill = _textFillColor;
                   Color initialBorder = _textBorderColor;
+                  Color initialText = _textColor;
                   
                   if (isCallout) {
                     if (initialFill == Colors.transparent) initialFill = const Color(0xFF7F4A46);
                     if (initialBorder == Colors.transparent) initialBorder = Colors.redAccent;
+                    if (initialText == Colors.black) initialText = Colors.white;
                   }
 
                   if (existingObject != null) {
@@ -225,26 +534,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     existingObject.end = existingObject.start + calculatedSize;
                   } else {
                     final textObj = DrawingObject(
-                      start: position,
-                      end: position + calculatedSize,
-                      type: DrawingType.text,
-                      text: controller.text,
-                      color: _textColor,         
-                      fillColor: initialFill,   
-                      borderColor: initialBorder, 
-                      opacity: _textOpacity,
-                      isSelected: true,
-                      strokeWidth: _textStrokeWidth,
-                      fontSize: _textSize,
-                      isBold: _textIsBold,
-                      isItalic: _textIsItalic,
-                      isUnderline: _textIsUnderline,
-                      isStrikethrough: _textIsStrikethrough,
-                      isCallout: isCallout, // 👈 Uses the passed parameter
-                      points: isCallout ? [
-                        position + Offset(calculatedSize.dx / 2, calculatedSize.dy + 30), 
-                        position + Offset(calculatedSize.dx / 2 + 40, calculatedSize.dy + 70) 
-                      ] : null,
+                      start: position, end: position + calculatedSize, type: DrawingType.text, text: controller.text,
+                      color: initialText, fillColor: initialFill, borderColor: initialBorder, opacity: _textOpacity,
+                      isSelected: true, strokeWidth: _textStrokeWidth, fontSize: _textSize,
+                      isBold: _textIsBold, isItalic: _textIsItalic, isUnderline: _textIsUnderline, isStrikethrough: _textIsStrikethrough,
+                      isCallout: isCallout, 
+                      points: isCallout ? [position + Offset(calculatedSize.dx / 2, calculatedSize.dy + 30), position + Offset(calculatedSize.dx / 2 + 40, calculatedSize.dy + 70)] : null,
                     );
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
@@ -262,64 +557,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
-  void _switchPage(String newPage) {
+  void _switchPage(String newPage) async {
     setState(() {
-      // 1. Clean up the current page before leaving
-      for (var obj in _drawingObjects) {
-        obj.isSelected = false;
-      }
+      for (var obj in _drawingObjects) obj.isSelected = false;
       _activeObject = null;
       _activeHandle = ResizeHandle.none;
-      _currentPreview = null; // Clears any half-drawn pens/shapes
-      
-      // 2. Switch to the new page
+      _currentPreview = null; 
       _currentPage = newPage;
-      
-      // Optional: Revert tool to Select when switching pages
       _selectedTool = 'Select'; 
     });
-  }
-
-  void _resequencePages(int? targetIndex) {
-    List<String> updatedNames = [];
-    Map<String, PageData> updatedMap = {};
-
-    for (int i = 0; i < _pages.length; i++) {
-      String newName = "Page ${i + 1}";
-      updatedNames.add(newName);
-      // Move the data from the old reference to the new numbered reference
-      updatedMap[newName] = _pageDataMap[_pages[i]]!;
-    }
-
-    setState(() {
-        _pages = updatedNames;
-        _pageDataMap = updatedMap;
-        // Update current page to the correct index or fallback to last
-        if (targetIndex != null) {
-          _currentPage = _pages[targetIndex.clamp(0, _pages.length - 1)];
-        }
-      });
-    }
-
-  void _addNewPage() {
-    setState(() {
-      int insertIndex = _pages.indexOf(_currentPage) + 1;
-      // Add a temporary entry
-      _pages.insert(insertIndex, "TEMP_${DateTime.now().millisecondsSinceEpoch}");
-      _pageDataMap[_pages[insertIndex]] = PageData();
-      _resequencePages(insertIndex);
-    });
-  }
-
-  void _deleteCurrentPage() {
-    if (_pages.length <= 1) return; // Requirement: At least one page
-
-    setState(() {
-      int currentIndex = _pages.indexOf(_currentPage);
-      _pageDataMap.remove(_currentPage);
-      _pages.removeAt(currentIndex);
-      _resequencePages(currentIndex);
-    });
+    
+    // Fetch the image
+    await _fetchPageImage(newPage);
+    // 🔽 FETCH ANNOTATIONS ON PAGE SWITCH
+    await _fetchSavedAnnotations(newPage); 
   }
 
   void _saveSnapshot() {
@@ -360,40 +611,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _copySelected() {
     if (_activeObject != null) {
-      setState(() {
-        // Use your existing copy() method to save a deep clone to the clipboard!
-        _clipboard = _activeObject!.copy();
-      });
+      setState(() => _clipboard = _activeObject!.copy());
     }
   }
 
   void _pasteFromClipboard() {
     if (_clipboard != null) {
-      _saveSnapshot(); // Save state so the user can undo the paste!
-      
+      _saveSnapshot(); 
       setState(() {
-        // 1. Deselect everything currently on the canvas
         for (var obj in _drawingObjects) obj.isSelected = false;
-
-        // 2. Clone the clipboard object
         DrawingObject pastedObj = _clipboard!.copy();
-
-        // 3. Shift it down and right by 20 pixels so it doesn't hide perfectly under the original
         const Offset shift = Offset(20, 20);
         pastedObj.start += shift;
         pastedObj.end += shift;
         
-        // If it's a Pen, Pencil, or Callout, we MUST shift the internal points too
-        if (pastedObj.points != null) {
-          pastedObj.points = pastedObj.points!.map((p) => p + shift).toList();
-        }
-
-        pastedObj.isSelected = true; // Select the new object
-
-        // 4. Add to canvas and make it active
+        if (pastedObj.points != null) pastedObj.points = pastedObj.points!.map((p) => p + shift).toList();
+        pastedObj.isSelected = true; 
         _drawingObjects.add(pastedObj);
         _activeObject = pastedObj;
-        _selectedTool = 'Select'; // Switch to select tool so they can move it immediately
+        _selectedTool = 'Select'; 
       });
     }
   }
@@ -409,40 +645,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
   MouseCursor _getCursor(ResizeHandle handle) {
     if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
     if (_selectedTool == 'Text') return SystemMouseCursors.text;
-    
     switch (handle) {
-      case ResizeHandle.topLeft:
-      case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
-      case ResizeHandle.topRight:
-      case ResizeHandle.bottomLeft: return SystemMouseCursors.resizeUpRightDownLeft;
-      case ResizeHandle.topCenter:
-      case ResizeHandle.bottomCenter: return SystemMouseCursors.resizeUpDown;
-      case ResizeHandle.centerLeft:
-      case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
+      case ResizeHandle.topLeft: case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
+      case ResizeHandle.topRight: case ResizeHandle.bottomLeft: return SystemMouseCursors.resizeUpRightDownLeft;
+      case ResizeHandle.topCenter: case ResizeHandle.bottomCenter: return SystemMouseCursors.resizeUpDown;
+      case ResizeHandle.centerLeft: case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
       case ResizeHandle.rotation: return SystemMouseCursors.grab;
       case ResizeHandle.body: return SystemMouseCursors.move;
-      case ResizeHandle.calloutKnee:
-      case ResizeHandle.calloutTip: return SystemMouseCursors.move;
+      case ResizeHandle.calloutKnee: case ResizeHandle.calloutTip: return SystemMouseCursors.move;
       default: return SystemMouseCursors.basic;
     }
   }
 
   ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    const double hSize = 25.0; // Tip: Increase this to 40.0 for better touch device support!
+    const double hSize = 25.0; 
     final localP = _toLocalSpace(p, obj);
     final r = obj.rect;
 
     if (obj.isSelected) {
-      // 🔽 NEW: Allow grabbing the Callout Arrow handles 🔽
       if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
         if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
       }
-      
       Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
       if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
-      // 🔽 EXCLUDE PEN AND PENCIL FROM RESIZE HANDLES 🔽
       if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
         if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
         if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
@@ -455,17 +682,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
       }
     }
     
-    // 🔽 LINE-BASED HIT DETECTION 🔽
     if (obj.type == DrawingType.line) {
       if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
-    } 
-    // Both Pencil and Pen use line-segment distance for selection!
-    else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
+    } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
       for (int i = 0; i < obj.points!.length - 1; i++) {
-        // Distance check threshold is 15px. Click within 15px of any line to select.
         if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < 15) return ResizeHandle.body;
       }
-      // Optional: If the pen shape has a solid fill, also allow clicking inside it
       if (obj.fillColor != Colors.transparent && r.contains(localP)) return ResizeHandle.body;
     } else {
       if (r.inflate(5).contains(localP)) return ResizeHandle.body;
@@ -474,7 +696,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _handlePointerDown(PointerDownEvent details) {
-    final pos = details.localPosition;
+    if (!_canvasFocusNode.hasFocus) {
+      _canvasFocusNode.requestFocus();
+    }
+    
+    final pos = _clampToCanvas(details.localPosition); 
     final now = DateTime.now();
 
     setState(() {
@@ -485,14 +711,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
       } else if (_selectedTool == 'Pen') {
         if (_currentPreview == null) {
-          // 1st Click: Start a new Pen shape
           _currentPreview = DrawingObject(
-            start: pos, end: pos, type: DrawingType.pen,
-            points: [pos, pos], 
-            strokeWidth: _pencilStrokeWidth, 
-            color: _pencilColor,
-            fillColor: _penFillColor, 
-            opacity: _pencilOpacity, // 👈 Dedicated Pen Opacity
+            start: pos, end: pos, type: DrawingType.pen, points: [pos, pos], 
+            strokeWidth: _pencilStrokeWidth, color: _pencilColor, fillColor: _penFillColor, opacity: _pencilOpacity, 
           );
         } else {
           if (_currentPreview!.points!.length > 2 && (pos - _currentPreview!.points!.first).distance < 15) {
@@ -511,23 +732,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
                            (_selectedTool == 'Rect') ? DrawingType.rect : 
                            (_selectedTool == 'Circle') ? DrawingType.circle : 
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
-                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line; // 👈 Added Pin routing
+                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
         
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
         
-        Color objColor = Colors.black;
-        Color objFill = Colors.transparent;
-        double objOpacity = 1.0; 
-        double objStroke = 2.0; 
+        Color objColor = Colors.black; Color objFill = Colors.transparent; double objOpacity = 1.0; double objStroke = 2.0; 
 
         if (type == DrawingType.pencil) {
           objColor = _pencilColor; objFill = _penFillColor; objOpacity = _pencilOpacity; objStroke = _pencilStrokeWidth; 
         } else if (type == DrawingType.pin) {
-          // 🔽 FORCE CLASSIC MAP PIN COLORS 🔽
-          objColor = Colors.red[800]!; // Dark red outline
-          objFill = Colors.red;        // Bright red fill
-          objOpacity = 1.0;  
-          objStroke = 2.0;
+          objColor = Colors.red[800]!; objFill = Colors.red; objOpacity = 1.0; objStroke = 2.0;
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
           objColor = _shapeLineColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
         } else if (type == DrawingType.rect || type == DrawingType.circle) { 
@@ -535,14 +749,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
 
         _currentPreview = DrawingObject(
-          start: pos, end: pos, type: type, points: pts,
-          strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
+          start: pos, end: pos, type: type, points: pts, strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
         );
       } else {
-        // ... (Keep your existing Select Tool resizing/hit-testing logic here) ...
         _activeHandle = ResizeHandle.none;
-        DrawingObject? hitObj;
-        ResizeHandle hitHandle = ResizeHandle.none;
+        DrawingObject? hitObj; ResizeHandle hitHandle = ResizeHandle.none;
 
         for (var obj in _drawingObjects.reversed) {
           hitHandle = _getHitHandle(pos, obj);
@@ -569,7 +780,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
   
   void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
-    final pos = details.localPosition;
+    final pos = _clampToCanvas(details.localPosition);
     setState(() {
       if (_selectedTool == 'Eraser') {
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
@@ -583,9 +794,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
         if (_activeHandle == ResizeHandle.rotation) {
           _activeObject!.rotation = math.atan2(pos.dy - _activeObject!.center.dy, pos.dx - _activeObject!.center.dx) - _initialRotationAngle;
         } else if (_activeHandle == ResizeHandle.calloutKnee) {
-          _activeObject!.points![0] = pos; // Move the knee independently
+          _activeObject!.points![0] = pos; 
         } else if (_activeHandle == ResizeHandle.calloutTip) {
-          _activeObject!.points![1] = pos; // Move the tip independently
+          _activeObject!.points![1] = pos; 
         } else if (_activeHandle == ResizeHandle.body) {
           Offset delta = _activeObject!.end - _activeObject!.start;
           Offset moveDelta = (pos - _dragOffset) - _activeObject!.start;
@@ -595,12 +806,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           if (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.pen) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
-          // 🔽 NEW: Move the arrow points when dragging the whole Text box 🔽
           if (_activeObject!.type == DrawingType.text && _activeObject!.isCallout && _activeObject!.points != null) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
         } else {
-          // Resize logic - only reachable if not Pencil
           final localP = _toLocalSpace(pos, _activeObject!);
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
@@ -624,7 +833,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   void _handlePointerUp(PointerUpEvent details) {
     setState(() {
-      // 🔽 Block Pen from finishing when releasing the mouse! 🔽
       if (_currentPreview != null && _currentPreview!.type != DrawingType.pen) {
         for (var obj in _drawingObjects) obj.isSelected = false;
         _currentPreview!.isSelected = true;
@@ -637,6 +845,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
     });
   }
 
+  Offset _clampToCanvas(Offset pos) {
+    return Offset(
+      pos.dx.clamp(0.0, 816.0),
+      pos.dy.clamp(0.0, 1056.0),
+    );
+  }
+
   double _distToSegment(Offset p, Offset v, Offset w) {
     double l2 = (v - w).distanceSquared;
     if (l2 == 0) return (p - v).distance;
@@ -645,22 +860,37 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
   }
 
+  void _finalizeCurrentPreview() {
+    if (_currentPreview != null) {
+      _saveSnapshot();
+      for (var obj in _drawingObjects) obj.isSelected = false;
+      _currentPreview!.isSelected = true;
+
+      if (_currentPreview!.type == DrawingType.pen && _currentPreview!.points!.length < 3) {
+        _currentPreview = null;
+        return;
+      }
+      if (_currentPreview!.type == DrawingType.pen) _currentPreview!.points!.removeLast();
+
+      _drawingObjects.add(_currentPreview!);
+      _activeObject = _currentPreview;
+      _selectedTool = 'Select';
+      _currentPreview = null;
+    }
+  }
+
   void _showColorPicker(int mode) {
     _saveSnapshot(); 
-
     final List<Color> pickerPresets = [
-      const Color(0xFFFF5252), const Color(0xFFFF9800), const Color(0xFFFFEB3B), 
-      const Color(0xFFCDDC39), const Color(0xFF4CAF50), const Color(0xFF009688), 
-      const Color(0xFF00BCD4), const Color(0xFF03A9F4), const Color(0xFF2196F3), 
-      const Color(0xFF3F51B5), const Color(0xFF9C27B0), const Color(0xFFE91E63), 
-      const Color(0xFF795548), const Color(0xFF9E9E9E), const Color(0xFF000000), 
-      const Color(0xFFFFFFFF),
+      const Color(0xFFFF5252), const Color(0xFFFF9800), const Color(0xFFFFEB3B), const Color(0xFFCDDC39), 
+      const Color(0xFF4CAF50), const Color(0xFF009688), const Color(0xFF00BCD4), const Color(0xFF03A9F4), 
+      const Color(0xFF2196F3), const Color(0xFF3F51B5), const Color(0xFF9C27B0), const Color(0xFFE91E63), 
+      const Color(0xFF795548), const Color(0xFF9E9E9E), const Color(0xFF000000), const Color(0xFFFFFFFF),
     ];
 
     Color currentColor;
     double currentOpacity = 1.0;
 
-    // Route the Colors AND the Opacities based on the mode
     switch(mode) {
       case 0: currentColor = _pencilColor; currentOpacity = _pencilOpacity; break;
       case 1: currentColor = _shapeLineColor; currentOpacity = _shapeOpacity; break;
@@ -674,56 +904,29 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
     
     HSVColor hsvColor = HSVColor.fromColor(currentColor == Colors.transparent ? Colors.red : currentColor);
-    double localOpacity = currentOpacity; // 👈 Set the slider to the correct tool's opacity
+    double localOpacity = currentOpacity; 
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            
             void updateColor(Color newColor) {
               setDialogState(() => hsvColor = HSVColor.fromColor(newColor));
               setState(() {
-                if (mode == 0) {
-                  _pencilColor = newColor;
-                  if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor;
-                } else if (mode == 1) {
-                  _shapeLineColor = newColor;
-                  if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor;
-                } else if (mode == 2) {
-                  _shapeBorderColor = newColor;
-                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.color = newColor;
-                } else if (mode == 3) {
-                  _shapeFillColor = newColor;
-                  // ONLY applies to Rect and Circle
-                  if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) {
-                    _activeObject!.fillColor = newColor;
-                  }
-                } else if (mode == 4) {
-                  _textColor = newColor;
-                  if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor;
-                } else if (mode == 5) {
-                  _textBorderColor = newColor;
-                  if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor;
-                } else if (mode == 6) {
-                  _textFillColor = newColor;
-                  if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor;
-                } else if (mode == 7) {
-                  _penFillColor = newColor;
-                  // ONLY applies to Pen and Pencil
-                  if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) {
-                    _activeObject!.fillColor = newColor;
-                  }
-                }
+                if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
+                else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
+                else if (mode == 2) { _shapeBorderColor = newColor; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.color = newColor; } 
+                else if (mode == 3) { _shapeFillColor = newColor; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.fillColor = newColor; } 
+                else if (mode == 4) { _textColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor; } 
+                else if (mode == 5) { _textBorderColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor; } 
+                else if (mode == 6) { _textFillColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor; } 
+                else if (mode == 7) { _penFillColor = newColor; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.fillColor = newColor; }
               });
             }
 
             String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
-
-            const double squareWidth = 240.0;
-            const double squareHeight = 200.0;
-            
+            const double squareWidth = 240.0; const double squareHeight = 200.0;
             bool showOpacity = (mode == 3 || mode == 6 || mode == 7); 
             bool showNone = (mode == 2 || mode == 3 || mode == 5 || mode == 6 || mode == 7); 
 
@@ -736,12 +939,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     children: [
                       Container(
                         width: 50, height: 50,
-                        decoration: BoxDecoration(
-                          color: showOpacity ? hsvColor.toColor().withOpacity(localOpacity) : hsvColor.toColor(), 
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                        ),
+                        decoration: BoxDecoration(color: showOpacity ? hsvColor.toColor().withOpacity(localOpacity) : hsvColor.toColor(), shape: BoxShape.circle, border: Border.all(color: Colors.grey.withOpacity(0.3)), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]),
                         child: hsvColor.toColor() == Colors.transparent ? const Icon(Icons.block, color: Colors.red) : null,
                       ),
                       const SizedBox(width: 15),
@@ -755,7 +953,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-
                   GestureDetector(
                     onPanDown: (details) {
                       double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
@@ -771,125 +968,138 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       children: [
                         Container(
                           width: squareWidth, height: squareHeight,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            gradient: LinearGradient(colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()]),
-                          ),
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(colors: [Colors.transparent, Colors.black], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-                            ),
-                          ),
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()])),
+                          child: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
                         ),
                         Positioned(
-                          left: (hsvColor.saturation * squareWidth) - 8,
-                          top: ((1 - hsvColor.value) * squareHeight) - 8,
-                          child: Container(
-                            width: 16, height: 16,
-                            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
-                          ),
+                          left: (hsvColor.saturation * squareWidth) - 8, top: ((1 - hsvColor.value) * squareHeight) - 8,
+                          child: Container(width: 16, height: 16, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)])),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
                   Container(
                     width: 240, height: 12,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      gradient: const LinearGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red]),
-                    ),
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white),
-                      child: Slider(value: hsvColor.hue, min: 0, max: 360, onChanged: (v) => updateColor(hsvColor.withHue(v).toColor())),
-                    ),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), gradient: const LinearGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red])),
+                    child: SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white), child: Slider(value: hsvColor.hue, min: 0, max: 360, onChanged: (v) => updateColor(hsvColor.withHue(v).toColor()))),
                   ),
                   const SizedBox(height: 16),
-
                   if (showOpacity) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text("Opacity", style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                        Text("${(localOpacity * 100).toInt()}%", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Opacity", style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)), Text("${(localOpacity * 100).toInt()}%", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))]),
                     const SizedBox(height: 6),
                     Container(
                       width: 240, height: 12,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.withOpacity(0.3)),
-                        gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()]),
-                      ),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.withOpacity(0.3)), gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()])),
                       child: Slider(
                         value: localOpacity, min: 0.0, max: 1.0,
                         onChanged: (v) {
                           setDialogState(() => localOpacity = v);
                           setState(() { 
-                            if (mode == 3) {
-                              _shapeOpacity = v;
-                              if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.opacity = v;
-                            } else if (mode == 6) {
-                              _textOpacity = v;
-                              if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v;
-                            } else if (mode == 7) {
-                              _pencilOpacity = v;
-                              if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.opacity = v;
-                            }
+                            if (mode == 3) { _shapeOpacity = v; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle) _activeObject!.opacity = v; } 
+                            else if (mode == 6) { _textOpacity = v; if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v; } 
+                            else if (mode == 7) { _pencilOpacity = v; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.opacity = v; }
                           });
                         },
                       ),
                     ),
                     const SizedBox(height: 20),
                   ],
-                  
                   const Text("Preset Colors", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
                   const SizedBox(height: 10),
-                  
                   SizedBox(
                     width: 260,
                     child: Wrap(
                       alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
                       children: [
                         if (showNone)
-                          GestureDetector(
-                            onTap: () => updateColor(Colors.transparent),
-                            child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red)),
-                          ),
+                          GestureDetector(onTap: () => updateColor(Colors.transparent), child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red))),
                         ...pickerPresets.map((color) => GestureDetector(
                           onTap: () => updateColor(color),
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(
-                              color: color, shape: BoxShape.circle,
-                              border: Border.all(color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent), width: 2),
-                            ),
-                          ),
+                          child: Container(width: 28, height: 28, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent), width: 2))),
                         )),
                       ],
                     ),
                   ),
                 ],
               ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold))),
-              ],
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold)))],
             );
           },
         );
       },
     );
   }
-  
-  Widget _mainMenuToggle({
-    required IconData icon,
-    required String label,
-    required bool isActive,
-    required bool hasDropdown,
-    required VoidCallback onTap,
-    required ThemeData theme,
-  }) {
+
+  // ==========================================
+  // UI BUILDING HELPERS
+  // ==========================================
+
+  Widget _buildTopNav(ThemeData theme) {
+    return Container(
+      height: 64, padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)))),
+      child: Row(children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back), 
+          onPressed: () => Navigator.of(context).pop()
+        ), 
+        const SizedBox(width: 15),
+        Text("Canvas", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        const Spacer(),
+        _buildPageSelector(theme), 
+        const SizedBox(width: 20), 
+
+        if (_isSaving)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2.5, color: theme.colorScheme.primary),
+          )
+        else
+          IconButton(
+            tooltip: "Save Annotations",
+            icon: const Icon(Icons.save_outlined),
+            color: theme.colorScheme.primary,
+            onPressed: _saveAnnotations,
+          ),
+        
+        const SizedBox(width: 8),
+        
+        PopupMenuButton<String>(
+          tooltip: "Export PDF",
+          icon: const Icon(Icons.picture_as_pdf_outlined), 
+          offset: const Offset(0, 45),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (val) => exportCanvasToPdf(
+            context: context, 
+            exportAll: val == 'all', 
+            pages: _pages, 
+            currentPage: _currentPage, 
+            pageDataMap: _pageDataMap
+          ),
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'current', child: ListTile(leading: Icon(Icons.insert_drive_file_outlined, size: 18), title: Text("Export Current Page"), dense: true)),
+            const PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.copy_all_rounded, size: 18), title: Text("Export All Pages"), dense: true)),
+          ],
+        ),
+      ]),
+    );
+  }
+
+  bool _isShapeSelected(String tool) => ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
+
+  IconData _getShapeIcon(String tool) {
+    switch (tool) {
+      case 'Rect': return Icons.crop_square;
+      case 'Circle': return Icons.panorama_fish_eye;
+      case 'Line': return Icons.show_chart;
+      case 'Arrow': return Icons.arrow_outward;
+      default: return Icons.crop_square; 
+    }
+  }
+
+  Widget _mainMenuToggle({required IconData icon, required String label, required bool isActive, required bool hasDropdown, required VoidCallback onTap, required ThemeData theme}) {
     return GestureDetector(
       onTap: onTap,
       child: Padding(
@@ -907,421 +1117,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
                 ),
                 if (hasDropdown) ...[
-                  const SizedBox(width: 2),
-                  Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                  const SizedBox(width: 2), Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
                 ] else ...[
-                  // Adds a tiny bit of invisible spacing so the "Select" icon aligns perfectly with dropdowns
                   const SizedBox(width: 5), 
                 ]
               ],
             ),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(fontSize: 9)),
+            const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 9)),
           ],
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final size = MediaQuery.of(context).size;
-
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        // 🔽 3. ADD THESE 4 LINES FOR COPY/PASTE SHORTCUTS 🔽
-        const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
-        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, // Mac
-        const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
-        const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, // Mac
-
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
-        const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
-        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
-        const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
-        // 🔽 Press ESC to finalize the Pen tool instantly 🔽
-        const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-          if (_selectedTool == 'Pen') _finalizeCurrentPreview();
-        }),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          body: Column(
-            children: [
-              _buildTopNav(theme),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _buildFullWidthToolbar(theme),
-                          Expanded(
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned.fill(
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      return MouseRegion(
-                                        cursor: _getCursor(_hoveredHandle),
-                                        onHover: (d) {
-                                          // 🔽 Live Preview Line for the Pen Tool 🔽
-                                          if (_selectedTool == 'Pen' && _currentPreview != null) {
-                                            setState(() => _currentPreview!.points!.last = d.localPosition);
-                                            return;
-                                          }
-
-                                          if (_selectedTool != 'Select') return;
-                                          ResizeHandle hit = ResizeHandle.none;
-                                          for (var obj in _drawingObjects.reversed) {
-                                            hit = _getHitHandle(d.localPosition, obj);
-                                            if (hit != ResizeHandle.none) break;
-                                          }
-                                          if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
-                                        },
-                                        child: Listener(
-                                          onPointerDown: _handlePointerDown,
-                                          onPointerMove: (details) => _handlePointerMove(details, constraints),
-                                          onPointerUp: _handlePointerUp,
-                                          child: Container(
-                                            width: constraints.maxWidth, 
-                                            height: constraints.maxHeight,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              border: Border.all(color: theme.colorScheme.outlineVariant, width: 0.5),
-                                            ),
-                                            child: CanvasPaper(objects: _drawingObjects, preview: _currentPreview),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  ),
-                                ),
-
-                                // 1. The Floating Pencil Menu 🎈
-                                if (_showPencilToolbar)
-                                  Positioned(
-                                    top: 8,     
-                                    left: 80,  // Aligns roughly under the Pencil toggle
-                                    child: _buildFloatingPencilMenu(theme),
-                                  ),
-                                
-                                // 2. The Floating Shape Menu 🎈
-                                if (_showShapeToolbar)
-                                  Positioned(
-                                    top: 8,     
-                                    left: 140,  
-                                    child: _buildFloatingShapeMenu(theme),
-                                  ),
-
-                                // 3. The Floating Text Menu 🎈
-                                if (_showTextToolbar)
-                                  Positioned(
-                                    top: 8,     
-                                    left: 210, // Shifted slightly to align under the Text toggle
-                                    child: _buildFloatingTextMenu(theme),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (size.width > 1200) _buildRightPanel(theme),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopNav(ThemeData theme) {
-    return Container(
-      height: 64, padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)))),
-      child: Row(children: [
-        // const Icon(Icons.arrow_back), const SizedBox(width: 15),
-        Text("Canvas", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-        const Spacer(),
-        _buildPageSelector(theme), 
-        const SizedBox(width: 20), 
-        
-        // 🔽 REPLACED YOUR SAVE ICON WITH THIS 🔽
-        PopupMenuButton<String>(
-          tooltip: "Export PDF",
-          icon: const Icon(Icons.picture_as_pdf_outlined), 
-          offset: const Offset(0, 45),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          onSelected: (val) => _exportToPdf(exportAll: val == 'all'),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'current',
-              child: ListTile(
-                leading: Icon(Icons.insert_drive_file_outlined, size: 18),
-                title: Text("Export Current Page"),
-                dense: true,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'all',
-              child: ListTile(
-                leading: Icon(Icons.copy_all_rounded, size: 18),
-                title: Text("Export All Pages"),
-                dense: true,
-              ),
-            ),
-          ],
-        ),
-        // 🔼 END OF REPLACEMENT 🔼
-      ]),
-    );
-  }
-
-  bool _isShapeSelected(String tool) {
-    return ['Rect', 'Circle', 'Line', 'Arrow'].contains(tool);
-  }
-
-  IconData _getShapeIcon(String tool) {
-    switch (tool) {
-      case 'Rect': return Icons.crop_square;
-      case 'Circle': return Icons.panorama_fish_eye;
-      case 'Line': return Icons.show_chart;
-      case 'Arrow': return Icons.arrow_outward;
-      default: return Icons.crop_square; 
-    }
-  }
-
-  Widget _buildFloatingPencilMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("DRAW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            _toolIcon(Icons.edit, "Pencil", theme),
-            _toolIcon(Icons.polyline, "Pen", theme), 
-            _vDiv(theme),
-            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            
-            _colorButton("Color", _pencilColor, 0),     // 👈 MUST BE MODE 0
-            const SizedBox(width: 12),
-            _colorButton("Fill", _penFillColor, 7),     // 👈 MUST BE MODE 7
-            
-            _vDiv(theme), _buildStrokeSlider(theme, 0), 
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingTextMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 🔽 THE NEW SUB-TOOL SELECTORS 🔽
-            const Text("TOOLS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            _toolIcon(Icons.title, "Text", theme),
-            _toolIcon(Icons.chat_bubble_outline, "Callout", theme),
-            
-            _vDiv(theme),
-            const Text("FORMAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            
-            // 🔽 FORMATTING 🔽
-            _formatToggle(Icons.format_bold, _textIsBold, () => setState(() {
-              _textIsBold = !_textIsBold; if (_activeObject?.type == DrawingType.text) _activeObject!.isBold = _textIsBold;
-            }), theme),
-            _formatToggle(Icons.format_italic, _textIsItalic, () => setState(() {
-              _textIsItalic = !_textIsItalic; if (_activeObject?.type == DrawingType.text) _activeObject!.isItalic = _textIsItalic;
-            }), theme),
-            _formatToggle(Icons.format_underlined, _textIsUnderline, () => setState(() {
-              _textIsUnderline = !_textIsUnderline; if (_activeObject?.type == DrawingType.text) _activeObject!.isUnderline = _textIsUnderline;
-            }), theme),
-            _formatToggle(Icons.format_strikethrough, _textIsStrikethrough, () => setState(() {
-              _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject?.type == DrawingType.text) _activeObject!.isStrikethrough = _textIsStrikethrough;
-            }), theme),
-            
-            _vDiv(theme),
-            _buildTextSizeSlider(theme), 
-            _vDiv(theme),
-            
-            // 🔽 COLORS & BORDER 🔽
-            _colorButton("Text", _textColor, 4),         
-            const SizedBox(width: 12),
-            _colorButton("Border", _textBorderColor, 5), 
-            const SizedBox(width: 12),
-            _colorButton("Fill", _textFillColor, 6),     
-            _vDiv(theme),
-            _buildStrokeSlider(theme, 2), 
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildFloatingShapeMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            _toolIcon(Icons.crop_square, "Rect", theme),
-            _toolIcon(Icons.panorama_fish_eye, "Circle", theme),
-            _toolIcon(Icons.show_chart, "Line", theme),
-            _toolIcon(Icons.arrow_outward, "Arrow", theme),
-            _toolIcon(Icons.chat_bubble_outline, "Callout", theme), // 👈 NEW
-            _vDiv(theme),
-            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-            const SizedBox(width: 8),
-            
-            _colorButton("Color", _shapeLineColor, 1),   // 👈 MUST BE MODE 1
-            const SizedBox(width: 12),
-            _colorButton("Border", _shapeBorderColor, 2),// 👈 MUST BE MODE 2
-            const SizedBox(width: 12),
-            _colorButton("Fill", _shapeFillColor, 3),    // 👈 MUST BE MODE 3
-            
-            _vDiv(theme), _buildStrokeSlider(theme, 1), 
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildFullWidthToolbar(ThemeData theme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      color: theme.colorScheme.surface,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-
-            // 🔽 1. SELECT TOOL (Closes everything) 🔽
-            _mainMenuToggle(
-              icon: Icons.near_me,
-              label: "Select",
-              isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar,
-              hasDropdown: false,
-              theme: theme,
-              onTap: () => setState(() {
-                _selectedTool = 'Select';
-                _showPencilToolbar = false;
-                _showShapeToolbar = false;
-                _showTextToolbar = false;
-              }),
-            ),
-
-            // 🔽 2. DRAW TOGGLE 🔽
-            _mainMenuToggle(
-              icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit,
-              label: _selectedTool == 'Pen' ? "Pen" : "Pencil",
-              isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen',
-              hasDropdown: true,
-              theme: theme,
-              onTap: () => setState(() {
-                _showPencilToolbar = !_showPencilToolbar;
-                if (_showPencilToolbar) {
-                  _showShapeToolbar = false; // Strictly close others
-                  _showTextToolbar = false;
-                  if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil';
-                } else {
-                  _selectedTool = 'Select'; // Revert to select if closed
-                }
-              }),
-            ),
-
-            // 🔽 3. SHAPES TOGGLE 🔽
-            _mainMenuToggle(
-              icon: _getShapeIcon(_selectedTool),
-              label: "Shapes",
-              isActive: _showShapeToolbar || _isShapeSelected(_selectedTool),
-              hasDropdown: true,
-              theme: theme,
-              onTap: () => setState(() {
-                _showShapeToolbar = !_showShapeToolbar;
-                if (_showShapeToolbar) {
-                  _showPencilToolbar = false; // Strictly close others
-                  _showTextToolbar = false;
-                  if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect';
-                } else {
-                  _selectedTool = 'Select'; // Revert to select if closed
-                }
-              }),
-            ),
-
-            // 🔽 4. TEXT/CALLOUT TOGGLE 🔽
-            _mainMenuToggle(
-              icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title,
-              label: _selectedTool == 'Callout' ? "Callout" : "Text",
-              isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout',
-              hasDropdown: true,
-              theme: theme,
-              onTap: () => setState(() {
-                _showTextToolbar = !_showTextToolbar;
-                if (_showTextToolbar) {
-                  _showPencilToolbar = false; 
-                  _showShapeToolbar = false;
-                  if (_selectedTool != 'Text' && _selectedTool != 'Callout') {
-                    _selectedTool = 'Text'; // Default to Text when opening
-                  }
-                } else {
-                  _selectedTool = 'Select'; 
-                }
-              }),
-            ),
-
-            // 🔽 5. PIN MARKER TOGGLE 🔽
-            _mainMenuToggle(
-              icon: Icons.place,
-              label: "Pin",
-              isActive: _selectedTool == 'Pin',
-              hasDropdown: false,
-              theme: theme,
-              onTap: () => setState(() {
-                _showPencilToolbar = false; 
-                _showShapeToolbar = false;
-                _showTextToolbar = false;
-                _selectedTool = 'Pin';
-              }),
-            ),
-            _vDiv(theme),
-
-            // 🔽 4. ADD THESE TWO LINES FOR THE UI BUTTONS 🔽
-            _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
-            _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
-
-            _vDiv(theme),
-            _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-            _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-            _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-          ],
-        ),
-      ),
+  Widget _toolIcon(IconData icon, String label, ThemeData theme) {
+    bool isActive = _selectedTool == label;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTool = label),
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Column(children: [
+        CircleAvatar(radius: 18, backgroundColor: isActive ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer, child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16)),
+        const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 9)),
+      ])),
     );
   }
 
@@ -1339,12 +1155,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: isActive ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-        ),
+        margin: const EdgeInsets.symmetric(horizontal: 2), padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(color: isActive ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent, borderRadius: BorderRadius.circular(4)),
         child: Icon(icon, size: 18, color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface),
       ),
     );
@@ -1356,612 +1168,298 @@ class _CanvasScreenState extends State<CanvasScreen> {
       child: Row(children: [
         const Text("Size: ", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
         SizedBox(width: 28, child: Text("${_textSize.toInt()}", style: theme.textTheme.labelSmall)),
-        Expanded(
-          child: Slider(
-            value: _textSize, min: 10, max: 120, 
-            onChanged: (v) => setState(() {
-              _textSize = v;
-              // 🔽 FIXED: We only need to check for DrawingType.text! 🔽
-              if (_activeObject?.type == DrawingType.text) {
-                _activeObject!.fontSize = v;
-              }
-            })
-          )
-        ),
+        Expanded(child: Slider(value: _textSize, min: 10, max: 120, onChanged: (v) => setState(() { _textSize = v; if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v; }))),
       ]),
     );
   }
 
   Widget _buildStrokeSlider(ThemeData theme, int mode) {
     double currentWidth;
-    switch (mode) {
-      case 0: currentWidth = _pencilStrokeWidth; break; // Pencil/Pen
-      case 1: currentWidth = _shapeStrokeWidth; break;  // Shapes
-      case 2: currentWidth = _textStrokeWidth; break;   // Text Border
-      default: currentWidth = 2.0;
-    }
-
+    switch (mode) { case 0: currentWidth = _pencilStrokeWidth; break; case 1: currentWidth = _shapeStrokeWidth; break; case 2: currentWidth = _textStrokeWidth; break; default: currentWidth = 2.0; }
     return SizedBox(
-      width: 170, // Slightly wider to fit the label
+      width: 170, 
       child: Row(children: [
-        // 🔽 The new "Border" label you requested 🔽
         const Text("Border: ", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
         SizedBox(width: 28, child: Text("${currentWidth.toInt()}px", style: theme.textTheme.labelSmall)),
-        Expanded(
-          child: Slider(
-            value: currentWidth, min: 1, max: 20, 
-            onChanged: (v) => setState(() {
-              if (mode == 0) {
-                _pencilStrokeWidth = v;
-                if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v;
-              } else if (mode == 1) {
-                _shapeStrokeWidth = v;
-                if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.strokeWidth = v;
-              } else if (mode == 2) {
-                _textStrokeWidth = v;
-                if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v;
-              }
-            })
-          )
-        ),
+        Expanded(child: Slider(value: currentWidth, min: 1, max: 20, onChanged: (v) => setState(() {
+          if (mode == 0) { _pencilStrokeWidth = v; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v; } 
+          else if (mode == 1) { _shapeStrokeWidth = v; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.strokeWidth = v; } 
+          else if (mode == 2) { _textStrokeWidth = v; if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v; }
+        }))),
       ]),
     );
   }
 
-  Widget _toolIcon(IconData icon, String label, ThemeData theme) {
-    bool isActive = _selectedTool == label;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedTool = label),
-      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Column(children: [
-        CircleAvatar(radius: 18, backgroundColor: isActive ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer, child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16)),
-        const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 9)),
-      ])),
+  Widget _buildPageSelector(ThemeData theme) {
+    if (_pages.isEmpty) return const SizedBox.shrink();
+    if (_pages.length <= 1) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
+        child: Text(_currentPage, style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _currentPage,
+          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
+          style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+          borderRadius: BorderRadius.circular(8),
+          items: _pages.map((page) => DropdownMenuItem(value: page, child: Text(page))).toList(),
+          onChanged: (v) => v != null ? _switchPage(v) : null,
+        ),
+      ),
     );
   }
 
-  Widget _buildPageSelector(ThemeData theme) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 1. The Page Dropdown
-        DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _currentPage,
-            icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
-            ),
-            borderRadius: BorderRadius.circular(8),
-            items: _pages.map((page) => DropdownMenuItem(
-              value: page,
-              child: Text(page),
-            )).toList(),
-            onChanged: (v) => v != null ? _switchPage(v) : null,
-          ),
-        ),
-
-        // Vertical Divider
-        Container(
-          height: 18,
-          width: 1,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          color: theme.colorScheme.outlineVariant,
-        ),
-
-        // 2. Add Button (Insert after current)
-        IconButton(
-          tooltip: "Add Page",
-          onPressed: _addNewPage,
-          icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
-          color: theme.colorScheme.primary,
-          visualDensity: VisualDensity.compact,
-        ),
-
-        // 3. Delete Button (Current page)
-        if (_pages.length > 1) 
-          IconButton(
-            tooltip: "Delete Current Page",
-            onPressed: _deleteCurrentPage,
-            icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
-            color: theme.colorScheme.error.withOpacity(0.8),
-            visualDensity: VisualDensity.compact,
-          ),
-      ],
-    ),
-  );
-}
-
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
-    return IconButton(
-      onPressed: isEnabled ? onTap : null, 
-      icon: Icon(icon, color: isEnabled ? (isDestructive ? Colors.red : theme.colorScheme.onSurface) : theme.disabledColor)
-    );
+    return IconButton(onPressed: isEnabled ? onTap : null, icon: Icon(icon, color: isEnabled ? (isDestructive ? Colors.red : theme.colorScheme.onSurface) : theme.disabledColor));
   }
 
   Widget _vDiv(ThemeData theme) => VerticalDivider(width: 32, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
 
-  Widget _buildRightPanel(ThemeData theme) => Container(width: 240, color: theme.colorScheme.surfaceContainer, child: const Center(child: Text("Properties")));
-
-  void _finalizeCurrentPreview() {
-    if (_currentPreview != null) {
-      _saveSnapshot();
-      for (var obj in _drawingObjects) obj.isSelected = false;
-      _currentPreview!.isSelected = true;
-
-      // If it's a Pen and it has fewer than 3 points, it's just a dot/line, so discard it.
-      if (_currentPreview!.type == DrawingType.pen && _currentPreview!.points!.length < 3) {
-        _currentPreview = null;
-        return;
-      }
-
-      // Remove the floating "mouse preview" point from the end of the array
-      if (_currentPreview!.type == DrawingType.pen) {
-        _currentPreview!.points!.removeLast();
-      }
-
-      _drawingObjects.add(_currentPreview!);
-      _activeObject = _currentPreview;
-      _selectedTool = 'Select';
-      _currentPreview = null;
-    }
-  }
-
-  Future<void> _exportToPdf({required bool exportAll}) async {
-    final pdf = pw.Document();
-    
-    // Determine which pages to process
-    final List<String> targets = exportAll ? _pages : [_currentPage];
-
-    // Grab the exact screen size so the PDF maps 1:1 with what the user sees
-    final Size screenSize = MediaQuery.of(context).size;
-    final pdfFormat = PdfPageFormat(screenSize.width, screenSize.height);
-
-    for (var pageName in targets) {
-      final data = _pageDataMap[pageName]!;
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: pdfFormat,
-          margin: pw.EdgeInsets.zero, // NO MARGINS so coordinates map exactly
-          build: (pw.Context context) {
-            return pw.SizedBox(
-              width: pdfFormat.width,
-              height: pdfFormat.height,
-              child: pw.Stack(
-                children: [
-                  // 1. Force a solid white background so the stack doesn't collapse
-                  pw.Positioned.fill(child: pw.Container(color: PdfColors.white)),
-
-                  // 2. LAYER 1: ALL SHAPES, LINES, PATHS, AND BACKGROUNDS
-                  pw.Positioned.fill(
-                    child: pw.CustomPaint(
-                      painter: (PdfGraphics canvas, PdfPoint size) {
-                        for (var obj in data.objects) {
-                          final pdfColor = PdfColor.fromInt(obj.color.value);
-                          final pdfFill = PdfColor.fromInt(obj.fillColor.value);
-                          final pdfBorder = PdfColor.fromInt(obj.borderColor.value);
-                          final double stroke = obj.strokeWidth;
-
-                          // --- MANUAL ROTATION MATH ---
-                          final cx = obj.center.dx;
-                          final cy = obj.center.dy;
-                          final double angle = obj.rotation;
-
-                          // This helper rotates any point around the object's center perfectly
-                          Offset rot(Offset p) {
-                            if (angle == 0) return p;
-                            final dx = p.dx - cx;
-                            final dy = p.dy - cy;
-                            return Offset(
-                              dx * math.cos(angle) - dy * math.sin(angle) + cx,
-                              dx * math.sin(angle) + dy * math.cos(angle) + cy
-                            );
-                          }
-
-                          // --- DRAW LEADER LINE FOR CALLOUTS ---
-                          if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
-                            final strokeC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : PdfColor.fromInt(Colors.redAccent.value);
-                            canvas.setStrokeColor(strokeC);
-                            canvas.setLineWidth(stroke);
-                            
-                            final basePoint = rot(Offset(obj.rect.center.dx, obj.rect.bottom));
-                            final knee = rot(obj.points![0]);
-                            final tip = rot(obj.points![1]);
-
-                            canvas.moveTo(basePoint.dx, basePoint.dy);
-                            canvas.lineTo(knee.dx, knee.dy);
-                            canvas.lineTo(tip.dx, tip.dy);
-                            canvas.strokePath();
-                          }
-
-                          // --- DRAW TEXT BACKGROUND BOX (Text itself is drawn later) ---
-                          if (obj.type == DrawingType.text) {
-                            if (obj.fillColor != Colors.transparent || obj.borderColor != Colors.transparent) {
-                              final tl = rot(obj.rect.topLeft);
-                              final tr = rot(obj.rect.topRight);
-                              final br = rot(obj.rect.bottomRight);
-                              final bl = rot(obj.rect.bottomLeft);
-                              
-                              canvas.moveTo(tl.dx, tl.dy);
-                              canvas.lineTo(tr.dx, tr.dy);
-                              canvas.lineTo(br.dx, br.dy);
-                              canvas.lineTo(bl.dx, bl.dy);
-                              canvas.lineTo(tl.dx, tl.dy); // Close box
-                              
-                              final strokeC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : pdfColor;
-                              canvas.setStrokeColor(strokeC);
-                              canvas.setLineWidth(stroke);
-
-                              if (obj.fillColor != Colors.transparent) {
-                                canvas.setFillColor(pdfFill);
-                                canvas.fillAndStrokePath();
-                              } else {
-                                canvas.strokePath();
-                              }
-                            }
-                            continue; // Skip the rest of the loop for text
-                          }
-
-                          canvas.setLineWidth(stroke);
-                          final actualBorderC = pdfBorder != PdfColor.fromInt(Colors.transparent.value) ? pdfBorder : pdfColor;
-
-                          // --- RECTANGLE ---
-                          if (obj.type == DrawingType.rect) {
-                            final tl = rot(obj.rect.topLeft);
-                            final tr = rot(obj.rect.topRight);
-                            final br = rot(obj.rect.bottomRight);
-                            final bl = rot(obj.rect.bottomLeft);
-
-                            canvas.moveTo(tl.dx, tl.dy);
-                            canvas.lineTo(tr.dx, tr.dy);
-                            canvas.lineTo(br.dx, br.dy);
-                            canvas.lineTo(bl.dx, bl.dy);
-                            canvas.lineTo(tl.dx, tl.dy);
-                            
-                            canvas.setStrokeColor(actualBorderC);
-                            if (obj.fillColor != Colors.transparent) {
-                              canvas.setFillColor(pdfFill);
-                              canvas.fillAndStrokePath();
-                            } else {
-                              canvas.strokePath();
-                            }
-                          } 
-                          // --- CIRCLE ---
-                          else if (obj.type == DrawingType.circle) {
-                            canvas.setStrokeColor(actualBorderC);
-                            canvas.drawEllipse(cx, cy, obj.rect.width / 2, obj.rect.height / 2);
-                            if (obj.fillColor != Colors.transparent) {
-                              canvas.setFillColor(pdfFill);
-                              canvas.fillAndStrokePath();
-                            } else {
-                              canvas.strokePath();
-                            }
-                          } 
-                          // --- LINE OR ARROW ---
-                          else if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-                            canvas.setStrokeColor(pdfColor);
-                            final rStart = rot(obj.start);
-                            final rEnd = rot(obj.end);
-                            
-                            canvas.moveTo(rStart.dx, rStart.dy);
-                            canvas.lineTo(rEnd.dx, rEnd.dy);
-
-                            if (obj.type == DrawingType.arrow) {
-                              const double arrowLength = 15.0;
-                              const double arrowAngle = math.pi / 6;
-                              double angle2 = math.atan2(rEnd.dy - rStart.dy, rEnd.dx - rStart.dx);
-                              
-                              canvas.moveTo(rEnd.dx, rEnd.dy);
-                              canvas.lineTo(rEnd.dx - arrowLength * math.cos(angle2 - arrowAngle), rEnd.dy - arrowLength * math.sin(angle2 - arrowAngle));
-                              canvas.moveTo(rEnd.dx, rEnd.dy);
-                              canvas.lineTo(rEnd.dx - arrowLength * math.cos(angle2 + arrowAngle), rEnd.dy - arrowLength * math.sin(angle2 + arrowAngle));
-                            }
-                            canvas.strokePath();
-                          } 
-                          // --- PENCIL / PEN ---
-                          else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
-                            canvas.setStrokeColor(pdfColor);
-                            final firstPoint = rot(obj.points!.first);
-                            canvas.moveTo(firstPoint.dx, firstPoint.dy);
-                            
-                            for (var p in obj.points!) {
-                              final rp = rot(p);
-                              canvas.lineTo(rp.dx, rp.dy);
-                            }
-
-                            if (obj.fillColor != Colors.transparent && obj.points!.length > 2) {
-                              canvas.setFillColor(pdfFill);
-                              canvas.fillAndStrokePath();
-                            } else {
-                              canvas.strokePath();
-                            }
-                          }
-                        }
-                      },
-                    ),
-                  ),
-
-                  // 3. LAYER 2: TEXT WIDGETS
-                  // Drawn on top of the graphics layer natively so the fonts stay crisp
-                  ...data.objects.where((o) => o.type == DrawingType.text && o.text != null).map((obj) {
-                    return pw.Positioned(
-                      left: obj.rect.left + 10, // Match your canvas padding
-                      top: obj.rect.top + 10,
-                      child: pw.Text(
-                        obj.text!,
-                        style: pw.TextStyle(
-                          color: PdfColor.fromInt(obj.color.value),
-                          fontSize: obj.fontSize,
-                          fontWeight: obj.isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                          fontStyle: obj.isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            );
-          },
+  Widget _buildFloatingPencilMenu(ThemeData theme) {
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("DRAW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _toolIcon(Icons.edit, "Pencil", theme), _toolIcon(Icons.polyline, "Pen", theme), _vDiv(theme),
+            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _colorButton("Color", _pencilColor, 0), const SizedBox(width: 12), _colorButton("Fill", _penFillColor, 7), _vDiv(theme), _buildStrokeSlider(theme, 0), 
+          ],
         ),
-      );
-    }
-
-    // Opens the native print/save dialog automatically!
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: exportAll ? 'Project_Full_Export' : '${_currentPage}_Export',
+      ),
     );
   }
-}
 
-// --- PAINTERS ---
-class CanvasPaper extends StatelessWidget {
-  final List<DrawingObject> objects;
-  final DrawingObject? preview;
-  const CanvasPaper({super.key, required this.objects, this.preview});
+  Widget _buildFloatingTextMenu(ThemeData theme) {
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("TOOLS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _toolIcon(Icons.title, "Text", theme), _toolIcon(Icons.chat_bubble_outline, "Callout", theme), _vDiv(theme),
+            const Text("FORMAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _formatToggle(Icons.format_bold, _textIsBold, () => setState(() { _textIsBold = !_textIsBold; if (_activeObject?.type == DrawingType.text) _activeObject!.isBold = _textIsBold; }), theme),
+            _formatToggle(Icons.format_italic, _textIsItalic, () => setState(() { _textIsItalic = !_textIsItalic; if (_activeObject?.type == DrawingType.text) _activeObject!.isItalic = _textIsItalic; }), theme),
+            _formatToggle(Icons.format_underlined, _textIsUnderline, () => setState(() { _textIsUnderline = !_textIsUnderline; if (_activeObject?.type == DrawingType.text) _activeObject!.isUnderline = _textIsUnderline; }), theme),
+            _formatToggle(Icons.format_strikethrough, _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject?.type == DrawingType.text) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
+            _vDiv(theme), _buildTextSizeSlider(theme), _vDiv(theme),
+            _colorButton("Text", _textColor, 4), const SizedBox(width: 12), _colorButton("Border", _textBorderColor, 5), const SizedBox(width: 12), _colorButton("Fill", _textFillColor, 6), _vDiv(theme), _buildStrokeSlider(theme, 2), 
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildFloatingShapeMenu(ThemeData theme) {
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _toolIcon(Icons.crop_square, "Rect", theme), _toolIcon(Icons.panorama_fish_eye, "Circle", theme), _toolIcon(Icons.show_chart, "Line", theme), _toolIcon(Icons.arrow_outward, "Arrow", theme), _vDiv(theme),
+            const Text("PROPERTIES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _colorButton("Color", _shapeLineColor, 1), const SizedBox(width: 12), _colorButton("Border", _shapeBorderColor, 2), const SizedBox(width: 12), _colorButton("Fill", _shapeFillColor, 3), _vDiv(theme), _buildStrokeSlider(theme, 1), 
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullWidthToolbar(ThemeData theme) {
+    return Container(
+      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8), color: theme.colorScheme.surface,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _mainMenuToggle(icon: Icons.near_me, label: "Select", isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar, hasDropdown: false, theme: theme, onTap: () => setState(() { _selectedTool = 'Select'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; })),
+            _mainMenuToggle(icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit, label: _selectedTool == 'Pen' ? "Pen" : "Pencil", isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen', hasDropdown: true, theme: theme, onTap: () => setState(() { _showPencilToolbar = !_showPencilToolbar; if (_showPencilToolbar) { _showShapeToolbar = false; _showTextToolbar = false; if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil'; } else { _selectedTool = 'Select'; } })),
+            _mainMenuToggle(icon: _getShapeIcon(_selectedTool), label: "Shapes", isActive: _showShapeToolbar || _isShapeSelected(_selectedTool), hasDropdown: true, theme: theme, onTap: () => setState(() { _showShapeToolbar = !_showShapeToolbar; if (_showShapeToolbar) { _showPencilToolbar = false; _showTextToolbar = false; if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect'; } else { _selectedTool = 'Select'; } })),
+            _mainMenuToggle(icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title, label: _selectedTool == 'Callout' ? "Callout" : "Text", isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout', hasDropdown: true, theme: theme, onTap: () => setState(() { _showTextToolbar = !_showTextToolbar; if (_showTextToolbar) { _showPencilToolbar = false; _showShapeToolbar = false; if (_selectedTool != 'Text' && _selectedTool != 'Callout') { _selectedTool = 'Text'; } } else { _selectedTool = 'Select'; } })),
+            _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin'; })),
+            _vDiv(theme),
+            _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
+            _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
+            _vDiv(theme),
+            _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+            _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+            _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.all(16),
-      clipBehavior: Clip.hardEdge, 
-      decoration: BoxDecoration(color: theme.brightness == Brightness.dark ? const Color(0xFF1C252E) : Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant)),
-      child: CustomPaint(size: Size.infinite, painter: MainPainter(context, objects, preview)),
+    final size = MediaQuery.of(context).size;
+
+    if (_isLoadingDocument) {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: theme.colorScheme.primary),
+              const SizedBox(height: 16),
+              Text("Loading Document...", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6))),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 🚀 REMOVED CallbackShortcuts from the top level!
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
+        children: [
+          _buildTopNav(theme),
+          Expanded(
+            child: Row(
+              children: [
+                
+                // 🔽 3. MOVED SHORTCUTS HERE (Only wraps the Toolbar and Canvas) 🔽
+                Expanded(
+                  child: CallbackShortcuts(
+                    bindings: <ShortcutActivator, VoidCallback>{
+                      const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
+                      const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, 
+                      const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
+                      const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, 
+                      const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+                      const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
+                      const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+                      const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
+                      const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
+                      const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+                        if (_selectedTool == 'Pen') _finalizeCurrentPreview();
+                      }),
+                    },
+                    child: Focus(
+                      focusNode: _canvasFocusNode, // 👈 Assigned the new node here!
+                      autofocus: true,
+                      child: Column(
+                        children: [
+                          _buildFullWidthToolbar(theme),
+                          
+                          // 🔽 The InteractiveViewer and Canvas Logic 🔽
+                          Expanded(
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned.fill(
+                                  // THE DESK
+                                  child: Container(
+                                    color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                                    child: InteractiveViewer(
+                                      panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
+                                      scaleEnabled: true, 
+                                      minScale: 0.4,     
+                                      maxScale: 3.5,     
+                                      boundaryMargin: const EdgeInsets.all(double.infinity), 
+                                      child: Center(
+                                        child: MouseRegion(
+                                          cursor: _getCursor(_hoveredHandle),
+                                          onHover: (d) {
+                                            if (_selectedTool == 'Pen' && _currentPreview != null) {
+                                              setState(() => _currentPreview!.points!.last = d.localPosition);
+                                              return;
+                                            }
+                                            if (_selectedTool != 'Select') return;
+                                            ResizeHandle hit = ResizeHandle.none;
+                                            for (var obj in _drawingObjects.reversed) {
+                                              hit = _getHitHandle(d.localPosition, obj);
+                                              if (hit != ResizeHandle.none) break;
+                                            }
+                                            if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+                                          },
+                                          child: Listener(
+                                            onPointerDown: _handlePointerDown,
+                                            onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
+                                            onPointerUp: _handlePointerUp,
+                                            child: Stack(
+                                              alignment: Alignment.center,
+                                              children: [
+                                                Container(
+                                                  width: 816,  
+                                                  height: 1056, 
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    boxShadow: [
+                                                      BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+                                                    ],
+                                                  ),
+                                                  child: CanvasPaper(
+                                                    objects: _drawingObjects, 
+                                                    preview: _currentPreview,
+                                                    backgroundImageBytes: _pageDataMap[_currentPage]?.backgroundImageBytes,                                            
+                                                  ),
+                                                ),
+                                                if (_isPageLoading)
+                                                  Positioned.fill(
+                                                    child: Container(
+                                                      color: Colors.white.withOpacity(0.7),
+                                                      child: Center(child: CircularProgressIndicator(color: theme.colorScheme.primary)),
+                                                    )
+                                                  )
+                                              ]
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
+                                if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
+                                if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                
+                if (_activeObject != null || size.width > 1200) 
+                  PropertiesPanel(
+                    activeObject: _activeObject,
+                    availableTags: _availableTags,
+                    onUpdate: () => setState(() {}),
+                    onImageUpload: _uploadImageForObject,
+                    onImageDelete: _deleteImageForObject, 
+                    onClose: () {
+                      setState(() {
+                        for (var obj in _drawingObjects) { obj.isSelected = false; }
+                        _activeObject = null;
+                        _selectedTool = 'Select';
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
-}
-
-class MainPainter extends CustomPainter {
-  final BuildContext context;
-  final List<DrawingObject> objects;
-  final DrawingObject? preview;
-  MainPainter(this.context, this.objects, this.preview);
-
-  @override
-  void paint(ui.Canvas canvas, Size size) {
-    final theme = Theme.of(context);
-    final gridPaint = Paint()..color = theme.colorScheme.onSurface.withOpacity(0.05);
-    for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
-    for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
-
-    void drawShape(DrawingObject obj) {
-      canvas.save();
-      canvas.translate(obj.center.dx, obj.center.dy);
-      canvas.rotate(obj.rotation);
-      canvas.translate(-obj.center.dx, -obj.center.dy);
-
-      final Rect rect = obj.rect;
-      
-      if (obj.type == DrawingType.text && obj.text != null) {        
-        // 1. Text Auto-Height Calculation
-        double fontSize = obj.fontSize ?? 24.0;
-        if (fontSize < 1) fontSize = 1;
-
-        final textPainter = TextPainter(
-          text: TextSpan(text: obj.text, style: TextStyle(color: obj.color, fontSize: fontSize, fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal, fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal)),
-          textDirection: TextDirection.ltr, textAlign: TextAlign.left,
-        );
-        
-        double availableWidth = rect.width > 20 ? rect.width - 20 : 10;
-        textPainter.layout(maxWidth: availableWidth);
-        double requiredHeight = textPainter.height + 20;
-        
-        // 🔽 FIXED: Smoothly snaps the height without moving your arrow points! 🔽
-        if (obj.end.dy >= obj.start.dy) {
-          obj.end = Offset(obj.end.dx, obj.start.dy + requiredHeight);
-        } else {
-          obj.start = Offset(obj.start.dx, obj.end.dy - requiredHeight);
-        }
-        
-        final updatedRect = obj.rect;
-        final borderPaint = Paint()..color = obj.borderColor..strokeWidth = obj.strokeWidth..style = PaintingStyle.stroke;
-
-        // 2. 🌟 DRAW THE LEADER LINE IF IT'S A CALLOUT 🌟
-        if (obj.isCallout && obj.points != null && obj.points!.length >= 2) {
-          Offset knee = obj.points![0];
-          Offset tip = obj.points![1];
-
-          // Dynamically attach to the nearest edge
-          Offset attach = Offset(updatedRect.center.dx, updatedRect.bottom); 
-          if (knee.dy < updatedRect.top) attach = Offset(updatedRect.center.dx, updatedRect.top);
-          else if (knee.dy > updatedRect.bottom) attach = Offset(updatedRect.center.dx, updatedRect.bottom);
-          else if (knee.dx < updatedRect.left) attach = Offset(updatedRect.left, updatedRect.center.dy);
-          else if (knee.dx > updatedRect.right) attach = Offset(updatedRect.right, updatedRect.center.dy);
-
-          Path leaderPath = Path()..moveTo(attach.dx, attach.dy)..lineTo(knee.dx, knee.dy)..lineTo(tip.dx, tip.dy);
-          canvas.drawPath(leaderPath, borderPaint);
-
-          double angle = math.atan2(tip.dy - knee.dy, tip.dx - knee.dx);
-          Path arrow = Path()
-            ..moveTo(tip.dx, tip.dy)
-            ..lineTo(tip.dx - 15 * math.cos(angle - math.pi / 6), tip.dy - 15 * math.sin(angle - math.pi / 6))
-            ..moveTo(tip.dx, tip.dy)
-            ..lineTo(tip.dx - 15 * math.cos(angle + math.pi / 6), tip.dy - 15 * math.sin(angle + math.pi / 6));
-          canvas.drawPath(arrow, borderPaint);
-        }
-
-        // 3. Draw Background Box & Border
-        if (obj.fillColor != Colors.transparent) canvas.drawRect(updatedRect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
-        if (obj.borderColor != Colors.transparent) canvas.drawRect(updatedRect, borderPaint);
-        
-        // 4. Draw Text
-        textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
-
-        // 5. 🌟 STANDARD RESIZE DOTS FOR CALLOUT ARROW 🌟
-        if (obj.isSelected && obj.isCallout && obj.points != null) {
-          Paint hP = Paint()..color = Colors.blue; 
-          Paint wP = Paint()..color = Colors.white; 
-          canvas.drawCircle(obj.points![0], 7, wP); canvas.drawCircle(obj.points![0], 5, hP); // Knee
-          canvas.drawCircle(obj.points![1], 7, wP); canvas.drawCircle(obj.points![1], 5, hP); // Tip
-        }
-      
-      } else if (obj.type == DrawingType.pin) {
-          // 📍 THE MAP PIN PATH
-          double w = rect.width;
-          double h = rect.height;
-          double r = w / 2; // Radius of the top curve
-          
-          Path pinPath = Path();
-          pinPath.moveTo(rect.center.dx, rect.bottom); // Start at the pointy bottom tip
-          // Curve up the left side
-          pinPath.quadraticBezierTo(rect.left, rect.bottom - h * 0.4, rect.left, rect.top + r);
-          // Draw the perfect semi-circle on top
-          pinPath.arcToPoint(Offset(rect.right, rect.top + r), radius: Radius.circular(r), clockwise: true);
-          // Curve down the right side back to the tip
-          pinPath.quadraticBezierTo(rect.right, rect.bottom - h * 0.4, rect.center.dx, rect.bottom);
-          pinPath.close();
-
-          final borderPaint = Paint()
-            ..color = obj.color.withOpacity(obj.opacity)
-            ..strokeWidth = obj.strokeWidth
-            ..style = PaintingStyle.stroke;
-
-          // Draw the solid red body
-          if (obj.fillColor != Colors.transparent) {
-            canvas.drawPath(pinPath, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
-          }
-          // Draw the dark red border
-          canvas.drawPath(pinPath, borderPaint);
-          
-          // Draw the classic white hole in the center of the top circle
-          canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, Paint()..color = Colors.white..style = PaintingStyle.fill);
-          canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, borderPaint);
-        
-      } else {
-        if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
-          final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
-          if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
-          if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
-        }
-
-        final strokePaint = Paint()
-          ..color = obj.color 
-          ..strokeWidth = obj.strokeWidth
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round;
-
-        if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
-          Path path = Path();
-          path.moveTo(obj.points![0].dx, obj.points![0].dy);
-          for (var i = 1; i < obj.points!.length; i++) {
-            path.lineTo(obj.points![i].dx, obj.points![i].dy);
-          }
-          
-          // 🔽 THE BUG FIX: Force the fill path to close! 🔽
-          if (obj.fillColor != Colors.transparent && obj.points!.length > 2) {
-             Path fillPath = Path.from(path); // Create a copy
-             fillPath.close(); // Force it to close so Flutter knows it's a solid shape
-             
-             final fillPaint = Paint()
-               ..color = obj.fillColor.withOpacity(obj.opacity)
-               ..style = PaintingStyle.fill;
-             canvas.drawPath(fillPath, fillPaint);
-          }
-          
-          canvas.drawPath(path, strokePaint); // Draw the stroke on top
-
-          // Draw the close node indicator for Pen
-          if (obj == preview && obj.type == DrawingType.pen) {
-            canvas.drawCircle(obj.points![0], 6, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2);
-          }
-        } else if (obj.type == DrawingType.line) {
-          canvas.drawLine(obj.start, obj.end, strokePaint);
-        } else if (obj.type == DrawingType.arrow) {
-          // 1. Draw the main line
-          canvas.drawLine(obj.start, obj.end, strokePaint);
-          
-          // 2. Calculate the arrowhead angle and draw it
-          const double arrowLength = 15.0;
-          const double arrowAngle = math.pi / 6; // 30 degrees
-          double angle = math.atan2(obj.end.dy - obj.start.dy, obj.end.dx - obj.start.dx);
-
-          Offset p1 = Offset(
-            obj.end.dx - arrowLength * math.cos(angle - arrowAngle),
-            obj.end.dy - arrowLength * math.sin(angle - arrowAngle),
-          );
-          Offset p2 = Offset(
-            obj.end.dx - arrowLength * math.cos(angle + arrowAngle),
-            obj.end.dy - arrowLength * math.sin(angle + arrowAngle),
-          );
-
-          Path arrowPath = Path()
-            ..moveTo(obj.end.dx, obj.end.dy)
-            ..lineTo(p1.dx, p1.dy)
-            ..moveTo(obj.end.dx, obj.end.dy)
-            ..lineTo(p2.dx, p2.dy);
-          
-          canvas.drawPath(arrowPath, strokePaint);
-          
-        } else if (obj.type == DrawingType.rect) {
-          canvas.drawRect(rect, strokePaint);
-        } else if (obj.type == DrawingType.circle) {
-          canvas.drawOval(rect, strokePaint);
-        }
-      }
-
-      if (obj.isSelected) {
-        final hP = Paint()..color = Colors.blue;
-        final wP = Paint()..color = Colors.white;
-        
-        // Rotation handle remains for all
-        Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
-        canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
-        canvas.drawCircle(rotPos, 12, wP);
-        canvas.drawCircle(rotPos, 10, hP);
-
-        final rotIcon = TextPainter(
-          text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
-          textDirection: TextDirection.ltr,
-        );
-        rotIcon.layout();
-        rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
-
-        // 🔽 HIDE RESIZE DOTS FOR PEN AND PENCIL 🔽
-        if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
-          final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
-          for (var p in points) { 
-            canvas.drawCircle(p, 7, wP); 
-            canvas.drawCircle(p, 5, hP); 
-          }
-        } else {
-          // Draw just a simple bounding box to show it's selected
-          canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
-        }
-      }
-      canvas.restore();
-    }
-    
-    for (var obj in objects) drawShape(obj);
-    if (preview != null) drawShape(preview!);
-  }
-  @override bool shouldRepaint(covariant MainPainter oldDelegate) => true;
 }

@@ -141,8 +141,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
                           rowsPerPage: 10,
                           onRowTap: (project) {
                             final id = project.id;
-                            final name = Uri.encodeComponent(project.name);
-                            context.go('/projects/details/$id/$name/inspections');
+                            context.go('/projects/details/$id/inspections');
                           },
                           columns: [
                             TableColumn(

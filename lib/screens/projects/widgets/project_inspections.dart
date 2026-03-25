@@ -1,14 +1,16 @@
 import 'package:field_report_fe/models/project.dart';
-import 'package:field_report_fe/screens/projects/controllers/project_controller.dart';
+import 'package:field_report_fe/screens/projects/controllers/inspection_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 
 class ProjectInspectionsTab extends StatefulWidget {
-    final String projectId;
+  final String projectId;
 
   const ProjectInspectionsTab({super.key, required this.projectId});
 
@@ -23,11 +25,11 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
   @override
   void initState() {
     super.initState();
-    projectController.getAllInspections(widget.projectId);
+    inspectionController.getAllInspections(widget.projectId);
   }
 
   List<ProjectInspection> _getFilteredInspections() {
-    return projectController.inspections.where((p) {
+    return inspectionController.inspections.where((p) {
       return p.name.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
   }
@@ -42,7 +44,7 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
           message: "Inspection deleted successfully", 
           type: ToastType.success
         );
-        projectController.getAllInspections(widget.projectId);
+        inspectionController.getAllInspections(widget.projectId);
       } else {
         ToastService.show(context, 
           message: "Unexpected error occurred", 
@@ -58,22 +60,22 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     }
   }
 
-  void _confirmDelete(BuildContext context,  ProjectInspection project) {
+  void _confirmDelete(BuildContext context, ProjectInspection project) {
     showDialog(
-        context: context,
-        barrierColor: Colors.black.withOpacity(0.5),
-        builder: (context) => Center(
-          child: Material(
-            color: Colors.transparent,
-            child: ConfirmationDialog(
-              title: "Remove Inspection",
-              description: "Are you sure you want to remove inspection for '${DateFormat('dd MMM yyyy').format(project.createTime)}'?",
-              confirmLabel: "Remove",
-              onConfirm: () async => await removeInspection(context, project.id),
-            ),
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: ConfirmationDialog(
+            title: "Remove Inspection",
+            description: "Are you sure you want to remove inspection for '${DateFormat('dd MMM yyyy').format(project.createTime)}'?",
+            confirmLabel: "Remove",
+            onConfirm: () async => await removeInspection(context, project.id),
           ),
         ),
-      );
+      ),
+    );
   }
 
   @override
@@ -82,7 +84,7 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     final colorScheme = theme.colorScheme;
 
     return ListenableBuilder(
-      listenable: projectController,
+      listenable: inspectionController,
       builder: (context, child) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,21 +99,25 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
                   _buildTopToolbar(theme),
                   const SizedBox(height: 10),
 
-                    ListenableBuilder(
-                    listenable: projectController,
+                  ListenableBuilder(
+                    listenable: inspectionController,
                     builder: (context, child) {
-                    final displayData = _getFilteredInspections();
-                    return CommonTable<ProjectInspection>(
-                        isLoading: projectController.isInspectionsLoading,
+                      final displayData = _getFilteredInspections();
+                      return CommonTable<ProjectInspection>(
+                        isLoading: inspectionController.isInspectionsLoading,
                         data: displayData,
                         showCheckboxes: false,
+                        
+                        // Optional: If your CommonTable widget supports row tapping, uncomment this!
+                        // onRowTap: (item) => context.push('/inspection/${item.id}'),
+
                         columns: [
                           TableColumn(
                             title: 'Sr No.',
                             flex: 1,
                             minWidth: 60,
                             builder: (item) {
-                              final index = projectController.inspections.indexOf(item) + 1;
+                              final index = inspectionController.inspections.indexOf(item) + 1;
                               return Text(index.toString().padLeft(2, '0'));
                             },
                           ),
@@ -130,14 +136,32 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
                               DateFormat('dd MMM yyyy').format(item.createTime),
                             ),
                           ),
+                          // 🔽 UPDATED ACTIONS COLUMN 🔽
                           TableColumn(
                             title: "Actions",
                             flex: 0,
                             minWidth: 100,
-                            builder: (p) => IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20),
-                              color: colorScheme.error,
-                              onPressed: () => _confirmDelete(context, p),
+                            builder: (p) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // VIEW DETAILS BUTTON
+                                IconButton(
+                                  tooltip: "View Details",
+                                  icon: const Icon(Icons.visibility_outlined, size: 20),
+                                  color: colorScheme.primary,
+                                  onPressed: () {
+                                    final exactUrl = '/projects/details/${widget.projectId}/inspections/${p.id}';
+                                    context.go(exactUrl);
+                                  },
+                                ),
+                                // DELETE BUTTON
+                                IconButton(
+                                  tooltip: "Delete",
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: colorScheme.error,
+                                  onPressed: () => _confirmDelete(context, p),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -153,7 +177,7 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     );
   }
 
-Widget _buildTopToolbar(ThemeData theme) {
+  Widget _buildTopToolbar(ThemeData theme) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final colorScheme = theme.colorScheme;
 
@@ -173,8 +197,8 @@ Widget _buildTopToolbar(ThemeData theme) {
             Tooltip(
               message: 'Refresh Inspections',
               child: InkWell(
-                onTap: projectController.isInspectionsLoading ? null : () {
-                  projectController.getAllInspections(widget.projectId);
+                onTap: inspectionController.isInspectionsLoading ? null : () {
+                  inspectionController.getAllInspections(widget.projectId);
                 },
                 borderRadius: BorderRadius.circular(8),
                 child: Container(

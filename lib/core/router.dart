@@ -7,13 +7,11 @@ import '../screens/settings/settings_screen.dart';
 import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
+import '../screens/projects/widgets/inspection_details.dart';
 
 import '../screens/canvas/canvas_screen.dart';
 
 import '../screens/layout/not_found_screen.dart';
-
-// final _rootNavigatorKey = GlobalKey<NavigatorState>();
-// final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final router = GoRouter(
   refreshListenable: authController,
@@ -33,14 +31,15 @@ final router = GoRouter(
       path: '/loading',
       builder: (context, state) => const AppLoadingScreen(),
     ),
-    GoRoute(
-      path: '/canvas',
-      builder:(context, state) => const CanvasScreen(),
-    ),
-
     // --- PRIVATE ROUTES (Wrapped in ShellRoute) ---
     ShellRoute(
-      builder: (context, state, child) => MainScaffold(child: child),
+      builder: (context, state, child) {
+        final bool isCanvasRoute = state.uri.path.contains('/canvas');
+        return MainScaffold(
+          isScrollable: !isCanvasRoute, 
+          child: child,
+        );
+      },
       routes: [
         GoRoute(
           path: '/',
@@ -55,21 +54,42 @@ final router = GoRouter(
           builder: (context, state) => const ProjectScreen(),
           routes: [
             GoRoute(
-              path: 'details/:id/:name/:section', // Added /:section
+              path: 'details/:id/:section', 
               builder: (context, state) {
                 return ProjectDetailsScreen(
                   projectId: state.pathParameters['id']!,
-                  projectName: state.pathParameters['name']!,
                   initialSection: state.pathParameters['section'] ?? 'inspections',
                 );
               },
+              routes: [
+                GoRoute(
+                  path: ':inspectionId', 
+                  builder: (context, state) {
+                    return InspectionDetailsScreen(
+                      inspectionId: state.pathParameters['inspectionId']!,
+                    );
+                  },
+                  routes: [
+                    GoRoute(
+                      path: 'canvas', 
+                      builder: (context, state) {
+                        final documentId = state.uri.queryParameters['document'] ?? '';
+                        final page = state.uri.queryParameters['page'] ?? '1';
+
+                        return CanvasScreen(
+                          projectId: state.pathParameters['id']!, 
+                          inspectionId: state.pathParameters['inspectionId']!,
+                          documentId: documentId,
+                          page: page,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
-        // GoRoute(
-        //   path: '/canvas',
-        //   builder:(context, state) => const CanvasScreen(),
-        // )
       ],
     ),
   ],

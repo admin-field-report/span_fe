@@ -8,13 +8,11 @@ import './widgets/project_medias.dart';
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;
-  final String projectName;
   final String initialSection;
 
   const ProjectDetailsScreen({
     super.key,
     required this.projectId,
-    required this.projectName,
     required this.initialSection,
   });
 
@@ -46,8 +44,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
 
   void _updateUrl() {
     final section = _sections[_tabController.index];
-    final name = Uri.encodeComponent(widget.projectName);
-    context.go('/projects/details/${widget.projectId}/$name/$section');
+    context.go('/projects/details/${widget.projectId}/$section');
   }
 
   @override
@@ -77,7 +74,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    widget.projectName, 
+                    'Project Name Here', 
                     style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)
                   ),
                 ),
