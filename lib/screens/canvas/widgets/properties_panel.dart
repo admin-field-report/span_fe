@@ -11,7 +11,11 @@ class PropertiesPanel extends StatefulWidget {
   final VoidCallback onClose;
   final Future<void> Function(String fileName, Uint8List bytes) onImageUpload; 
   // 🔽 NEW: Delete Callback
-  final Future<void> Function(String s3Key) onImageDelete; 
+  final Future<void> Function(String s3Key) onImageDelete;
+  final Function(String s3Key, String imageUrl) onImageTap;
+
+  final bool allowImageUpload;
+   
 
   const PropertiesPanel({
     super.key,
@@ -20,7 +24,9 @@ class PropertiesPanel extends StatefulWidget {
     required this.onUpdate,
     required this.onClose,
     required this.onImageUpload,
-    required this.onImageDelete, // 👈 Required here
+    required this.onImageDelete,
+    required this.onImageTap,
+    this.allowImageUpload = true,
   });
 
   @override
@@ -32,7 +38,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   DrawingObject? _trackedObject;
   
   bool _isUploading = false; 
-  final Set<String> _deletingKeys = {}; // 👈 Tracks which images are currently deleting
+  final Set<String> _deletingKeys = {};
 
   @override
   void initState() {
@@ -152,28 +158,29 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                     }).toList(),
                   ),
 
-                  const SizedBox(height: 32),
-
-                  Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
                   
-                  // 🌟 UPLOAD BUTTON NOW AT THE TOP 🌟
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _isUploading ? null : _pickAndUploadImage,
-                      icon: _isUploading 
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.cloud_upload_outlined, size: 18),
-                      label: Text(_isUploading ? "Uploading..." : "Upload Image"),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                  if (widget.allowImageUpload) ...[
+                    const SizedBox(height: 32),
+                    Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    // 🌟 UPLOAD BUTTON NOW AT THE TOP 🌟
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isUploading ? null : _pickAndUploadImage,
+                        icon: _isUploading 
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.cloud_upload_outlined, size: 18),
+                        label: Text(_isUploading ? "Uploading..." : "Upload Image"),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                        ),
                       ),
                     ),
-                  ),
-                  
-                  const SizedBox(height: 16),
+                    
+                    const SizedBox(height: 16),
+                  ],
                   
                   // 🌟 NEW GALLERY GRID VIEW 🌟
                   if (widget.activeObject!.imageUrls != null && widget.activeObject!.imageUrls!.isNotEmpty)
@@ -203,19 +210,21 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                             fit: StackFit.expand,
                             children: [
                               // The Thumbnail
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  imageUrl,
-                                  fit: BoxFit.cover,
-                                  // Fallback just in case the S3 bucket blocks public GET requests
-                                  errorBuilder: (context, error, stackTrace) => Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.image_not_supported_outlined, color: theme.colorScheme.onSurfaceVariant),
-                                      const SizedBox(height: 4),
-                                      Text("Preview\nUnavailable", textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant)),
-                                    ],
+                              GestureDetector(
+                                onTap: () => widget.onImageTap(s3Key, imageUrl), // 👈 NEW CLICK HANDLER
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.image_not_supported_outlined, color: theme.colorScheme.onSurfaceVariant),
+                                        const SizedBox(height: 4),
+                                        Text("Preview\nUnavailable", textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant)),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

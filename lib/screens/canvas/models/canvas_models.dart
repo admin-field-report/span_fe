@@ -37,6 +37,8 @@ class DrawingObject {
   List<String>? tagIds;
   List<String>? imageUrls;
 
+  String? toolId;
+
   DrawingObject({
     required this.start,
     required this.end,
@@ -63,6 +65,8 @@ class DrawingObject {
 
     this.base64Image,
     this.customImage,
+
+    this.toolId,
   });
 
   Rect get rect {
