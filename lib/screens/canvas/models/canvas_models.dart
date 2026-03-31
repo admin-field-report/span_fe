@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
-enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin }
+enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin, customTool }
 
 enum ResizeHandle { 
   none, topLeft, topCenter, topRight, centerLeft, centerRight, 
@@ -28,6 +29,9 @@ class DrawingObject {
   bool isUnderline;
   bool isStrikethrough;
   bool isCallout; 
+
+  String? base64Image;
+  ui.Image? customImage;
 
   String? description;
   List<String>? tagIds;
@@ -55,7 +59,10 @@ class DrawingObject {
 
     this.description,
     this.tagIds,
-    this.imageUrls, 
+    this.imageUrls,
+
+    this.base64Image,
+    this.customImage,
   });
 
   Rect get rect {
@@ -99,6 +106,8 @@ class DrawingObject {
         description: description,
         tagIds: tagIds != null ? List.from(tagIds!) : null,
         imageUrls: imageUrls != null ? List.from(imageUrls!) : null,
+        base64Image: base64Image,
+        customImage: customImage,
       );
 }
 
@@ -138,4 +147,21 @@ class ProjectTag {
       color: parsedColor,
     );
   }
+}
+
+class CustomTool {
+  final String toolId;
+  final String toolName;
+  final String base64ImageUrl;
+  final List<String> tagIds;
+  ui.Image? decodedImage;
+
+  CustomTool({required this.toolId, required this.toolName, required this.base64ImageUrl, required this.tagIds, this.decodedImage});
+}
+
+class CustomToolGroup {
+  final String toolGroup;
+  final List<CustomTool> tools;
+
+  CustomToolGroup({required this.toolGroup, required this.tools});
 }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,7 @@ import '../../../core/api_service.dart';
 import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
 import 'widgets/properties_panel.dart';
+import 'widgets/custom_tools_panel.dart';
 import 'utils/canvas_export.dart';
 
 class CanvasScreen extends StatefulWidget {
@@ -79,6 +81,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _showTextToolbar = false; 
   bool _showPencilToolbar = false; 
 
+  bool _showCustomToolsPanel = false;
+  List<CustomToolGroup> _customToolGroups = [];
+  CustomTool? _selectedCustomTool;
+
   // 🔽 API-Driven Page Management 🔽
   List<String> _pages = [];
   String _currentPage = ''; 
@@ -98,6 +104,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   void dispose() {
     _canvasFocusNode.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); 
     super.dispose();
   }
 
@@ -105,6 +112,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void initState() {
     super.initState();
     _initializeCanvas();
+  }
+
+  Future<ui.Image> _decodeBase64Image(String base64Str) async {
+    String cleanBase64 = base64Str.contains(',') ? base64Str.split(',').last : base64Str;
+    final Uint8List bytes = base64Decode(cleanBase64);
+    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    return frame.image;
   }
 
   Future<void> _fetchAvailableTags() async {
@@ -127,6 +142,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Future<void> _initializeCanvas() async {
     setState(() => _isLoadingDocument = true);
     
+    await _fetchCustomTools(); 
     await _fetchAvailableTags(); 
     await _fetchPageList();
     
@@ -453,6 +469,44 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+  // ==========================================
+  // API 7: GET CUSTOM TOOLS
+  // ==========================================
+  Future<void> _fetchCustomTools() async {
+    try {
+      final response = await _apiService.get('/customTool/project/${widget.projectId}');
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        List<CustomToolGroup> loadedGroups = [];
+        
+        for (var groupJson in responseData['data']) {
+          List<CustomTool> tools = [];
+          // Note: using 'toolds' exactly as spelled in your API response!
+          if (groupJson['toolds'] != null) {
+            for (var toolJson in groupJson['toolds']) {
+              // Decode the base64 into a native ui.Image immediately for smooth drawing
+              ui.Image decodedImg = await _decodeBase64Image(toolJson['base64ImageUrl']);
+              
+              tools.add(CustomTool(
+                toolId: toolJson['toolId'],
+                toolName: toolJson['toolName'],
+                base64ImageUrl: toolJson['base64ImageUrl'],
+                tagIds: List<String>.from(toolJson['tagIds'] ?? []),
+                decodedImage: decodedImg,
+              ));
+            }
+          }
+          loadedGroups.add(CustomToolGroup(toolGroup: groupJson['toolGroup'], tools: tools));
+        }
+        
+        setState(() => _customToolGroups = loadedGroups);
+      }
+    } catch (e) {
+      debugPrint("Error fetching custom tools: $e");
+    }
+  }
+
   // Tiny helper to map API strings to our Enum
   DrawingType _parseDrawingType(String? typeStr) {
     switch (typeStr?.toLowerCase()) {
@@ -463,6 +517,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case 'text': return DrawingType.text;
       case 'pencil': return DrawingType.pencil;
       case 'pen': return DrawingType.pen;
+      case 'customtool': return DrawingType.customTool;
       default: return DrawingType.rect;
     }
   }
@@ -478,6 +533,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case DrawingType.pencil: return 'pencil';
       case DrawingType.pen: return 'pen';
       case DrawingType.pin: return 'pin';
+      case DrawingType.customTool: return 'customTool';
     }
   }
 
@@ -704,6 +760,40 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final now = DateTime.now();
 
     setState(() {
+      // 🚀 Intercept the Custom Tool click 🚀
+      if (_selectedTool == 'CustomTool') {
+        if (_selectedCustomTool != null) {
+          
+          final initialSize = const Offset(100, 100); 
+          
+          final toolObj = DrawingObject(
+            start: pos, 
+            end: pos + initialSize, 
+            type: DrawingType.customTool,
+            base64Image: _selectedCustomTool!.base64ImageUrl,
+            customImage: _selectedCustomTool!.decodedImage,
+            tagIds: List.from(_selectedCustomTool!.tagIds),
+            isSelected: true,
+          );
+          
+          setState(() {
+            for (var obj in _drawingObjects) { obj.isSelected = false; }
+            _drawingObjects.add(toolObj);
+            _activeObject = toolObj;
+            _activeHandle = ResizeHandle.bottomRight; 
+            
+            // 🔽 THE NEW UX MAGIC: Instantly revert to Select Mode 🔽
+            _selectedTool = 'Select';
+            _selectedCustomTool = null; // Disarms the custom stamp
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Please select a tool from the left panel first!")),
+          );
+        }
+        return; 
+      }
+
       if (_selectedTool == 'Text' || _selectedTool == 'Callout') {
         _showTextDialog(position: pos, isCallout: _selectedTool == 'Callout');
       } else if (_selectedTool == 'Eraser') {
@@ -751,6 +841,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts, strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
         );
+      } else if (_selectedTool == 'CustomTool' && _selectedCustomTool != null) {
+        final toolObj = DrawingObject(
+          start: pos, end: pos, // Starts as a dot, resizes as they drag
+          type: DrawingType.customTool,
+          base64Image: _selectedCustomTool!.base64ImageUrl,
+          customImage: _selectedCustomTool!.decodedImage,
+          tagIds: List.from(_selectedCustomTool!.tagIds), // Inherit tool tags!
+          isSelected: true,
+        );
+        
+        for (var obj in _drawingObjects) { obj.isSelected = false; }
+        setState(() {
+          _drawingObjects.add(toolObj);
+          _activeObject = toolObj;
+          _activeHandle = ResizeHandle.bottomRight; // Auto-grab corner to resize instantly
+        });
       } else {
         _activeHandle = ResizeHandle.none;
         DrawingObject? hitObj; ResizeHandle hitHandle = ResizeHandle.none;
@@ -1282,25 +1388,69 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildFullWidthToolbar(ThemeData theme) {
     return Container(
-      width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8), color: theme.colorScheme.surface,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _mainMenuToggle(icon: Icons.near_me, label: "Select", isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar, hasDropdown: false, theme: theme, onTap: () => setState(() { _selectedTool = 'Select'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; })),
-            _mainMenuToggle(icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit, label: _selectedTool == 'Pen' ? "Pen" : "Pencil", isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen', hasDropdown: true, theme: theme, onTap: () => setState(() { _showPencilToolbar = !_showPencilToolbar; if (_showPencilToolbar) { _showShapeToolbar = false; _showTextToolbar = false; if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil'; } else { _selectedTool = 'Select'; } })),
-            _mainMenuToggle(icon: _getShapeIcon(_selectedTool), label: "Shapes", isActive: _showShapeToolbar || _isShapeSelected(_selectedTool), hasDropdown: true, theme: theme, onTap: () => setState(() { _showShapeToolbar = !_showShapeToolbar; if (_showShapeToolbar) { _showPencilToolbar = false; _showTextToolbar = false; if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect'; } else { _selectedTool = 'Select'; } })),
-            _mainMenuToggle(icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title, label: _selectedTool == 'Callout' ? "Callout" : "Text", isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout', hasDropdown: true, theme: theme, onTap: () => setState(() { _showTextToolbar = !_showTextToolbar; if (_showTextToolbar) { _showPencilToolbar = false; _showShapeToolbar = false; if (_selectedTool != 'Text' && _selectedTool != 'Callout') { _selectedTool = 'Text'; } } else { _selectedTool = 'Select'; } })),
-            _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin'; })),
-            _vDiv(theme),
-            _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
-            _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
-            _vDiv(theme),
-            _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-            _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-            _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-          ],
-        ),
+      width: double.infinity, 
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+      ),
+      child: Row(
+        children: [
+          // 1. LEFT SIDE: Drawing Tools
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _mainMenuToggle(icon: Icons.near_me, label: "Select", isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar, hasDropdown: false, theme: theme, onTap: () => setState(() { _selectedTool = 'Select'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; })),
+                  _mainMenuToggle(icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit, label: _selectedTool == 'Pen' ? "Pen" : "Pencil", isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen', hasDropdown: true, theme: theme, onTap: () => setState(() { _showPencilToolbar = !_showPencilToolbar; if (_showPencilToolbar) { _showShapeToolbar = false; _showTextToolbar = false; if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil'; } else { _selectedTool = 'Select'; } })),
+                  _mainMenuToggle(icon: _getShapeIcon(_selectedTool), label: "Shapes", isActive: _showShapeToolbar || _isShapeSelected(_selectedTool), hasDropdown: true, theme: theme, onTap: () => setState(() { _showShapeToolbar = !_showShapeToolbar; if (_showShapeToolbar) { _showPencilToolbar = false; _showTextToolbar = false; if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect'; } else { _selectedTool = 'Select'; } })),
+                  _mainMenuToggle(icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title, label: _selectedTool == 'Callout' ? "Callout" : "Text", isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout', hasDropdown: true, theme: theme, onTap: () => setState(() { _showTextToolbar = !_showTextToolbar; if (_showTextToolbar) { _showPencilToolbar = false; _showShapeToolbar = false; if (_selectedTool != 'Text' && _selectedTool != 'Callout') { _selectedTool = 'Text'; } } else { _selectedTool = 'Select'; } })),
+                  // _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin'; })),
+                  _mainMenuToggle(icon: Icons.handyman_outlined, label: "Tools", isActive: _showCustomToolsPanel, hasDropdown: false, theme: theme, onTap: () => setState(() { _showCustomToolsPanel = !_showCustomToolsPanel; if (_showCustomToolsPanel) { _selectedTool = 'CustomTool'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; } else { _selectedTool = 'Select'; _selectedCustomTool = null; } })),
+                  _vDiv(theme),
+                  _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
+                  _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
+                  _vDiv(theme),
+                  _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+                  _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+                  _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
+                ],
+              ),
+            ),
+          ),
+          
+          // 2. RIGHT SIDE: Document Controls
+          Container(width: 1, height: 32, color: theme.colorScheme.outlineVariant, margin: const EdgeInsets.symmetric(horizontal: 16)),
+          
+          // Page Dropdown
+          _buildPageSelector(theme),
+          const SizedBox(width: 12),
+
+          // Save Button
+          if (_isSaving)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12),
+              width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: theme.colorScheme.primary),
+            )
+          else
+            IconButton(
+              tooltip: "Save Annotations",
+              icon: const Icon(Icons.save_outlined),
+              color: theme.colorScheme.primary,
+              onPressed: _saveAnnotations,
+            ),
+            
+          const SizedBox(width: 8),
+
+          // Close Canvas Button
+          IconButton(
+            tooltip: "Close Canvas",
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
       ),
     );
   }
@@ -1308,7 +1458,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final size = MediaQuery.of(context).size;
 
     if (_isLoadingDocument) {
       return Scaffold(
@@ -1326,139 +1475,158 @@ class _CanvasScreenState extends State<CanvasScreen> {
       );
     }
 
-    // 🚀 REMOVED CallbackShortcuts from the top level!
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: Column(
-        children: [
-          _buildTopNav(theme),
-          Expanded(
-            child: Row(
-              children: [
-                
-                // 🔽 3. MOVED SHORTCUTS HERE (Only wraps the Toolbar and Canvas) 🔽
-                Expanded(
-                  child: CallbackShortcuts(
-                    bindings: <ShortcutActivator, VoidCallback>{
-                      const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
-                      const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, 
-                      const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
-                      const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, 
-                      const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
-                      const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
-                      const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
-                      const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
-                      const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
-                      const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-                        if (_selectedTool == 'Pen') _finalizeCurrentPreview();
-                      }),
-                    },
-                    child: Focus(
-                      focusNode: _canvasFocusNode, // 👈 Assigned the new node here!
-                      autofocus: true,
-                      child: Column(
-                        children: [
-                          _buildFullWidthToolbar(theme),
-                          
-                          // 🔽 The InteractiveViewer and Canvas Logic 🔽
-                          Expanded(
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned.fill(
-                                  // THE DESK
-                                  child: Container(
-                                    color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                                    child: InteractiveViewer(
-                                      panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
-                                      scaleEnabled: true, 
-                                      minScale: 0.4,     
-                                      maxScale: 3.5,     
-                                      boundaryMargin: const EdgeInsets.all(double.infinity), 
-                                      child: Center(
-                                        child: MouseRegion(
-                                          cursor: _getCursor(_hoveredHandle),
-                                          onHover: (d) {
-                                            if (_selectedTool == 'Pen' && _currentPreview != null) {
-                                              setState(() => _currentPreview!.points!.last = d.localPosition);
-                                              return;
-                                            }
-                                            if (_selectedTool != 'Select') return;
-                                            ResizeHandle hit = ResizeHandle.none;
-                                            for (var obj in _drawingObjects.reversed) {
-                                              hit = _getHitHandle(d.localPosition, obj);
-                                              if (hit != ResizeHandle.none) break;
-                                            }
-                                            if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
-                                          },
-                                          child: Listener(
-                                            onPointerDown: _handlePointerDown,
-                                            onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
-                                            onPointerUp: _handlePointerUp,
-                                            child: Stack(
-                                              alignment: Alignment.center,
-                                              children: [
-                                                Container(
-                                                  width: 816,  
-                                                  height: 1056, 
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    boxShadow: [
-                                                      BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
-                                                    ],
-                                                  ),
-                                                  child: CanvasPaper(
-                                                    objects: _drawingObjects, 
-                                                    preview: _currentPreview,
-                                                    backgroundImageBytes: _pageDataMap[_currentPage]?.backgroundImageBytes,                                            
-                                                  ),
-                                                ),
-                                                if (_isPageLoading)
-                                                  Positioned.fill(
-                                                    child: Container(
-                                                      color: Colors.white.withOpacity(0.7),
-                                                      child: Center(child: CircularProgressIndicator(color: theme.colorScheme.primary)),
-                                                    )
-                                                  )
-                                              ]
-                                            ),
-                                          ),
-                                        ),
+      body: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
+          const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, 
+          const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
+          const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, 
+          const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+          const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
+          const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+          const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
+          const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
+          const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+            if (_selectedTool == 'Pen') _finalizeCurrentPreview();
+          }),
+        },
+        child: Focus(
+          focusNode: _canvasFocusNode,
+          autofocus: true,
+          child: Column(
+            children: [
+              // 🌟 1. THE UNIFIED TOOLBAR 🌟
+              _buildFullWidthToolbar(theme),
+              
+              Expanded(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // 🌟 2. THE CANVAS AREA 🌟
+                    Positioned.fill(
+                      child: Container(
+                        color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                        child: InteractiveViewer(
+                          panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
+                          scaleEnabled: true, 
+                          minScale: 0.4,     
+                          maxScale: 3.5,     
+                          boundaryMargin: const EdgeInsets.all(double.infinity), 
+                          child: Center(
+                            child: MouseRegion(
+                              cursor: _getCursor(_hoveredHandle),
+                              onHover: (d) {
+                                if (_selectedTool == 'Pen' && _currentPreview != null) {
+                                  setState(() => _currentPreview!.points!.last = d.localPosition);
+                                  return;
+                                }
+                                if (_selectedTool != 'Select') return;
+                                ResizeHandle hit = ResizeHandle.none;
+                                for (var obj in _drawingObjects.reversed) {
+                                  hit = _getHitHandle(d.localPosition, obj);
+                                  if (hit != ResizeHandle.none) break;
+                                }
+                                if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+                              },
+                              child: Listener(
+                                onPointerDown: _handlePointerDown,
+                                onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
+                                onPointerUp: _handlePointerUp,
+                                child: Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Container(
+                                      width: 816,  
+                                      height: 1056, 
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        boxShadow: [
+                                          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+                                        ],
+                                      ),
+                                      child: CanvasPaper(
+                                        objects: _drawingObjects, 
+                                        preview: _currentPreview,
+                                        backgroundImageBytes: _pageDataMap[_currentPage]?.backgroundImageBytes,                                            
                                       ),
                                     ),
-                                  ),
+                                    if (_isPageLoading)
+                                      Positioned.fill(
+                                        child: Container(
+                                          color: Colors.white.withOpacity(0.7),
+                                          child: Center(child: CircularProgressIndicator(color: theme.colorScheme.primary)),
+                                        )
+                                      )
+                                  ]
                                 ),
-                                if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
-                                if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
-                                if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
-                              ],
+                              ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    
+                    // Floating Menus
+                    if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
+                    if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
+                    if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
+
+                    // 🌟 3. THE FLOATING PROPERTIES DRAWER 🌟
+                    if (_activeObject != null) 
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Material(
+                          elevation: 16, // Adds a heavy drop shadow so it hovers cleanly
+                          child: PropertiesPanel(
+                            activeObject: _activeObject,
+                            availableTags: _availableTags,
+                            onUpdate: () => setState(() {}),
+                            onImageUpload: _uploadImageForObject,
+                            onImageDelete: _deleteImageForObject, 
+                            onClose: () {
+                              setState(() {
+                                for (var obj in _drawingObjects) { obj.isSelected = false; }
+                                _activeObject = null;
+                                _selectedTool = 'Select';
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+
+                      // 🌟 4. THE LEFT CUSTOM TOOLS DRAWER 🌟
+                    if (_showCustomToolsPanel)
+                      Positioned(
+                        top: 0, left: 0, bottom: 0,
+                        child: Material(
+                          elevation: 16,
+                          child: CustomToolsPanel(
+                            groups: _customToolGroups,
+                            selectedTool: _selectedCustomTool,
+                            onToolSelected: (tool) {
+                              setState(() {
+                                _selectedCustomTool = tool;
+                                _selectedTool = 'CustomTool'; // Arm the tool!
+                              });
+                            },
+                            onClose: () => setState(() { 
+                              _showCustomToolsPanel = false; 
+                              _selectedTool = 'Select'; 
+                              _selectedCustomTool = null;
+                            }),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                
-                if (_activeObject != null || size.width > 1200) 
-                  PropertiesPanel(
-                    activeObject: _activeObject,
-                    availableTags: _availableTags,
-                    onUpdate: () => setState(() {}),
-                    onImageUpload: _uploadImageForObject,
-                    onImageDelete: _deleteImageForObject, 
-                    onClose: () {
-                      setState(() {
-                        for (var obj in _drawingObjects) { obj.isSelected = false; }
-                        _activeObject = null;
-                        _selectedTool = 'Select';
-                      });
-                    },
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

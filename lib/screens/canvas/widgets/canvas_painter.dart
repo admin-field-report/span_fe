@@ -133,7 +133,29 @@ class MainPainter extends CustomPainter {
           
           canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, Paint()..color = Colors.white..style = PaintingStyle.fill);
           canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, borderPaint);
-        
+      
+      } else if (obj.type == DrawingType.customTool) {
+          if (obj.customImage != null) {
+            final srcRect = Rect.fromLTWH(
+              0, 0, 
+              obj.customImage!.width.toDouble(), 
+              obj.customImage!.height.toDouble()
+            );
+            
+            final dstRect = obj.rect;
+
+            final imagePaint = Paint()
+              ..filterQuality = FilterQuality.high
+              ..color = Colors.white.withOpacity(obj.opacity);
+
+            canvas.drawImageRect(obj.customImage!, srcRect, dstRect, imagePaint);
+            
+          } else {
+            final fallbackPaint = Paint()
+              ..color = Colors.grey.withOpacity(0.5)
+              ..style = PaintingStyle.fill;
+            canvas.drawRect(obj.rect, fallbackPaint);
+          }
       } else {
         if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
           final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
