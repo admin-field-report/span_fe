@@ -13,7 +13,10 @@ import '../screens/canvas/canvas_screen.dart';
 
 import '../screens/layout/not_found_screen.dart';
 
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final router = GoRouter(
+  navigatorKey: rootNavigatorKey,
   refreshListenable: authController,
   initialLocation: '/',
   errorBuilder: (context, state) => const NotFoundScreen(),

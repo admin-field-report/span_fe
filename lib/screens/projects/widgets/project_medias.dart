@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../controllers/project_controller.dart';
 import '../../../utils/app_responsive.dart';
 import '../../../models/project.dart';
@@ -164,29 +165,76 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
   }
 
   Widget _buildGroupHeader(dynamic group) {
+    final theme = Theme.of(context);
+
     return Row(
       children: [
+        // Icon
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(10), // Slightly larger padding for breathing room
           decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+            color: theme.colorScheme.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10), // Softer, more modern border radius
           ),
-          child: const Icon(Icons.camera_alt_rounded, size: 18, color: Colors.blue),
+          child: Icon(Icons.camera_alt_rounded, size: 18, color: theme.colorScheme.primary),
         ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Inspection as of ${formatInspectionDate(group.createTime)}",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        const SizedBox(width: 14),
+        
+        // Title & Subtitle 
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Inspection as of ${formatInspectionDate(group.createTime)}",
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3, // Tighter letter spacing is a hallmark of modern UI
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                "${group.items.length} Images",
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 🌟 MODERN VIEW DETAILS PILL BUTTON 🌟
+        FilledButton.tonal(
+          onPressed: () {
+            final exactUrl = '/projects/details/${widget.projectId}/inspections/${group.inspectionId}';
+            context.go(exactUrl);
+          },
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            backgroundColor: theme.colorScheme.primaryContainer.withOpacity(0.4), // Soft tinted background
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20), // Perfect pill shape
             ),
-            Text(
-              "${group.items.length} Images",
-              style: TextStyle(color: Colors.grey[500], fontSize: 12),
-            ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "View Details",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              // Trailing chevron indicates forward navigation
+              Icon(Icons.arrow_forward_ios_rounded, size: 12, color: theme.colorScheme.primary), 
+            ],
+          ),
         ),
       ],
     );

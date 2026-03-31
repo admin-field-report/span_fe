@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/api_service.dart';
+import '../../services/toast_service.dart';
 
 import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
@@ -483,8 +484,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
         if (resData['success'] == true) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Image Annotations saved successfully!"), backgroundColor: Colors.green),
+            ToastService.show(context, 
+              message: "Image Annotations saved successfully!", 
+              type: ToastType.success
             );
           }
         } else {
@@ -519,8 +521,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
         if (resData['success'] == true) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Annotations saved successfully!"), backgroundColor: Colors.green),
+            ToastService.show(context, 
+              message: "Annotations saved successfully!", 
+              type: ToastType.success
             );
           }
         } else {
@@ -531,8 +534,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) {
       debugPrint("Error saving annotations: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Error saving annotations."), backgroundColor: Colors.red),
+        ToastService.show(context, 
+          message: "Error saving annotations.", 
+          type: ToastType.error
         );
       }
     } finally {
@@ -581,8 +585,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch(e) {
       debugPrint("Image upload failed: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to upload image."), backgroundColor: Colors.red),
+        ToastService.show(context, 
+          message: "Failed to upload image.", 
+          type: ToastType.error
         );
       }
     }
@@ -609,9 +614,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) {
       debugPrint("Image deletion failed: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to delete image."), backgroundColor: Colors.red),
-        );
+        ToastService.show(context, 
+          message: "Failed to delete image.", 
+          type: ToastType.error
+          );
       }
     }
   }
@@ -934,8 +940,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _selectedCustomTool = null; // Disarms the custom stamp
           });
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Please select a tool from the left panel first!")),
+          ToastService.show(context, 
+            message: "Please select a tool from the left panel first!", 
+            type: ToastType.warning
           );
         }
         return; 
@@ -1553,7 +1560,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   _mainMenuToggle(icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit, label: _selectedTool == 'Pen' ? "Pen" : "Pencil", isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen', hasDropdown: true, theme: theme, onTap: () => setState(() { _showPencilToolbar = !_showPencilToolbar; if (_showPencilToolbar) { _showShapeToolbar = false; _showTextToolbar = false; if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil'; } else { _selectedTool = 'Select'; } })),
                   _mainMenuToggle(icon: _getShapeIcon(_selectedTool), label: "Shapes", isActive: _showShapeToolbar || _isShapeSelected(_selectedTool), hasDropdown: true, theme: theme, onTap: () => setState(() { _showShapeToolbar = !_showShapeToolbar; if (_showShapeToolbar) { _showPencilToolbar = false; _showTextToolbar = false; if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect'; } else { _selectedTool = 'Select'; } })),
                   _mainMenuToggle(icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : Icons.title, label: _selectedTool == 'Callout' ? "Callout" : "Text", isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout', hasDropdown: true, theme: theme, onTap: () => setState(() { _showTextToolbar = !_showTextToolbar; if (_showTextToolbar) { _showPencilToolbar = false; _showShapeToolbar = false; if (_selectedTool != 'Text' && _selectedTool != 'Callout') { _selectedTool = 'Text'; } } else { _selectedTool = 'Select'; } })),
-                  // _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin'; })),
+                  _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin'; })),
                   _mainMenuToggle(icon: Icons.handyman_outlined, label: "Tools", isActive: _showCustomToolsPanel, hasDropdown: false, theme: theme, onTap: () => setState(() { _showCustomToolsPanel = !_showCustomToolsPanel; if (_showCustomToolsPanel) { _selectedTool = 'CustomTool'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; } else { _selectedTool = 'Select'; _selectedCustomTool = null; } })),
                   _vDiv(theme),
                   _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
