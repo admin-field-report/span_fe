@@ -97,37 +97,94 @@ final router = GoRouter(
     ),
   ],
 
+  // redirect: (context, state) {
+  //   final bool isAuthenticated = authController.isAuthenticated;
+  //   final bool isInitialized = authController.isInitialized;
+  //   final String location = state.matchedLocation;
+
+  //   // 1. Still Booting? 
+  //   if (!isInitialized) {
+  //     // CAPTURE: Save where they were (e.g., /projects) before moving to /loading
+  //     authController.setTargetPath(location);
+  //     return '/loading';
+  //   }
+
+  //   // 2. Not logged in? Force to /login
+  //   if (!isAuthenticated) {
+  //     return (location == '/login') ? null : '/login';
+  //   }
+
+  //   // 3. Logged in but User Data is missing? Fetch it on /loading
+  //   if (isAuthenticated && authController.user == null) {
+  //     // If they were already on a specific page, keep saving it
+  //     authController.setTargetPath(location);
+  //     return (location == '/loading') ? null : '/loading';
+  //   }
+
+  //   // 4. Logged in and trying to hit Login or Loading?
+  //   if (isAuthenticated && (location == '/login' || location == '/loading')) {
+  //     // RESTORE: Go to the saved path (Flow 2) or Dashboard (Flow 1)
+  //     return authController.targetPath;
+  //   }
+
+  //   // 5. Allow all other paths!
+  //   return null;
+  // },
+
   redirect: (context, state) {
     final bool isAuthenticated = authController.isAuthenticated;
     final bool isInitialized = authController.isInitialized;
-    final String location = state.matchedLocation;
 
-    // 1. Still Booting? 
+    // 1. Manually build the exact path they want to visit
+    String location = state.uri.path;
+    if (state.uri.query.isNotEmpty) {
+      location += '?${state.uri.query}';
+    }
+
+    // 2. Still Booting? 
     if (!isInitialized) {
-      // CAPTURE: Save where they were (e.g., /projects) before moving to /loading
-      authController.setTargetPath(location);
-      return '/loading';
+      // If they are already heading to loading, let them.
+      if (state.uri.path == '/loading') return null;
+      
+      // Pass their exact destination into the loading URL safely encoded!
+      final encodedLoc = Uri.encodeComponent(location);
+      return '/loading?continue=$encodedLoc';
     }
 
-    // 2. Not logged in? Force to /login
+    // 3. Not logged in? Force to /login
     if (!isAuthenticated) {
-      return (location == '/login') ? null : '/login';
+      if (state.uri.path == '/login') return null;
+      
+      // Save their destination so they go back after logging in!
+      final encodedLoc = Uri.encodeComponent(location);
+      return '/login?continue=$encodedLoc';
     }
 
-    // 3. Logged in but User Data is missing? Fetch it on /loading
+    // 4. Logged in but User Data is missing? Fetch it on /loading
     if (isAuthenticated && authController.user == null) {
-      // If they were already on a specific page, keep saving it
-      authController.setTargetPath(location);
-      return (location == '/loading') ? null : '/loading';
+      if (state.uri.path == '/loading') return null;
+      
+      final encodedLoc = Uri.encodeComponent(location);
+      return '/loading?continue=$encodedLoc';
     }
 
-    // 4. Logged in and trying to hit Login or Loading?
-    if (isAuthenticated && (location == '/login' || location == '/loading')) {
-      // RESTORE: Go to the saved path (Flow 2) or Dashboard (Flow 1)
-      return authController.targetPath;
+    // 5. App is fully ready, but they are stuck on a system route?
+    if (isAuthenticated && (state.uri.path == '/login' || state.uri.path == '/loading')) {
+      
+      // 🚀 THE MAGIC RESTORE 🚀
+      // Check if the URL has our '?continue=' parameter
+      final continuePath = state.uri.queryParameters['continue'];
+      
+      if (continuePath != null && continuePath.isNotEmpty) {
+        // Decode it and send them right back to their exact canvas URL!
+        return Uri.decodeComponent(continuePath);
+      }
+      
+      // Failsafe: If no continue path exists, send to home/dashboard
+      return '/projects'; // Update this to your actual default home route!
     }
 
-    // 5. Allow all other paths!
+    // 6. Allow all other paths!
     return null;
   },
 );

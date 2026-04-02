@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:universal_html/html.dart' as html;
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
@@ -42,6 +43,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   final FocusNode _canvasFocusNode = FocusNode();
   
+  bool _isFullScreen = false;
   // State for our API Loading
   bool _isPageLoading = false;
   bool _isLoadingDocument = true;
@@ -118,6 +120,19 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void initState() {
     super.initState();
     _initializeCanvas();
+  }
+
+  void _toggleNativeFullscreen() {
+    // Check if the browser is currently in fullscreen mode
+    if (html.document.fullscreenElement != null) {
+      // Exit fullscreen
+      html.document.exitFullscreen();
+      setState(() => _isFullScreen = false);
+    } else {
+      // Request full screen for the entire app body
+      html.document.documentElement?.requestFullscreen();
+      setState(() => _isFullScreen = true);
+    }
   }
 
   Future<ui.Image> _decodeBase64Image(String base64Str) async {
@@ -1652,8 +1667,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           autofocus: true,
           child: Column(
             children: [
-              // 🌟 1. THE UNIFIED TOOLBAR 🌟
-              _buildFullWidthToolbar(theme),
+                _buildFullWidthToolbar(theme),
               
               Expanded(
                 child: Stack(
@@ -1723,12 +1737,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
                       ),
                     ),
                     
-                    // Floating Menus
+                    // Floating Menus (Kept visible so they can draw in fullscreen!)
                     if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
                     if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
                     if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
 
-                    // 🌟 3. THE FLOATING PROPERTIES DRAWER 🌟
+                    // 🌟 3. THE FLOATING PROPERTIES DRAWER (Hides in Fullscreen) 🌟
                     if (_activeObject != null) 
                       Positioned(
                         top: 0, right: 0, bottom: 0,
@@ -1741,8 +1755,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                             onImageUpload: _uploadImageForObject,
                             onImageDelete: _deleteImageForObject,
                             allowImageUpload: widget.annotateImageKey == null, 
-                            
-                            // 🚀 THE NEW CLICK HANDLER 🚀
                             onImageTap: (s3Key, url) {
                               Navigator.push(
                                 context,
@@ -1757,7 +1769,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                                 ),
                               );
                             },
-                            
                             onClose: () {
                               setState(() {
                                 for (var obj in _drawingObjects) { obj.isSelected = false; }
@@ -1769,7 +1780,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         ),
                       ),
 
-                      // 🌟 4. THE LEFT CUSTOM TOOLS DRAWER 🌟
+                      // 🌟 4. THE LEFT CUSTOM TOOLS DRAWER (Hides in Fullscreen) 🌟
                     if (_showCustomToolsPanel)
                       Positioned(
                         top: 0, left: 0, bottom: 0,
@@ -1792,6 +1803,22 @@ class _CanvasScreenState extends State<CanvasScreen> {
                           ),
                         ),
                       ),
+
+                    // 🌟 5. NATIVE FULLSCREEN TOGGLE BUTTON 🌟
+                    Positioned(
+                      bottom: 24,
+                      right: 24,
+                      child: FloatingActionButton.small(
+                        heroTag: 'fullscreen_fab',
+                        backgroundColor: theme.colorScheme.surface,
+                        foregroundColor: theme.colorScheme.primary,
+                        elevation: 4,
+                        onPressed: _toggleNativeFullscreen,
+                        child: Icon(
+                          _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1801,4 +1828,196 @@ class _CanvasScreenState extends State<CanvasScreen> {
       ),
     );
   }
+
+  // @override
+  // Widget build(BuildContext context) {
+  //   final theme = Theme.of(context);
+
+  //   if (_isLoadingDocument) {
+  //     return Scaffold(
+  //       backgroundColor: theme.scaffoldBackgroundColor,
+  //       body: Center(
+  //         child: Column(
+  //           mainAxisAlignment: MainAxisAlignment.center,
+  //           children: [
+  //             CircularProgressIndicator(color: theme.colorScheme.primary),
+  //             const SizedBox(height: 16),
+  //             Text(widget.annotateImageKey == null ? "Loading Document..." : "Loading Image...", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6))),
+  //           ],
+  //         ),
+  //       ),
+  //     );
+  //   }
+
+  //   return Scaffold(
+  //     backgroundColor: theme.scaffoldBackgroundColor,
+  //     body: CallbackShortcuts(
+  //       bindings: <ShortcutActivator, VoidCallback>{
+  //         const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copySelected,
+  //         const SingleActivator(LogicalKeyboardKey.keyC, meta: true): _copySelected, 
+  //         const SingleActivator(LogicalKeyboardKey.keyV, control: true): _pasteFromClipboard,
+  //         const SingleActivator(LogicalKeyboardKey.keyV, meta: true): _pasteFromClipboard, 
+  //         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+  //         const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
+  //         const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+  //         const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
+  //         const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
+  //         const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
+  //           if (_selectedTool == 'Pen') _finalizeCurrentPreview();
+  //         }),
+  //       },
+  //       child: Focus(
+  //         focusNode: _canvasFocusNode,
+  //         autofocus: true,
+  //         child: Column(
+  //           children: [
+  //             // 🌟 1. THE UNIFIED TOOLBAR 🌟
+  //             _buildFullWidthToolbar(theme),
+              
+  //             Expanded(
+  //               child: Stack(
+  //                 clipBehavior: Clip.none,
+  //                 children: [
+  //                   // 🌟 2. THE CANVAS AREA 🌟
+  //                   Positioned.fill(
+  //                     child: Container(
+  //                       color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+  //                       child: InteractiveViewer(
+  //                         panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
+  //                         scaleEnabled: true, 
+  //                         minScale: 0.4,     
+  //                         maxScale: 3.5,     
+  //                         boundaryMargin: const EdgeInsets.all(double.infinity), 
+  //                         child: Center(
+  //                           child: MouseRegion(
+  //                             cursor: _getCursor(_hoveredHandle),
+  //                             onHover: (d) {
+  //                               if (_selectedTool == 'Pen' && _currentPreview != null) {
+  //                                 setState(() => _currentPreview!.points!.last = d.localPosition);
+  //                                 return;
+  //                               }
+  //                               if (_selectedTool != 'Select') return;
+  //                               ResizeHandle hit = ResizeHandle.none;
+  //                               for (var obj in _drawingObjects.reversed) {
+  //                                 hit = _getHitHandle(d.localPosition, obj);
+  //                                 if (hit != ResizeHandle.none) break;
+  //                               }
+  //                               if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+  //                             },
+  //                             child: Listener(
+  //                               onPointerDown: _handlePointerDown,
+  //                               onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
+  //                               onPointerUp: _handlePointerUp,
+  //                               child: Stack(
+  //                                 alignment: Alignment.center,
+  //                                 children: [
+  //                                   Container(
+  //                                     width: 816,  
+  //                                     height: 1056, 
+  //                                     decoration: BoxDecoration(
+  //                                       color: Colors.white,
+  //                                       boxShadow: [
+  //                                         BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+  //                                       ],
+  //                                     ),
+  //                                     child: CanvasPaper(
+  //                                       objects: _drawingObjects, 
+  //                                       preview: _currentPreview,
+  //                                       backgroundImageBytes: _pageDataMap[_currentPage]?.backgroundImageBytes,                                            
+  //                                     ),
+  //                                   ),
+  //                                   if (_isPageLoading)
+  //                                     Positioned.fill(
+  //                                       child: Container(
+  //                                         color: Colors.white.withOpacity(0.7),
+  //                                         child: Center(child: CircularProgressIndicator(color: theme.colorScheme.primary)),
+  //                                       )
+  //                                     )
+  //                                 ]
+  //                               ),
+  //                             ),
+  //                           ),
+  //                         ),
+  //                       ),
+  //                     ),
+  //                   ),
+                    
+  //                   // Floating Menus
+  //                   if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
+  //                   if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
+  //                   if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
+
+  //                   // 🌟 3. THE FLOATING PROPERTIES DRAWER 🌟
+  //                   if (_activeObject != null) 
+  //                     Positioned(
+  //                       top: 0, right: 0, bottom: 0,
+  //                       child: Material(
+  //                         elevation: 16, 
+  //                         child: PropertiesPanel(
+  //                           activeObject: _activeObject,
+  //                           availableTags: _availableTags,
+  //                           onUpdate: () => setState(() {}),
+  //                           onImageUpload: _uploadImageForObject,
+  //                           onImageDelete: _deleteImageForObject,
+  //                           allowImageUpload: widget.annotateImageKey == null, 
+                            
+  //                           // 🚀 THE NEW CLICK HANDLER 🚀
+  //                           onImageTap: (s3Key, url) {
+  //                             Navigator.push(
+  //                               context,
+  //                               MaterialPageRoute(
+  //                                 builder: (context) => CanvasScreen(
+  //                                   documentId: widget.documentId,
+  //                                   projectId: widget.projectId,
+  //                                   inspectionId: widget.inspectionId,
+  //                                   annotateImageUrl: url,
+  //                                   annotateImageKey: s3Key,
+  //                                 ),
+  //                               ),
+  //                             );
+  //                           },
+                            
+  //                           onClose: () {
+  //                             setState(() {
+  //                               for (var obj in _drawingObjects) { obj.isSelected = false; }
+  //                               _activeObject = null;
+  //                               _selectedTool = 'Select';
+  //                             });
+  //                           },
+  //                         ),
+  //                       ),
+  //                     ),
+
+  //                     // 🌟 4. THE LEFT CUSTOM TOOLS DRAWER 🌟
+  //                   if (_showCustomToolsPanel)
+  //                     Positioned(
+  //                       top: 0, left: 0, bottom: 0,
+  //                       child: Material(
+  //                         elevation: 16,
+  //                         child: CustomToolsPanel(
+  //                           groups: _customToolGroups,
+  //                           selectedTool: _selectedCustomTool,
+  //                           onToolSelected: (tool) {
+  //                             setState(() {
+  //                               _selectedCustomTool = tool;
+  //                               _selectedTool = 'CustomTool'; // Arm the tool!
+  //                             });
+  //                           },
+  //                           onClose: () => setState(() { 
+  //                             _showCustomToolsPanel = false; 
+  //                             _selectedTool = 'Select'; 
+  //                             _selectedCustomTool = null;
+  //                           }),
+  //                         ),
+  //                       ),
+  //                     ),
+  //                 ],
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
 }
