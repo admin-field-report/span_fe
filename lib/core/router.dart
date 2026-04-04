@@ -11,6 +11,8 @@ import '../screens/projects/widgets/inspection_details.dart';
 
 import '../screens/canvas/canvas_screen.dart';
 
+import '../screens/tags/tag_management_screen.dart';
+
 import '../screens/layout/not_found_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -93,43 +95,13 @@ final router = GoRouter(
             ),
           ],
         ),
+        GoRoute(
+          path: '/templates/tags',
+          builder: (context, state) => const TagManagementScreen(),
+        ),
       ],
     ),
   ],
-
-  // redirect: (context, state) {
-  //   final bool isAuthenticated = authController.isAuthenticated;
-  //   final bool isInitialized = authController.isInitialized;
-  //   final String location = state.matchedLocation;
-
-  //   // 1. Still Booting? 
-  //   if (!isInitialized) {
-  //     // CAPTURE: Save where they were (e.g., /projects) before moving to /loading
-  //     authController.setTargetPath(location);
-  //     return '/loading';
-  //   }
-
-  //   // 2. Not logged in? Force to /login
-  //   if (!isAuthenticated) {
-  //     return (location == '/login') ? null : '/login';
-  //   }
-
-  //   // 3. Logged in but User Data is missing? Fetch it on /loading
-  //   if (isAuthenticated && authController.user == null) {
-  //     // If they were already on a specific page, keep saving it
-  //     authController.setTargetPath(location);
-  //     return (location == '/loading') ? null : '/loading';
-  //   }
-
-  //   // 4. Logged in and trying to hit Login or Loading?
-  //   if (isAuthenticated && (location == '/login' || location == '/loading')) {
-  //     // RESTORE: Go to the saved path (Flow 2) or Dashboard (Flow 1)
-  //     return authController.targetPath;
-  //   }
-
-  //   // 5. Allow all other paths!
-  //   return null;
-  // },
 
   redirect: (context, state) {
     final bool isAuthenticated = authController.isAuthenticated;

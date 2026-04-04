@@ -126,14 +126,15 @@ class _MainScaffoldState extends State<MainScaffold> {
                             duration: const Duration(milliseconds: 300),
                             margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8), 
-                              child: widget.isScrollable
-                                  ? SingleChildScrollView(
-                                      primary: true,
-                                      physics: const BouncingScrollPhysics(),
-                                      child: widget.child,
-                                    )
-                                  : widget.child, 
+                              borderRadius: BorderRadius.circular(8),
+                              child: widget.child, 
+                              // child: widget.isScrollable
+                              //     ? SingleChildScrollView(
+                              //         primary: true,
+                              //         physics: const BouncingScrollPhysics(),
+                              //         child: widget.child,
+                              //       )
+                              //     : widget.child, 
                             ),
                           ),
                         ),
