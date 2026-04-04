@@ -62,7 +62,10 @@ class CanvasState extends State<Canvas> {
   
   bool _showShapeToolbar = false;
   bool _showTextToolbar = false; 
-  bool _showPencilToolbar = false; 
+  bool _showPencilToolbar = false;
+  bool _showBrickToolbar = false;
+
+  double _patternDensity = 20.0; 
 
   // Local Data Stores
   List<DrawingObject> _drawingObjects = [];
@@ -358,8 +361,17 @@ class CanvasState extends State<Canvas> {
         
         DrawingType type = (_selectedTool == 'Pencil') ? DrawingType.pencil : 
                            (_selectedTool == 'Rect') ? DrawingType.rect : 
-                           (_selectedTool == 'Circle') ? DrawingType.circle :
+                           (_selectedTool == 'Circle') ? DrawingType.circle : 
                            (_selectedTool == 'Polygon') ? DrawingType.polygon : 
+                           (_selectedTool == 'Brick') ? DrawingType.brick : 
+                           (_selectedTool == 'Grid') ? DrawingType.grid : 
+                           (_selectedTool == 'Horizontal') ? DrawingType.horizontal : 
+                           (_selectedTool == 'Vertical') ? DrawingType.vertical : 
+                           (_selectedTool == 'Forward') ? DrawingType.forwardDiag : 
+                           (_selectedTool == 'Reverse') ? DrawingType.reverseDiag :
+                           (_selectedTool == 'Weave') ? DrawingType.weave :
+                           (_selectedTool == 'Diamond') ? DrawingType.diamond : 
+                           (_selectedTool == 'Dots') ? DrawingType.dots :
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
                            (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
         
@@ -373,8 +385,11 @@ class CanvasState extends State<Canvas> {
           objColor = Colors.red[800]!; objFill = Colors.red; objOpacity = 1.0; objStroke = 2.0;
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
           objColor = _shapeLineColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
-        } else if (type == DrawingType.rect || type == DrawingType.circle) { 
-          objColor = _shapeBorderColor; objFill = _shapeFillColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
+        } else if ([DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(type)) { 
+          objColor = _shapeBorderColor; 
+          objFill = _shapeFillColor; 
+          objOpacity = _shapeOpacity; 
+          objStroke = _shapeStrokeWidth;  
         }
 
         _currentPreview = DrawingObject(
@@ -545,8 +560,20 @@ class CanvasState extends State<Canvas> {
               setState(() {
                 if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
                 else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
-                else if (mode == 2) { _shapeBorderColor = newColor; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.polygon) _activeObject!.color = newColor; } 
-                else if (mode == 3) { _shapeFillColor = newColor; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.polygon) _activeObject!.fillColor = newColor; } 
+                // 🚀 FIX FOR THE BORDER BUTTON
+                else if (mode == 2) { 
+                  _shapeBorderColor = newColor; 
+                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                    _activeObject!.color = newColor; 
+                  }
+                } 
+                // 🚀 FIX FOR THE FILL BUTTON
+                else if (mode == 3) { 
+                  _shapeFillColor = newColor; 
+                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                    _activeObject!.fillColor = newColor; 
+                  }
+                }
                 else if (mode == 4) { _textColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor; } 
                 else if (mode == 5) { _textBorderColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor; } 
                 else if (mode == 6) { _textFillColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor; } 
@@ -625,7 +652,10 @@ class CanvasState extends State<Canvas> {
                         onChanged: (v) {
                           setDialogState(() => localOpacity = v);
                             setState(() { 
-                              if (mode == 3) { _shapeOpacity = v; if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.polygon) _activeObject!.opacity = v; } 
+                              if (mode == 3) { 
+                                _shapeOpacity = v; 
+                                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) _activeObject!.opacity = v; 
+                              }
                               else if (mode == 6) { _textOpacity = v; if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v; } 
                               else if (mode == 7) { _pencilOpacity = v; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.opacity = v; }
                           });
@@ -672,10 +702,13 @@ class CanvasState extends State<Canvas> {
       case 'Circle': return Icons.panorama_fish_eye;
       case 'Line': return Icons.show_chart;
       case 'Arrow': return Icons.arrow_outward;
-      case 'Polygon': return Icons.change_history; // 🚀 ADD THIS
+      case 'Polygon': return Icons.change_history;
       default: return Icons.crop_square; 
     }
   }
+
+  // 🚀 ADDED THIS FUNCTION TO CHECK FOR PATTERN TOOLS
+  bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots'].contains(tool);
 
   // 🚀 ADDED BACK AS REQUESTED
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
@@ -809,12 +842,33 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
               } 
               else if (mode == 1) { 
                 _shapeStrokeWidth = v; 
-                if (_activeObject?.type == DrawingType.rect || _activeObject?.type == DrawingType.circle || _activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow || _activeObject?.type == DrawingType.polygon) _activeObject!.strokeWidth = v; 
-              } 
+                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                  _activeObject!.strokeWidth = v; 
+                }
+              }
               else if (mode == 2) { 
                 _textStrokeWidth = v; 
                 if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v; 
               }
+            })
+          )
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildDensitySlider() {
+    double currentDensity = (_activeObject?.type == DrawingType.dots) ? _activeObject!.patternDensity : _patternDensity;
+    return SizedBox(
+      width: double.infinity,
+      child: Row(children: [
+        SizedBox(width: 38, child: Text("${currentDensity.toInt()}%", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+        Expanded(
+          child: Slider(
+            value: currentDensity, min: 5, max: 100, divisions: 19,
+            onChanged: (v) => setState(() {
+              _patternDensity = v;
+              if (_activeObject?.type == DrawingType.dots) _activeObject!.patternDensity = v;
             })
           )
         ),
@@ -886,9 +940,8 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
       );
     }
 
-    // 2. SHAPES
-    if (_isShapeSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon].contains(type))) {
-
+    // 2. SHAPES & PATTERNS
+    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(type))) {
       // Determine if we are working with a Line/Arrow or a Rect/Circle
       bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
 
@@ -899,6 +952,11 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
             theme, "THICKNESS", Icons.border_style,
             _buildStrokeSlider(theme, 1),
           ),
+          if (_selectedTool == 'Dots' || _activeObject?.type == DrawingType.dots)
+            _buildPropSection(
+              theme, "DENSITY", Icons.blur_on,
+              _buildDensitySlider(),
+            ),
           _buildPropSection(
             theme, "APPEARANCE", Icons.palette_outlined,
             Row(
@@ -1000,24 +1058,49 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
   }
   
   Widget _buildFloatingShapeMenu(ThemeData theme) {
-      return Material(
-        elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
-              _toolIcon(Icons.crop_square, "Rect", theme), 
-              _toolIcon(Icons.panorama_fish_eye, "Circle", theme), 
-              _toolIcon(Icons.change_history, "Polygon", theme), // 🚀 ADD THIS
-              _toolIcon(Icons.show_chart, "Line", theme), 
-              _toolIcon(Icons.arrow_outward, "Arrow", theme),
-            ],
-          ),
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _toolIcon(Icons.crop_square, "Rect", theme), 
+            _toolIcon(Icons.panorama_fish_eye, "Circle", theme), 
+            _toolIcon(Icons.change_history, "Polygon", theme),
+            _toolIcon(Icons.show_chart, "Line", theme), 
+            _toolIcon(Icons.arrow_outward, "Arrow", theme),
+          ],
         ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _buildFloatingBrickMenu(ThemeData theme) {
+    return Material(
+      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("PATTERNS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
+            _toolIcon(Icons.view_module, "Brick", theme), 
+            _toolIcon(Icons.grid_on, "Grid", theme), 
+            _toolIcon(Icons.notes, "Horizontal", theme), 
+            _toolIcon(Icons.view_column, "Vertical", theme), 
+            _toolIcon(Icons.trending_up, "Forward", theme),
+            _toolIcon(Icons.trending_down, "Reverse", theme),
+            _toolIcon(Icons.grid_goldenratio, "Weave", theme),
+            _toolIcon(Icons.grid_4x4, "Diamond", theme), 
+            _toolIcon(Icons.scatter_plot, "Dots", theme),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildFullWidthToolbar(ThemeData theme) {
     return Container(
@@ -1072,6 +1155,25 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                       if (_showTextToolbar) { 
                         _showPencilToolbar = false; _showShapeToolbar = false; 
                         if (_selectedTool != 'Text' && _selectedTool != 'Callout' && _selectedTool != 'Note') { _selectedTool = 'Text'; } 
+                        for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
+                      } else { 
+                        _selectedTool = 'Select'; 
+                      } 
+                    })
+                  ),
+
+                 // 🚀 Updated Main Menu Button
+                  _mainMenuToggle(
+                    icon: Icons.view_module, 
+                    label: "Pattern", 
+                    isActive: _showBrickToolbar || _isPatternSelected(_selectedTool),
+                    hasDropdown: true, 
+                    theme: theme,
+                    onTap: () => setState(() { 
+                      _showBrickToolbar = !_showBrickToolbar; 
+                      if (_showBrickToolbar) { 
+                        _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; 
+                        if (_selectedTool != 'Brick') _selectedTool = 'Brick'; 
                         for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
                       } else { 
                         _selectedTool = 'Select'; 
@@ -1202,6 +1304,7 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                     if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
                     if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
                     if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
+                    if (_showBrickToolbar) Positioned(top: 8, left: 280, child: _buildFloatingBrickMenu(theme)),
 
                     // 🌟 FULL HEIGHT PROPERTIES PANEL 🌟
                     if (_activeObject != null || ((_showPencilToolbar || _showShapeToolbar || _showTextToolbar) && _selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin'))

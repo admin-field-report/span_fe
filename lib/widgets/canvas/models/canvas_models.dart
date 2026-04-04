@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
-enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin, customTool, polygon }
+enum DrawingType { line, rect, circle, pencil, text, arrow, pen, pin, customTool, polygon, brick, grid, horizontal, vertical, forwardDiag, reverseDiag, diamond, weave, dots }
 
 enum ResizeHandle { 
   none, topLeft, topCenter, topRight, centerLeft, centerRight, 
@@ -38,6 +38,8 @@ class DrawingObject {
   List<String>? imageUrls;
 
   String? toolId;
+  
+  double patternDensity = 20.0;
 
   DrawingObject({
     required this.start,

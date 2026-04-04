@@ -182,29 +182,13 @@ class MainPainter extends CustomPainter {
             canvas.drawRect(obj.rect, fallbackPaint);
           }
       } else {
+        
+        // 1. DRAW FILLS (Rect, Circle, Polygon)
         if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
           final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
           if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
           if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
-        }
-
-        final strokePaint = Paint()
-          ..color = obj.color 
-          ..strokeWidth = obj.strokeWidth
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round;
-
-        final fillPaint = Paint()
-          ..color = obj.fillColor.withOpacity(obj.opacity)
-          ..style = PaintingStyle.fill;
-
-        // 2. Draw Fill (if not transparent)
-        if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
-          if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
-          if (obj.type == DrawingType.circle) canvas.drawOval(rect, fillPaint);
           
-          // 🚀 FILL POLYGON
           if (obj.type == DrawingType.polygon) {
             Path polygonPath = Path()
               ..moveTo(rect.center.dx, rect.top)
@@ -215,7 +199,132 @@ class MainPainter extends CustomPainter {
           }
         }
 
-        if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
+        // 2. SETUP SHARED STROKE PAINT
+        final strokePaint = Paint()
+          ..color = obj.color 
+          ..strokeWidth = obj.strokeWidth
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+
+        // 3. 🚀 MASTER PATTERN ENGINE (Architectural Hatches)
+        if ([DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots].contains(obj.type)) {
+          canvas.save();
+          canvas.clipRect(rect); // Instantly bounds ANY pattern inside the dragged box!
+
+          // Draw the background fill
+          if (obj.fillColor != Colors.transparent) {
+            canvas.drawRect(rect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
+          }
+
+          double spacing = 20.0; // Density of the lines for grids/diagonals
+
+          // A. BRICK PATTERN
+          if (obj.type == DrawingType.brick) {
+            double bWidth = 40.0, bHeight = 16.0;
+            int row = 0;
+            for (double y = rect.top; y < rect.bottom; y += bHeight) {
+              canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint); 
+              double startX = rect.left - (row % 2 != 0 ? bWidth / 2 : 0);
+              for (double x = startX; x < rect.right + bWidth; x += bWidth) {
+                canvas.drawLine(Offset(x, y), Offset(x, y + bHeight), strokePaint); 
+              }
+              row++;
+            }
+          }
+
+          // B. HORIZONTAL LINES (Siding) & GRID (Tile)
+          if (obj.type == DrawingType.horizontal || obj.type == DrawingType.grid) {
+            for (double y = rect.top; y < rect.bottom; y += spacing) {
+              canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint);
+            }
+          }
+
+          // C. VERTICAL LINES (Studs) & GRID (Tile)
+          if (obj.type == DrawingType.vertical || obj.type == DrawingType.grid) {
+            for (double x = rect.left; x < rect.right; x += spacing) {
+              canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), strokePaint);
+            }
+          }
+
+          // D. DIAGONAL 1 (Forward /) & DIAMOND
+          if (obj.type == DrawingType.forwardDiag || obj.type == DrawingType.diamond) {
+            for (double d = -rect.height; d < rect.width + rect.height; d += spacing) {
+              canvas.drawLine(
+                Offset(rect.left + d, rect.top), 
+                Offset(rect.left + d + rect.height, rect.bottom), 
+                strokePaint
+              );
+            }
+          }
+
+          // E. DIAGONAL 2 (Reverse \) & DIAMOND
+          if (obj.type == DrawingType.reverseDiag || obj.type == DrawingType.diamond) {
+            for (double d = -rect.height; d < rect.width + rect.height; d += spacing) {
+              canvas.drawLine(
+                Offset(rect.left + d, rect.bottom), 
+                Offset(rect.left + d + rect.height, rect.top), 
+                strokePaint
+              );
+            }
+          }
+
+          // F. WEAVE (Classic Basket Weave)
+          if (obj.type == DrawingType.weave) {
+            double wSize = 40.0; // The size of each square "block"
+            double wSpace = 10.0; // The spacing between the lines inside the block
+            
+            for (double y = rect.top; y < rect.bottom; y += wSize) {
+              for (double x = rect.left; x < rect.right; x += wSize) {
+                
+                // Calculate which grid cell we are currently in
+                int row = ((y - rect.top) / wSize).floor();
+                int col = ((x - rect.left) / wSize).floor();
+                
+                // The "Chessboard" trick: alternate based on even/odd cells
+                if ((row + col) % 2 == 0) {
+                  // Draw Horizontal Lines for this block
+                  for (double i = y + wSpace; i < y + wSize; i += wSpace) {
+                    canvas.drawLine(Offset(x, i), Offset(x + wSize, i), strokePaint);
+                  }
+                } else {
+                  // Draw Vertical Lines for this block
+                  for (double i = x + wSpace; i < x + wSize; i += wSpace) {
+                    canvas.drawLine(Offset(i, y), Offset(i, y + wSize), strokePaint);
+                  }
+                }
+              }
+            }
+          }
+
+          // G. DOTS / SAND (Stipple)
+          if (obj.type == DrawingType.dots) {
+            // Seed the randomizer so the dots lock into place and don't flicker
+            math.Random rand = math.Random(obj.hashCode);
+            
+            double area = rect.width * rect.height;
+            int numDots = (area * (obj.patternDensity / 100.0) * (1/15.0)).toInt(); 
+            
+            final dotPaint = Paint()
+              ..color = strokePaint.color
+              ..style = PaintingStyle.fill;
+
+            for (int i = 0; i < numDots; i++) {
+              double dx = rect.left + rand.nextDouble() * rect.width;
+              double dy = rect.top + rand.nextDouble() * rect.height;
+              
+              // We use strokeWidth so the thickness slider changes the size of the dots
+              canvas.drawCircle(Offset(dx, dy), strokePaint.strokeWidth / 2, dotPaint);
+            }
+          }
+
+          // Draw the outer bounding border
+          canvas.drawRect(rect, strokePaint);
+          canvas.restore();
+        }
+
+        // 4. DRAW STROKES FOR EVERYTHING ELSE
+        else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
           Path path = Path();
           path.moveTo(obj.points![0].dx, obj.points![0].dy);
           for (var i = 1; i < obj.points!.length; i++) {
@@ -268,15 +377,16 @@ class MainPainter extends CustomPainter {
         } else if (obj.type == DrawingType.circle) {
           canvas.drawOval(rect, strokePaint);
         } else if (obj.type == DrawingType.polygon) {
-            Path polygonPath = Path()
-              ..moveTo(rect.center.dx, rect.top)
-              ..lineTo(rect.right, rect.bottom)
-              ..lineTo(rect.left, rect.bottom)
-              ..close();
-            canvas.drawPath(polygonPath, strokePaint);
+          Path polygonPath = Path()
+            ..moveTo(rect.center.dx, rect.top)
+            ..lineTo(rect.right, rect.bottom)
+            ..lineTo(rect.left, rect.bottom)
+            ..close();
+          canvas.drawPath(polygonPath, strokePaint);
         }
       }
 
+      // 5. SELECTION HANDLES (This code should already be here, leave it alone!)
       if (obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
