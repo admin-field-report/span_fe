@@ -372,6 +372,11 @@ class CanvasState extends State<Canvas> {
                            (_selectedTool == 'Weave') ? DrawingType.weave :
                            (_selectedTool == 'Diamond') ? DrawingType.diamond : 
                            (_selectedTool == 'Dots') ? DrawingType.dots :
+                           (_selectedTool == 'Herringbone') ? DrawingType.herringbone :
+                           (_selectedTool == 'Concrete') ? DrawingType.concrete :
+                           (_selectedTool == 'Shingles') ? DrawingType.shingles :
+                           (_selectedTool == 'Insulation') ? DrawingType.insulation :
+                           (_selectedTool == 'Diamond') ? DrawingType.diamond :
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
                            (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
         
@@ -385,8 +390,7 @@ class CanvasState extends State<Canvas> {
           objColor = Colors.red[800]!; objFill = Colors.red; objOpacity = 1.0; objStroke = 2.0;
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
           objColor = _shapeLineColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
-        } else if ([DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(type)) { 
-          objColor = _shapeBorderColor; 
+        } else if ([DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type)) {          objColor = _shapeBorderColor; 
           objFill = _shapeFillColor; 
           objOpacity = _shapeOpacity; 
           objStroke = _shapeStrokeWidth;  
@@ -560,17 +564,17 @@ class CanvasState extends State<Canvas> {
               setState(() {
                 if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
                 else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
-                // 🚀 FIX FOR THE BORDER BUTTON
+                // 🚀 BORDER BUTTON
                 else if (mode == 2) { 
                   _shapeBorderColor = newColor; 
-                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
                     _activeObject!.color = newColor; 
                   }
                 } 
-                // 🚀 FIX FOR THE FILL BUTTON
+                // 🚀 FILL BUTTON
                 else if (mode == 3) { 
                   _shapeFillColor = newColor; 
-                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
                     _activeObject!.fillColor = newColor; 
                   }
                 }
@@ -708,7 +712,7 @@ class CanvasState extends State<Canvas> {
   }
 
   // 🚀 ADDED THIS FUNCTION TO CHECK FOR PATTERN TOOLS
-  bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots'].contains(tool);
+  bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots', 'Herringbone', 'Concrete', 'Shingles', 'Insulation'].contains(tool);
 
   // 🚀 ADDED BACK AS REQUESTED
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
@@ -842,7 +846,7 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
               } 
               else if (mode == 1) { 
                 _shapeStrokeWidth = v; 
-                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) {
+                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
                   _activeObject!.strokeWidth = v; 
                 }
               }
@@ -941,8 +945,7 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
     }
 
     // 2. SHAPES & PATTERNS
-    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(type))) {
-      // Determine if we are working with a Line/Arrow or a Rect/Circle
+    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  // Determine if we are working with a Line/Arrow or a Rect/Circle
       bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
 
       return Column(
@@ -1093,7 +1096,11 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
             _toolIcon(Icons.trending_up, "Forward", theme),
             _toolIcon(Icons.trending_down, "Reverse", theme),
             _toolIcon(Icons.grid_goldenratio, "Weave", theme),
-            _toolIcon(Icons.grid_4x4, "Diamond", theme), 
+            _toolIcon(Icons.grid_4x4, "Diamond", theme),
+            _toolIcon(Icons.view_quilt, "Herringbone", theme), 
+            _toolIcon(Icons.grain, "Concrete", theme), 
+            _toolIcon(Icons.roofing, "Shingles", theme), 
+            _toolIcon(Icons.waves, "Insulation", theme), 
             _toolIcon(Icons.scatter_plot, "Dots", theme),
           ],
         ),

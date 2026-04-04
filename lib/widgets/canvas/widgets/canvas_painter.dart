@@ -208,7 +208,7 @@ class MainPainter extends CustomPainter {
           ..strokeJoin = StrokeJoin.round;
 
         // 3. 🚀 MASTER PATTERN ENGINE (Architectural Hatches)
-        if ([DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots].contains(obj.type)) {
+        if ([DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(obj.type)) {
           canvas.save();
           canvas.clipRect(rect); // Instantly bounds ANY pattern inside the dragged box!
 
@@ -316,6 +316,79 @@ class MainPainter extends CustomPainter {
               // We use strokeWidth so the thickness slider changes the size of the dots
               canvas.drawCircle(Offset(dx, dy), strokePaint.strokeWidth / 2, dotPaint);
             }
+          }
+
+          // H. HERRINGBONE (Zig-Zag Interlocking)
+          if (obj.type == DrawingType.herringbone) {
+            double size = 20.0;
+            for (double y = rect.top - size; y < rect.bottom + size; y += size) {
+               for (double x = rect.left - size; x < rect.right + size; x += size * 2) {
+                   // Draw Zig
+                   canvas.drawLine(Offset(x, y), Offset(x + size, y + size), strokePaint);
+                   // Draw Zag
+                   canvas.drawLine(Offset(x + size, y + size), Offset(x + size * 2, y), strokePaint);
+                   // Draw vertical drop to create the "L" shape blocks
+                   canvas.drawLine(Offset(x + size, y + size), Offset(x + size, y + size * 2), strokePaint);
+               }
+            }
+          }
+
+          // I. CONCRETE (Sand + Aggregate Rocks)
+          if (obj.type == DrawingType.concrete) {
+            math.Random rand = math.Random(obj.hashCode); // Seed for frozen pattern
+            double area = rect.width * rect.height;
+            int numItems = (area * (obj.patternDensity / 100.0) * (1/12.0)).toInt(); 
+            
+            final dotPaint = Paint()..color = strokePaint.color..style = PaintingStyle.fill;
+
+            for (int i = 0; i < numItems; i++) {
+              double dx = rect.left + rand.nextDouble() * rect.width;
+              double dy = rect.top + rand.nextDouble() * rect.height;
+              
+              if (rand.nextDouble() > 0.3) {
+                // 70% chance to draw Sand (Dot)
+                canvas.drawCircle(Offset(dx, dy), strokePaint.strokeWidth / 2, dotPaint);
+              } else {
+                // 30% chance to draw Aggregate (Small Triangle)
+                double s = strokePaint.strokeWidth * 2 + 1.5;
+                Path rock = Path()
+                  ..moveTo(dx, dy - s)
+                  ..lineTo(dx + s, dy + s)
+                  ..lineTo(dx - s, dy + s)
+                  ..close();
+                canvas.drawPath(rock, strokePaint);
+              }
+            }
+          }
+
+          // J. WOOD SHAKES / SHINGLES (Irregular staggered brick)
+          if (obj.type == DrawingType.shingles) {
+            math.Random rand = math.Random(obj.hashCode); // Seed for frozen lines
+            double rowH = 15.0;
+            for (double y = rect.top; y < rect.bottom; y += rowH) {
+              canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint); // Continuous horizontal
+              // Irregularly spaced vertical cut-lines
+              for (double x = rect.left; x < rect.right; x += 10.0 + rand.nextDouble() * 25.0) {
+                canvas.drawLine(Offset(x, y), Offset(x, y + rowH), strokePaint);
+              }
+            }
+          }
+
+          // K. BATT INSULATION (Continuous Squiggle Wave)
+          if (obj.type == DrawingType.insulation) {
+            double waveW = 30.0;
+            double waveH = 15.0;
+            Path wavePath = Path();
+            
+            // Draw looping waves filling the box
+            for (double y = rect.top + waveH; y < rect.bottom + waveH; y += waveH * 2) {
+              wavePath.moveTo(rect.left, y);
+              for (double x = rect.left; x < rect.right; x += waveW) {
+                wavePath.quadraticBezierTo(x + waveW / 4, y - waveH, x + waveW / 2, y);
+                wavePath.quadraticBezierTo(x + waveW * 0.75, y + waveH, x + waveW, y);
+              }
+            }
+            canvas.drawPath(wavePath, strokePaint);
           }
 
           // Draw the outer bounding border
