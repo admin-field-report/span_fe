@@ -9,10 +9,14 @@ import 'widgets/property_panel.dart';
 
 class Canvas extends StatefulWidget {
   final Uint8List? initialBackgroundImage;
+  final List<Widget>? leftActions;
+  final List<Widget>? rightActions;
 
   const Canvas({
     super.key,
     this.initialBackgroundImage,
+    this.leftActions,
+    this.rightActions,
   });
 
   @override
@@ -1192,7 +1196,13 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                     _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin';
                     for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
                   })),
-                  
+
+                  // 🚀 Left Actions
+                  if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
+                    ...widget.leftActions!
+                  else
+                    const SizedBox(width: 48),
+                      
                   _vDiv(theme),
                   _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
                   _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
@@ -1205,14 +1215,21 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
             ),
           ),
           
-          // 2. RIGHT SIDE: Document Controls
-          Container(width: 1, height: 32, color: theme.colorScheme.outlineVariant, margin: const EdgeInsets.symmetric(horizontal: 16)),
+            // 2. RIGHT SIDE: Document Controls
+            if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
+              Container(width: 1, height: 32, color: theme.colorScheme.outlineVariant, margin: const EdgeInsets.symmetric(horizontal: 16)),
+
+          // 🚀 2. RIGHT ACTIONS (Unpacks the list, or uses default spacing)
+            if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
+              ...widget.rightActions!
+            else
+              const SizedBox(width: 48),
           
-          IconButton(
-            tooltip: "Close Canvas",
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+          // IconButton(
+          //   tooltip: "Close Canvas",
+          //   icon: const Icon(Icons.close),
+          //   onPressed: () => Navigator.of(context).pop(),
+          // ),
         ],
       ),
     );
