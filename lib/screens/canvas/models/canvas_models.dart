@@ -29,9 +29,10 @@ class DrawingObject {
   bool isUnderline;
   bool isStrikethrough;
   bool isCallout; 
+  double patternDensity; // 🚀 Re-added for the Dots/Concrete tools!
 
   String? base64Image;
-  ui.Image? customImage;
+  ui.Image? customImage; // Note: Cannot be JSON serialized directly, re-decoded from base64
 
   String? description;
   List<String>? tagIds;
@@ -58,14 +59,12 @@ class DrawingObject {
     this.isUnderline = false,
     this.isStrikethrough = false,
     this.isCallout = false,
-
+    this.patternDensity = 20.0,
     this.description,
     this.tagIds,
     this.imageUrls,
-
     this.base64Image,
     this.customImage,
-
     this.toolId,
   });
 
@@ -107,12 +106,102 @@ class DrawingObject {
         isUnderline: isUnderline,
         isStrikethrough: isStrikethrough,
         isCallout: isCallout, 
+        patternDensity: patternDensity,
         description: description,
         tagIds: tagIds != null ? List.from(tagIds!) : null,
         imageUrls: imageUrls != null ? List.from(imageUrls!) : null,
         base64Image: base64Image,
         customImage: customImage,
+        toolId: toolId,
       );
+
+  // ==========================================
+  // 🚀 JSON PARSERS FOR SAVING & LOADING TOOLS
+  // ==========================================
+
+  factory DrawingObject.fromJson(Map<String, dynamic> json) {
+    double parseDouble(dynamic value, double fallback) {
+      if (value == null) return fallback;
+      return (value as num).toDouble();
+    }
+
+    Color parseColor(String? hexString, Color fallback) {
+      if (hexString == null || hexString.isEmpty) return fallback;
+      return Color(int.parse(hexString, radix: 16));
+    }
+
+    Offset parseOffset(Map<String, dynamic>? map) {
+      if (map == null) return Offset.zero;
+      return Offset(parseDouble(map['dx'], 0), parseDouble(map['dy'], 0));
+    }
+
+    DrawingType parsedType = DrawingType.values.firstWhere(
+      (e) => e.name == json['type'],
+      orElse: () => DrawingType.rect, 
+    );
+
+    List<Offset>? parsedPoints;
+    if (json['points'] != null) {
+      parsedPoints = (json['points'] as List).map((p) => parseOffset(p as Map<String, dynamic>)).toList();
+    }
+
+    return DrawingObject(
+      type: parsedType,
+      // We parse start/end, but default to offset.zero if using mock data that didn't have it
+      start: json['start'] != null ? parseOffset(json['start']) : Offset.zero,
+      end: json['end'] != null ? parseOffset(json['end']) : Offset.zero,
+      points: parsedPoints,
+      text: json['text'],
+      strokeWidth: parseDouble(json['strokeWidth'], 2.0),
+      color: parseColor(json['color'], Colors.black),
+      fillColor: parseColor(json['fillColor'], Colors.transparent),
+      borderColor: parseColor(json['borderColor'], Colors.transparent),
+      opacity: parseDouble(json['opacity'], 1.0),
+      rotation: parseDouble(json['rotation'], 0.0),
+      fontSize: parseDouble(json['fontSize'], 24.0),
+      isBold: json['isBold'] ?? false,
+      isItalic: json['isItalic'] ?? false,
+      isUnderline: json['isUnderline'] ?? false,
+      isStrikethrough: json['isStrikethrough'] ?? false,
+      isCallout: json['isCallout'] ?? false,
+      patternDensity: parseDouble(json['patternDensity'], 20.0),
+      description: json['description'],
+      tagIds: json['tagIds'] != null ? List<String>.from(json['tagIds']) : null,
+      imageUrls: json['imageUrls'] != null ? List<String>.from(json['imageUrls']) : null,
+      base64Image: json['base64Image'],
+      toolId: json['toolId'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'start': {'dx': start.dx, 'dy': start.dy},
+      'end': {'dx': end.dx, 'dy': end.dy},
+      'rotation': rotation,
+      'color': color.value.toRadixString(16).padLeft(8, '0').toUpperCase(),
+      'fillColor': fillColor.value.toRadixString(16).padLeft(8, '0').toUpperCase(),
+      'borderColor': borderColor.value.toRadixString(16).padLeft(8, '0').toUpperCase(),
+      'strokeWidth': strokeWidth,
+      'opacity': opacity,
+      'patternDensity': patternDensity,
+      'fontSize': fontSize,
+      'isBold': isBold,
+      'isItalic': isItalic,
+      'isUnderline': isUnderline,
+      'isStrikethrough': isStrikethrough,
+      'isCallout': isCallout,
+      
+      // Nullable fields
+      if (points != null) 'points': points!.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
+      if (text != null) 'text': text,
+      if (description != null) 'description': description,
+      if (toolId != null) 'toolId': toolId,
+      if (base64Image != null) 'base64Image': base64Image,
+      if (tagIds != null) 'tagIds': tagIds,
+      if (imageUrls != null) 'imageUrls': imageUrls,
+    };
+  }
 }
 
 class PageData {
