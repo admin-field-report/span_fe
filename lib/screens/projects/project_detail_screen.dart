@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../widgets/widgets.dart';
 import './widgets/project_inspections.dart';
 import './widgets/project_documents.dart';
 import './widgets/project_reports.dart';
 import './widgets/project_medias.dart';
+import '../../widgets/tab/tab.dart';
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;

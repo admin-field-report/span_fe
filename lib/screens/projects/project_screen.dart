@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import '../../widgets/card/card.dart';
+import '../../widgets/table/table.dart';
+import '../../widgets/button/button.dart';
+import '../../widgets/search_field/search_field.dart';
+import '../../widgets/confirmation/confirmation_remove.dart';
 import '../../models/project.dart';
 import './controllers/project_controller.dart';
-import '../../widgets/widgets.dart';
 import './widgets/add_project_form.dart';
 import '../../core/api_service.dart';
 import '../../services/toast_service.dart';
