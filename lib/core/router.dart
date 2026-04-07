@@ -124,57 +124,28 @@ final router = GoRouter(
   redirect: (context, state) {
     final bool isAuthenticated = authController.isAuthenticated;
     final bool isInitialized = authController.isInitialized;
+    final String location = state.matchedLocation;
 
-    // 1. Manually build the exact path they want to visit
-    String location = state.uri.path;
-    if (state.uri.query.isNotEmpty) {
-      location += '?${state.uri.query}';
-    }
+    // 1. Still Booting? Stay on /loading (if you use it as a route)
+    if (!isInitialized) return '/loading';
 
-    // 2. Still Booting? 
-    if (!isInitialized) {
-      // If they are already heading to loading, let them.
-      if (state.uri.path == '/loading') return null;
-      
-      // Pass their exact destination into the loading URL safely encoded!
-      final encodedLoc = Uri.encodeComponent(location);
-      return '/loading?continue=$encodedLoc';
-    }
-
-    // 3. Not logged in? Force to /login
+    // 2. Not logged in? Force to /login unless they are already there
     if (!isAuthenticated) {
-      if (state.uri.path == '/login') return null;
-      
-      // Save their destination so they go back after logging in!
-      final encodedLoc = Uri.encodeComponent(location);
-      return '/login?continue=$encodedLoc';
+      return (location == '/login') ? null : '/login';
     }
 
-    // 4. Logged in but User Data is missing? Fetch it on /loading
+    // 3. Logged in but User Data is missing? Fetch it on /loading
     if (isAuthenticated && authController.user == null) {
-      if (state.uri.path == '/loading') return null;
-      
-      final encodedLoc = Uri.encodeComponent(location);
-      return '/loading?continue=$encodedLoc';
+      return (location == '/loading') ? null : '/loading';
     }
 
-    // 5. App is fully ready, but they are stuck on a system route?
-    if (isAuthenticated && (state.uri.path == '/login' || state.uri.path == '/loading')) {
-      
-      // 🚀 THE MAGIC RESTORE 🚀
-      // Check if the URL has our '?continue=' parameter
-      final continuePath = state.uri.queryParameters['continue'];
-      
-      if (continuePath != null && continuePath.isNotEmpty) {
-        // Decode it and send them right back to their exact canvas URL!
-        return Uri.decodeComponent(continuePath);
-      }
-      
-      // Failsafe: If no continue path exists, send to home/dashboard
-      return '/projects'; // Update this to your actual default home route!
+    // 4. Logged in and trying to hit Login or Loading? Send to Dashboard
+    if (isAuthenticated && (location == '/login' || location == '/loading')) {
+      return '/';
     }
 
-    // 6. Allow all other paths!
+    // 5. IMPORTANT: Allow all other paths! 
+    // If we return null, GoRouter stays on the path the user clicked (e.g., /settings)
     return null;
   },
 );
