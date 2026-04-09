@@ -1,3 +1,4 @@
+import 'package:field_report_fe/services/toast_service.dart';
 import 'package:flutter/material.dart';
 import '../../../widgets/form_components/text_field.dart';
 import '../../../widgets/button/button.dart';
@@ -8,6 +9,7 @@ import '../../../models/tag_models.dart';
 import '../../utils/app_responsive.dart';
 
 enum MobileView { groups, groupDetails, allTags }
+enum SortOrder { none, asc, desc } // 🚀 Added 3-state sorting enum
 
 class TagManagementScreen extends StatefulWidget {
   const TagManagementScreen({super.key});
@@ -19,6 +21,11 @@ class TagManagementScreen extends StatefulWidget {
 class _TagManagementScreenState extends State<TagManagementScreen> {
   final TagController _controller = TagController();
   
+  // 🚀 Reverted back to TextEditingControllers
+  final TextEditingController _groupSearchController = TextEditingController();
+  final TextEditingController _tagSearchController = TextEditingController();
+  
+  SortOrder _tagSortOrder = SortOrder.none; // Default to unsorted
   String? _selectedGroupId;
   MobileView _currentMobileView = MobileView.groups;
 
@@ -26,12 +33,20 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.fetchAllData();
+      _controller.fetchGroups();
+      _controller.fetchTags();
+      _controller.fetchTemplates();
     });
+    
+    // 🚀 Listeners to trigger rebuilds when searching
+    _groupSearchController.addListener(() => setState(() {}));
+    _tagSearchController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
+    _groupSearchController.dispose();
+    _tagSearchController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -64,10 +79,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   void _showCreateTagDialog() {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
-    Color selectedColor = const Color(0xFFC9D647); // Default starting color
+    Color selectedColor = const Color(0xFFC9D647);
+    bool _isCreating = false; 
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => Dialog(
           backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
@@ -130,14 +147,32 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Button(label: "Cancel", variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
+                      Button(
+                        label: "Cancel",
+                        variant: ButtonVariant.outline,
+                        onPressed: _isCreating ? null : () => Navigator.pop(context)
+                      ),
                       const SizedBox(width: 12),
                       Button(
-                        label: "Create Tag",
-                        onPressed: () async {
+                        label: _isCreating ? "Creating..." : "Create Tag",
+                        isLoading: _isCreating,
+                        onPressed: _isCreating ? null : () async {
                           if (formKey.currentState?.validate() ?? false) {
+                            
+                            // 🚀 4. START LOADER
+                            setDialogState(() => _isCreating = true);
+
                             final success = await _controller.createTag(nameController.text.trim(), selectedColor);
-                            if (success && context.mounted) Navigator.pop(context);
+                            
+                            if (!context.mounted) return;
+                            
+                            if (success) {
+                              Navigator.pop(context);
+                              ToastService.show(context, message: "Tag created successfully!", type: ToastType.success);
+                            } else {
+                              ToastService.show(context, message: "Failed to create tag", type: ToastType.error);
+                            }
+                            setDialogState(() => _isCreating = false);
                           }
                         },
                       ),
@@ -152,13 +187,15 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
-  void _showCreateGroupDialog() {
+  Future<void> _showCreateGroupDialog() async {
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final wizard = _CreateGroupWizard(controller: _controller);
 
+    String? newGroupId;
     if (isDesktop) {
-      showDialog(
+      newGroupId = await showDialog<String>(
         context: context,
+        barrierDismissible: false,
         builder: (context) => Dialog(
           backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           surfaceTintColor: Colors.transparent,
@@ -169,7 +206,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 🚀 STANDARDIZED HEADER
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   color: Theme.of(context).colorScheme.surface,
@@ -182,7 +218,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   ),
                 ),
                 const Divider(height: 1),
-                // --- WIZARD CONTENT ---
                 Expanded(child: wizard),
               ],
             ),
@@ -190,10 +225,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         ),
       );
     } else {
-      showModalBottomSheet(
+     newGroupId = await showModalBottomSheet<String>(
         context: context,
         isScrollControlled: true,
         useRootNavigator: true,
+        isDismissible: false,
+        enableDrag: false,
         backgroundColor: Colors.transparent,
         builder: (context) => Container(
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24),
@@ -205,7 +242,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 🚀 MOBILE HEADER
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
                 child: Row(
@@ -222,6 +258,17 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
         ),
       );
+    }
+    if (newGroupId != null && mounted) {
+      setState(() {
+        _selectedGroupId = newGroupId;
+        _groupSearchController.clear();
+        
+        if (!isDesktop) {
+          _currentMobileView = MobileView.groupDetails;
+        }
+      });
+      _controller.fetchTemplatesForGroup(newGroupId);
     }
   }
 
@@ -246,7 +293,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         builder: (context) => Dialog(
           backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           surfaceTintColor: Colors.transparent,
-          clipBehavior: Clip.hardEdge, // 🚀 FIX: Keeps the header inside the rounded borders!
+          clipBehavior: Clip.hardEdge, 
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650), child: content),
         ),
@@ -262,7 +309,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             color: Theme.of(context).colorScheme.surfaceContainer, 
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20))
           ),
-          clipBehavior: Clip.hardEdge, // 🚀 FIX: Clean borders on mobile too
+          clipBehavior: Clip.hardEdge, 
           child: content, 
         ),
       );
@@ -281,9 +328,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     return ListenableBuilder(
       listenable: _controller,
       builder: (context, child) {
-        if (_controller.isLoading && _controller.tagGroups.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
 
         return Padding(
           padding: const EdgeInsets.all(5.0),
@@ -295,7 +339,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                     const SizedBox(height: 24),
                     Expanded(
                       child: Row(
-                        // 🚀 FIX 1: This MUST be stretch so the Row passes height down to the panels!
                         crossAxisAlignment: CrossAxisAlignment.stretch, 
                         children: [
                           Expanded(flex: 2, child: _buildTagGroupsList(theme, isDesktop: true)),
@@ -359,6 +402,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // --- PANELS ---
 
   Widget _buildTagGroupsList(ThemeData theme, {required bool isDesktop}) {
+    // Apply local search filter
+    final query = _groupSearchController.text.toLowerCase();
+    final filteredGroups = _controller.tagGroups.where((g) {
+      return g.name.toLowerCase().contains(query);
+    }).toList();
+
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -377,6 +426,22 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
           const Divider(height: 1),
           
+          // 🚀 Restored FormControlTextField
+          // 🚀 Search Tag Groups
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: SizedBox(
+              height: 45, // 🚀 Forces a compact height!
+              child: FormControlTextField(
+                controller: _groupSearchController,
+                hintText: "Search groups...",
+                prefixIcon: Icons.search,
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          const Divider(height: 1),
+
           if (!isDesktop) ...[
             ListTile(
               leading: Container(
@@ -391,16 +456,16 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             ),
             const Divider(height: 1, thickness: 4), 
           ],
-
           Expanded(
-            child: _controller.tagGroups.isEmpty
-              ? const Center(child: Text("No groups found.", style: TextStyle(color: Colors.grey)))
-              // 🚀 FIX 2: Removed shrinkWrap and NeverScrollablePhysics so it natively scrolls
-              : ListView.separated(
-                  itemCount: _controller.tagGroups.length,
+            child: _controller.isGroupsLoading && _controller.tagGroups.isEmpty
+              ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+              : filteredGroups.isEmpty
+                  ? const Center(child: Text("No groups match search.", style: TextStyle(color: Colors.grey)))
+                  : ListView.separated(
+                  itemCount: filteredGroups.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final group = _controller.tagGroups[index];
+                    final group = filteredGroups[index];
                     final isSelected = isDesktop && _selectedGroupId == group.id; 
                     
                     return ListTile(
@@ -533,6 +598,19 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   }
 
   Widget _buildGlobalTagsList(ThemeData theme) {
+    final query = _tagSearchController.text.toLowerCase();
+    var filteredTags = _controller.globalTags.where((t) {
+      return t.name.toLowerCase().contains(query);
+    }).toList();
+
+    // 🚀 Apply the 3-state sorting logic
+    if (_tagSortOrder != SortOrder.none) {
+      filteredTags.sort((a, b) {
+        final comp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        return _tagSortOrder == SortOrder.asc ? comp : -comp;
+      });
+    }
+
     return AppCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -550,12 +628,75 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             ),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: SingleChildScrollView(
+
+          // 🚀 All Tags Search & Sort Row
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 45, // 🚀 Forces a compact height!
+                    child: FormControlTextField(
+                      controller: _tagSearchController,
+                      hintText: "Search tags...",
+                      prefixIcon: Icons.search,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8), 
+                
+                // 🚀 Borderless, Icon-Only Sorting Button
+                // 🚀 Custom Composite Sorting Icon
+                Container(
+                  decoration: BoxDecoration(
+                    color: _tagSortOrder == SortOrder.none 
+                        ? Colors.transparent 
+                        : theme.colorScheme.primaryContainer.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    tooltip: "Toggle Sort Order",
+                    onPressed: () {
+                      setState(() {
+                        if (_tagSortOrder == SortOrder.none) _tagSortOrder = SortOrder.asc;
+                        else if (_tagSortOrder == SortOrder.asc) _tagSortOrder = SortOrder.desc;
+                        else _tagSortOrder = SortOrder.none;
+                      });
+                    },
+                    // 🚀 The custom Row building the exact icon you want
+                    icon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.sort, size: 20), // The horizontal stacked lines
+                        const SizedBox(width: 2),
+                        Icon(
+                          _tagSortOrder == SortOrder.none 
+                              ? Icons.unfold_more // Default: Both side arrows
+                              : (_tagSortOrder == SortOrder.asc ? Icons.arrow_downward : Icons.arrow_upward), // Active: One side arrow
+                          size: 16, // Slightly smaller so it looks like an accent to the sort icon
+                        ),
+                      ],
+                    ),
+                    color: _tagSortOrder == SortOrder.none 
+                        ? theme.colorScheme.onSurfaceVariant 
+                        : theme.colorScheme.primary,
+                  ),
+                )
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+         Expanded(
+            child: _controller.isTagsLoading && _controller.globalTags.isEmpty
+              ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+              : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
-              child: _controller.globalTags.isEmpty 
-                ? const Text("No tags found.")
-                : Wrap(spacing: 8, runSpacing: 8, children: _controller.globalTags.map((t) => _buildTagChip(t)).toList()),
+              child: filteredTags.isEmpty 
+                ? const Text("No tags match search.", style: TextStyle(color: Colors.grey))
+                : Wrap(spacing: 8, runSpacing: 8, children: filteredTags.map((t) => _buildTagChip(t)).toList()),
             ),
           ),
         ],
@@ -563,7 +704,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
-  // ignore: undefined_class
   Widget _buildTagChip(AppTag tag) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -581,6 +721,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 }
+
 
 // ==========================================
 // SELECTION COMPONENTS 
@@ -746,10 +887,11 @@ class _ManageSelectionContentState<T> extends State<_ManageSelectionContent<T>> 
               const SizedBox(width: 12),
               Button(
                 label: "Save Changes",
-                onPressed: () {
-                  final savedItems = widget.allItems.where((e) => _tempSelectedIds.contains(widget.getId(e))).toList();
-                  widget.onSave(savedItems);
-                },
+                onPressed: () => {},
+                // onPressed: () {
+                //   final savedItems = widget.allItems.where((e) => _tempSelectedIds.contains(widget.getId(e))).toList();
+                //   widget.onSave(savedItems);
+                // },
               ),
             ],
           ),
@@ -772,8 +914,15 @@ class _CreateGroupWizard extends StatefulWidget {
 
 class _CreateGroupWizardState extends State<_CreateGroupWizard> {
   int _currentStep = 0;
+  bool _isSubmitting = false;
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+
+  final _newTagNameController = TextEditingController();
+  Color _newTagColor = const Color(0xFFC9D647);
+  final List<Map<String, String>> _newlyCreatedTags = [];
+  String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+  Color _hexToColor(String hex) => Color(int.parse(hex.replaceFirst('#', 'FF'), radix: 16));
   
   Set<String> _selectedTagIds = {};
   Set<String> _selectedTemplateIds = {};
@@ -784,16 +933,40 @@ class _CreateGroupWizardState extends State<_CreateGroupWizard> {
     if (_currentStep < 2) {
       setState(() => _currentStep += 1);
     } else {
-      final success = await widget.controller.createTagGroup(
-        name: _nameController.text.trim(), tagIds: _selectedTagIds.toList(), templateIds: _selectedTemplateIds.toList(),
+      setState(() => _isSubmitting = true);
+      final newGroupId = await widget.controller.createTagGroup(
+        name: _nameController.text.trim(), 
+        tagIds: _selectedTagIds.toList(), 
+        templateIds: _selectedTemplateIds.toList(),
+        newTags: _newlyCreatedTags,
       );
-      if (success && mounted) Navigator.pop(context);
+      if (!mounted) return;
+
+     if (newGroupId != null) {
+        Navigator.pop(context, newGroupId);
+        ToastService.show(context, message: "Group created successfully", type: ToastType.success);
+      } else {
+        ToastService.show(context, message: "Failed to create group", type: ToastType.error);
+      }
+      setState(() => _isSubmitting = false);
     }
   }
 
   void _onStepCancel() {
     if (_currentStep > 0) setState(() => _currentStep -= 1);
     else Navigator.pop(context);
+  }
+
+  void _addNewTagToLocalList() {
+    if (_newTagNameController.text.trim().isNotEmpty) {
+      setState(() {
+        _newlyCreatedTags.add({
+          "name": _newTagNameController.text.trim(),
+          "color": _colorToHex(_newTagColor),
+        });
+        _newTagNameController.clear();
+      });
+    }
   }
 
   @override
@@ -811,9 +984,19 @@ class _CreateGroupWizardState extends State<_CreateGroupWizard> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Button(label: _currentStep == 0 ? "Cancel" : "Back", variant: ButtonVariant.outline, onPressed: _onStepCancel),
+              Button(
+                label: _currentStep == 0 ? "Cancel" : "Back", 
+                variant: ButtonVariant.outline, 
+                onPressed: _isSubmitting ? null : _onStepCancel, 
+              ),
               const SizedBox(width: 12),
-              Button(label: _currentStep == 2 ? "Create Group" : "Continue", onPressed: _onStepContinue),
+              Button(
+                label: _currentStep == 2 
+                    ? (_isSubmitting ? "Creating..." : "Create Group") 
+                    : "Continue", 
+                isLoading: _currentStep == 2 && _isSubmitting,
+                onPressed: _isSubmitting ? null : _onStepContinue, 
+              ),
             ],
           ),
         ),
@@ -830,13 +1013,91 @@ class _CreateGroupWizardState extends State<_CreateGroupWizard> {
             ),
           ),
           Step(
-            title: const Text("Tags"), isActive: _currentStep >= 1, state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-            content: SizedBox(
-              height: 350,
-              child: InlineSelectionFilter<AppTag>(
-                allItems: widget.controller.globalTags, selectedIds: _selectedTagIds, getName: (t) => t.name, getId: (t) => t.id,
-                onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
-              ),
+            title: const Text("Tags"), 
+            isActive: _currentStep >= 1, 
+            state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 🚀 1. CREATE NEW TAG INLINE FORM
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 12),
+                      
+                      // Using a safe stacked layout to ensure the ColorPickerField doesn't get squished
+                      FormControlTextField(
+                        controller: _newTagNameController,
+                        hintText: "New tag name...",
+                        prefixIcon: Icons.local_offer_outlined,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ColorPickerField(
+                              currentColor: _newTagColor,
+                              onColorChanged: (c) => setState(() => _newTagColor = c),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Button(
+                            label: "Add Tag",
+                            icon: Icons.add,
+                            variant: ButtonVariant.filled,
+                            onPressed: _addNewTagToLocalList,
+                          ),
+                        ],
+                      ),
+                      
+                      // 🚀 CHIPS FOR STAGED NEW TAGS
+                      if (_newlyCreatedTags.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Divider(height: 1),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _newlyCreatedTags.map((t) {
+                            final tagColor = _hexToColor(t["color"]!);
+                            return Chip(
+                              label: Text(t["name"]!, style: TextStyle(color: tagColor, fontSize: 12, fontWeight: FontWeight.bold)),
+                              backgroundColor: tagColor.withOpacity(0.1),
+                              side: BorderSide(color: tagColor.withOpacity(0.5)),
+                              deleteIconColor: tagColor,
+                              onDeleted: () => setState(() => _newlyCreatedTags.remove(t)),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 8),
+                
+                // 🚀 2. EXISTING TAG SELECTION (Your original component)
+                SizedBox(
+                  height: 250, // Slightly reduced to balance the screen
+                  child: InlineSelectionFilter<AppTag>(
+                    allItems: widget.controller.globalTags, 
+                    selectedIds: _selectedTagIds, 
+                    getName: (t) => t.name, 
+                    getId: (t) => t.id,
+                    onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
+                  ),
+                ),
+              ],
             ),
           ),
           Step(

@@ -171,7 +171,7 @@ class _AIDataScreenState extends State<AIDataScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainer,
+      // backgroundColor: theme.colorScheme.surfaceContainer,
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 400),

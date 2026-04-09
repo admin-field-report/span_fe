@@ -36,8 +36,9 @@ class AppTag {
     return AppTag(
       id: json['id'] ?? json['tag_id'] ?? '', 
       name: json['name'] ?? '',
-      // color: json['color'] != null ? hexToColor(json['color']) : Colors.grey,
-      color: Colors.grey,
+      color: (json['color'] is String && json['color'].contains('#')) 
+          ? hexToColor(json['color']) 
+          : Colors.grey,
     );
   }
 }
