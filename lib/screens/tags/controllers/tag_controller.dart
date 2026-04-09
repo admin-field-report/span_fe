@@ -221,4 +221,64 @@ class TagController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<bool> updateGroupTags({
+    required String groupId,
+    required List<String> tagIds,
+    required List<Map<String, String>> newTags,
+  }) async {
+    isGroupDetailsLoading = true;
+    notifyListeners();
+
+    try {
+      final payload = {
+        "tag_id_list": tagIds,
+        "new_tag_list": newTags,
+      };
+
+      final response = await _api.put('/tagGroup/update-tag/$groupId', payload);
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true) {
+        fetchGroups();
+        if (newTags.isNotEmpty) {
+          fetchTags();
+        }
+        return true;
+      } else {
+        return false;
+      }
+    } catch (e) {
+      return false;
+    } finally {
+      isGroupDetailsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> updateGroupTemplates({
+    required String groupId,
+    required List<String> templateIds,
+  }) async {
+    notifyListeners();
+
+    try {
+      final payload = {
+        "tag_group_id": groupId,
+        "template_id_list": templateIds,
+      };
+
+      final response = await _api.post('/tagGroupItem/associate-tag-group-to-template', payload);
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true) {
+        fetchTemplatesForGroup(groupId);
+        return true; 
+      } else {
+        return false;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
 }
