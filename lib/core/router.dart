@@ -110,7 +110,7 @@ final router = GoRouter(
             builder: (context, state) => const ToolsManagerScreen(),
           ),
           GoRoute(
-            path: '/ai-data',
+            path: '/ai',
             builder: (context, state) => const AIDataScreen(),
           ),
           GoRoute(

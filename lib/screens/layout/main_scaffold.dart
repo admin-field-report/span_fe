@@ -64,49 +64,55 @@ class _MainScaffoldState extends State<MainScaffold> {
               children: [
                 // --- 2. SIDEBAR (Desktop/Tablet) ---
                 if (!isMobile)
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOutCubic,
-                        width: effectiveCollapsed ? 88 : 280,
-                        decoration: BoxDecoration(
-                          color: theme.scaffoldBackgroundColor,
-                          border: Border(
-                            right: BorderSide(
-                              color: theme.dividerColor.withOpacity(isDark ? 0.2 : 0.12), 
-                              width: 1,
-                            ),
-                          ),
-                          boxShadow: isDark ? null : [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
-                              blurRadius: 10,
-                              offset: const Offset(4, 0),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            _buildSidebarHeader(effectiveCollapsed, colorScheme),
-                            Expanded(
-                              child: AppMenuContent(
-                                isCollapsed: effectiveCollapsed, 
-                                isMobile: false,
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOutCubic,
+                    width: (effectiveCollapsed ? 88.0 : 280.0) + 15.0, 
+                    child: Stack(
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(right: 15), 
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            border: Border(
+                              right: BorderSide(
+                                color: theme.dividerColor.withOpacity(isDark ? 0.2 : 0.12), 
+                                width: 1,
                               ),
                             ),
-                          ],
+                            boxShadow: isDark ? null : [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.03),
+                                blurRadius: 10,
+                                offset: const Offset(4, 0),
+                              ),
+                            ],
+                          ),
+                          // 🚀 3. Added Material so your Accordion/Menu InkWell clicks & ripples work perfectly!
+                          child: Material(
+                            color: Colors.transparent,
+                            child: Column(
+                              children: [
+                                _buildSidebarHeader(effectiveCollapsed, colorScheme),
+                                Expanded(
+                                  child: AppMenuContent(
+                                    isCollapsed: effectiveCollapsed, 
+                                    isMobile: false,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      
-                      // --- SIDEBAR TOGGLE ---
-                      Positioned(
-                        right: -15,
-                        top: 40,
-                        child: _buildToggleCircle(effectiveCollapsed, theme, colorScheme, isDark),
-                      ),
-                    ],
+                        
+                        // --- SIDEBAR TOGGLE ---
+                        Positioned(
+                          right: 0,
+                          top: 40,
+                          child: _buildToggleCircle(effectiveCollapsed, theme, colorScheme, isDark),
+                        ),
+                      ],
+                    ),
                   ),
                 
                 // --- 3. MAIN CONTENT AREA ---
@@ -152,28 +158,31 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   // --- HELPER: TOGGLE BUTTON ---
   Widget _buildToggleCircle(bool collapsed, ThemeData theme, ColorScheme colorScheme, bool isDark) {
-    return GestureDetector(
-      onTap: () => setState(() => _isCollapsed = !_isCollapsed),
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: theme.scaffoldBackgroundColor,
-          shape: BoxShape.circle,
-          border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            )
-          ],
-        ),
-        child: Center(
-          child: Icon(
-            collapsed ? Icons.chevron_right : Icons.chevron_left,
-            size: 16,
-            color: colorScheme.onSurface.withOpacity(0.5),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => setState(() => _isCollapsed = !_isCollapsed),
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              )
+            ],
+          ),
+          child: Center(
+            child: Icon(
+              collapsed ? Icons.chevron_right : Icons.chevron_left,
+              size: 16,
+              color: colorScheme.onSurface.withOpacity(0.5),
+            ),
           ),
         ),
       ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/api_service.dart';
+import '../../screens/auth/controllers/auth_controller.dart';
 
 class ChatMessage {
   String text; 
@@ -170,16 +171,20 @@ class _AIDataScreenState extends State<AIDataScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      // backgroundColor: theme.colorScheme.surfaceContainer,
-      body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          child: _hasStartedChat ? _buildActiveChatLayout(theme) : _buildEmptyStateLayout(theme),
-        ),
-      ),
+    return ListenableBuilder(
+      listenable: authController,
+      builder: (context, child) {
+        return Scaffold(
+          body: SafeArea(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _hasStartedChat ? _buildActiveChatLayout(theme) : _buildEmptyStateLayout(theme),
+            ),
+          ),
+        );
+      }
     );
   }
 
@@ -194,7 +199,7 @@ class _AIDataScreenState extends State<AIDataScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                "Hi User,",
+                "Hi ${authController.user?.firstName ?? ''} ${authController.user?.lastName ?? 'there'}! 👋".trim(),
                 style: theme.textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: theme.colorScheme.primary,
@@ -202,7 +207,7 @@ class _AIDataScreenState extends State<AIDataScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                "Where should we start?",
+                "Where should we start today?",
                 style: theme.textTheme.titleLarge?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
