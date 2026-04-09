@@ -8,8 +8,12 @@ import './controllers/tag_controller.dart';
 import '../../../models/tag_models.dart';
 import '../../utils/app_responsive.dart';
 
+import 'widgets/manage_tags_dialog.dart';
+import 'widgets/manage_templates_dialog.dart';
+import 'widgets/create_group_wizard.dart';
+
 enum MobileView { groups, groupDetails, allTags }
-enum SortOrder { none, asc, desc } // 🚀 Added 3-state sorting enum
+enum SortOrder { none, asc, desc }
 
 class TagManagementScreen extends StatefulWidget {
   const TagManagementScreen({super.key});
@@ -21,11 +25,10 @@ class TagManagementScreen extends StatefulWidget {
 class _TagManagementScreenState extends State<TagManagementScreen> {
   final TagController _controller = TagController();
   
-  // 🚀 Reverted back to TextEditingControllers
   final TextEditingController _groupSearchController = TextEditingController();
   final TextEditingController _tagSearchController = TextEditingController();
   
-  SortOrder _tagSortOrder = SortOrder.none; // Default to unsorted
+  SortOrder _tagSortOrder = SortOrder.none;
   String? _selectedGroupId;
   MobileView _currentMobileView = MobileView.groups;
 
@@ -38,7 +41,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       _controller.fetchTemplates();
     });
     
-    // 🚀 Listeners to trigger rebuilds when searching
     _groupSearchController.addListener(() => setState(() {}));
     _tagSearchController.addListener(() => setState(() {}));
   }
@@ -158,8 +160,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         isLoading: _isCreating,
                         onPressed: _isCreating ? null : () async {
                           if (formKey.currentState?.validate() ?? false) {
-                            
-                            // 🚀 4. START LOADER
                             setDialogState(() => _isCreating = true);
 
                             final success = await _controller.createTag(nameController.text.trim(), selectedColor);
@@ -189,7 +189,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   Future<void> _showCreateGroupDialog() async {
     final isDesktop = AppResponsive.isDesktopScreen(context);
-    final wizard = _CreateGroupWizard(controller: _controller);
+    
+    // 🚀 Updated to use the public CreateGroupWizard class from the new file
+    final wizard = CreateGroupWizard(controller: _controller);
 
     String? newGroupId;
     if (isDesktop) {
@@ -259,6 +261,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         ),
       );
     }
+    
     if (newGroupId != null && mounted) {
       setState(() {
         _selectedGroupId = newGroupId;
@@ -272,48 +275,65 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     }
   }
 
-  void _showResponsiveManageSelection<T>({
-    required String title,
-    required List<T> allItems,
-    required List<T> selectedItems,
-    required String Function(T) getName,
-    required String Function(T) getId,
-    required void Function(List<T>) onSave,
-  }) {
-    final isDesktop = AppResponsive.isDesktopScreen(context);
-    final content = _ManageSelectionContent<T>(
-      title: title, allItems: allItems, selectedItems: selectedItems,
-      getName: getName, getId: getId, isDialog: isDesktop,
-      onSave: (items) { onSave(items); Navigator.pop(context); },
-    );
+  Future<void> _showManageTagsDialog(Set<String> currentTagIds) async {
+    if (_selectedGroupId == null) return;
 
-    if (isDesktop) {
-      showDialog(
-        context: context,
-        builder: (context) => Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-          surfaceTintColor: Colors.transparent,
-          clipBehavior: Clip.hardEdge, 
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650), child: content),
-        ),
-      );
-    } else {
-      showModalBottomSheet(
-        useRootNavigator: true,
-        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (context) => Container(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24),
-          height: MediaQuery.of(context).size.height * 0.85,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainer, 
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20))
-          ),
-          clipBehavior: Clip.hardEdge, 
-          child: content, 
-        ),
-      );
-    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ManageTagsDialog(
+        controller: _controller,
+        initialSelectedIds: currentTagIds,
+        
+        onSave: (updatedTagIds, newTagsToCreate) async {
+          final success = await _controller.updateGroupTags(
+            groupId: _selectedGroupId!, 
+            tagIds: updatedTagIds, 
+            newTags: newTagsToCreate,
+          );
+          
+          if (!context.mounted) return false;
+
+          if (success) {
+            ToastService.show(context, message: "Tags updated successfully!", type: ToastType.success);
+            return true;
+          } else {
+            ToastService.show(context, message: "Failed to update tags", type: ToastType.error);
+            return false;
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _showManageTemplatesDialog(Set<String> currentTemplateIds) async {
+    if (_selectedGroupId == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ManageTemplatesDialog(
+        controller: _controller,
+        initialSelectedIds: currentTemplateIds,
+        
+        onSave: (updatedTemplateIds) async {
+          final success = await _controller.updateGroupTemplates(
+            groupId: _selectedGroupId!, 
+            templateIds: updatedTemplateIds, 
+          );
+          
+          if (!context.mounted) return false;
+
+          if (success) {
+            ToastService.show(context, message: "Templates updated successfully!", type: ToastType.success);
+            return true; 
+          } else {
+            ToastService.show(context, message: "Failed to update templates", type: ToastType.error);
+            return false; 
+          }
+        },
+      ),
+    );
   }
 
   // ==========================================
@@ -402,7 +422,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // --- PANELS ---
 
   Widget _buildTagGroupsList(ThemeData theme, {required bool isDesktop}) {
-    // Apply local search filter
     final query = _groupSearchController.text.toLowerCase();
     final filteredGroups = _controller.tagGroups.where((g) {
       return g.name.toLowerCase().contains(query);
@@ -428,7 +447,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: SizedBox(
-              height: 45, // 🚀 Forces a compact height!
+              height: 45, 
               child: FormControlTextField(
                 controller: _groupSearchController,
                 hintText: "Search groups...",
@@ -454,7 +473,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             const Divider(height: 1, thickness: 4), 
           ],
           Expanded(
-            child: _controller.isGroupsLoading && _controller.tagGroups.isEmpty
+            // 🚀 REMOVED the isEmpty check here!
+            child: _controller.isGroupsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : filteredGroups.isEmpty
                   ? const Center(child: Text("No groups match search.", style: TextStyle(color: Colors.grey)))
@@ -504,7 +524,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       );
     }
 
-    // 🚀 1. Extract the current Tag IDs into a Set for the new Dialog
     final Set<String> currentTagIds = activeGroup.tags.map((t) => t.id).toSet();
 
     return AppCard(
@@ -589,68 +608,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
-  Future<void> _showManageTagsDialog(Set<String> currentTagIds) async {
-    if (_selectedGroupId == null) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTagsDialog(
-        controller: _controller,
-        initialSelectedIds: currentTagIds,
-        
-        onSave: (updatedTagIds, newTagsToCreate) async {
-          final success = await _controller.updateGroupTags(
-            groupId: _selectedGroupId!, 
-            tagIds: updatedTagIds, 
-            newTags: newTagsToCreate,
-          );
-          
-          if (!context.mounted) return false;
-
-          if (success) {
-            ToastService.show(context, message: "Tags updated successfully!", type: ToastType.success);
-            return true;
-          } else {
-            ToastService.show(context, message: "Failed to update tags", type: ToastType.error);
-            return false;
-          }
-        },
-      ),
-    );
-  }
-
-  Future<void> _showManageTemplatesDialog(Set<String> currentTemplateIds) async {
-    if (_selectedGroupId == null) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTemplatesDialog(
-        controller: _controller,
-        initialSelectedIds: currentTemplateIds,
-        
-        onSave: (updatedTemplateIds) async {
-          final success = await _controller.updateGroupTemplates(
-            groupId: _selectedGroupId!, 
-            templateIds: updatedTemplateIds, 
-          );
-          
-          if (!context.mounted) return false;
-
-          if (success) {
-            ToastService.show(context, message: "Templates updated successfully!", type: ToastType.success);
-            return true; 
-          } else {
-            ToastService.show(context, message: "Failed to update templates", type: ToastType.error);
-            return false; 
-          }
-        },
-      ),
-    );
-  }
-
-  Widget _buildGlobalTagsList(ThemeData theme) {
+Widget _buildGlobalTagsList(ThemeData theme) {
     final query = _tagSearchController.text.toLowerCase();
     var filteredTags = _controller.globalTags.where((t) {
       return t.name.toLowerCase().contains(query);
@@ -701,7 +659,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                 const SizedBox(width: 8), 
                 
                 // 🚀 Borderless, Icon-Only Sorting Button
-                // 🚀 Custom Composite Sorting Icon
                 Container(
                   decoration: BoxDecoration(
                     color: _tagSortOrder == SortOrder.none 
@@ -718,17 +675,16 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         else _tagSortOrder = SortOrder.none;
                       });
                     },
-                    // 🚀 The custom Row building the exact icon you want
                     icon: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.sort, size: 20), // The horizontal stacked lines
+                        const Icon(Icons.sort, size: 20),
                         const SizedBox(width: 2),
                         Icon(
                           _tagSortOrder == SortOrder.none 
-                              ? Icons.unfold_more // Default: Both side arrows
-                              : (_tagSortOrder == SortOrder.asc ? Icons.arrow_downward : Icons.arrow_upward), // Active: One side arrow
-                          size: 16, // Slightly smaller so it looks like an accent to the sort icon
+                              ? Icons.unfold_more 
+                              : (_tagSortOrder == SortOrder.asc ? Icons.arrow_downward : Icons.arrow_upward), 
+                          size: 16, 
                         ),
                       ],
                     ),
@@ -742,15 +698,16 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
           const Divider(height: 1),
 
-         Expanded(
-            child: _controller.isTagsLoading && _controller.globalTags.isEmpty
+          Expanded(
+            // 🚀 REMOVED the isEmpty check here! It now spins on EVERY fetch.
+            child: _controller.isTagsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: filteredTags.isEmpty 
-                ? const Text("No tags match search.", style: TextStyle(color: Colors.grey))
-                : Wrap(spacing: 8, runSpacing: 8, children: filteredTags.map((t) => _buildTagChip(t)).toList()),
-            ),
+                  padding: const EdgeInsets.all(16.0),
+                  child: filteredTags.isEmpty 
+                    ? const Text("No tags match search.", style: TextStyle(color: Colors.grey))
+                    : Wrap(spacing: 8, runSpacing: 8, children: filteredTags.map((t) => _buildTagChip(t)).toList()),
+                ),
           ),
         ],
       ),
@@ -770,743 +727,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           const SizedBox(width: 6),
           Text(tag.name, style: TextStyle(color: tag.color, fontSize: 12, fontWeight: FontWeight.bold)),
         ],
-      ),
-    );
-  }
-}
-
-
-// ==========================================
-// SELECTION COMPONENTS 
-// ==========================================
-enum SelectionFilter { all, selected, unselected }
-
-class InlineSelectionFilter<T> extends StatefulWidget {
-  final List<T> allItems;
-  final Set<String> selectedIds;
-  final String Function(T) getName;
-  final String Function(T) getId;
-  final void Function(String, bool) onToggle;
-
-  const InlineSelectionFilter({
-    super.key, required this.allItems, required this.selectedIds,
-    required this.getName, required this.getId, required this.onToggle,
-  });
-
-  @override
-  State<InlineSelectionFilter<T>> createState() => _InlineSelectionFilterState<T>();
-}
-
-class _InlineSelectionFilterState<T> extends State<InlineSelectionFilter<T>> {
-  final TextEditingController _searchController = TextEditingController();
-  late List<T> _filteredItems;
-  SelectionFilter _currentFilter = SelectionFilter.all;
-
-  @override
-  void initState() {
-    super.initState();
-    _filteredItems = List.from(widget.allItems);
-    _searchController.addListener(_applyFilters);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _applyFilters() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      _filteredItems = widget.allItems.where((item) {
-        if (!widget.getName(item).toLowerCase().contains(query)) return false;
-        final isSelected = widget.selectedIds.contains(widget.getId(item));
-        if (_currentFilter == SelectionFilter.selected && !isSelected) return false;
-        if (_currentFilter == SelectionFilter.unselected && isSelected) return false;
-        return true; 
-      }).toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FormControlTextField(controller: _searchController, hintText: "Search...", prefixIcon: Icons.search, textInputAction: TextInputAction.search),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(label: const Text("All"), selected: _currentFilter == SelectionFilter.all, onSelected: (val) { if (val) setState(() => _currentFilter = SelectionFilter.all); _applyFilters(); }),
-              ChoiceChip(label: const Text("Selected"), selected: _currentFilter == SelectionFilter.selected, onSelected: (val) { if (val) setState(() => _currentFilter = SelectionFilter.selected); _applyFilters(); }),
-              ChoiceChip(label: const Text("Unselected"), selected: _currentFilter == SelectionFilter.unselected, onSelected: (val) { if (val) setState(() => _currentFilter = SelectionFilter.unselected); _applyFilters(); }),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _filteredItems.isEmpty
-              ? const Center(child: Text("No items match your filters."))
-              : ListView.builder(
-                  shrinkWrap: true, itemCount: _filteredItems.length,
-                  itemBuilder: (context, index) {
-                    final item = _filteredItems[index];
-                    final itemId = widget.getId(item);
-                    final isSelected = widget.selectedIds.contains(itemId);
-                    return CheckboxListTile(
-                      contentPadding: EdgeInsets.zero, title: Text(widget.getName(item)), value: isSelected, activeColor: theme.colorScheme.primary,
-                      onChanged: (bool? val) { widget.onToggle(itemId, val ?? false); if (_currentFilter != SelectionFilter.all) _applyFilters(); },
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ManageSelectionContent<T> extends StatefulWidget {
-  final String title;
-  final List<T> allItems;
-  final List<T> selectedItems;
-  final String Function(T) getName;
-  final String Function(T) getId;
-  final void Function(List<T>) onSave;
-  final bool isDialog;
-
-  const _ManageSelectionContent({
-    required this.title, required this.allItems, required this.selectedItems,
-    required this.getName, required this.getId, required this.onSave, required this.isDialog,
-  });
-
-  @override
-  State<_ManageSelectionContent<T>> createState() => _ManageSelectionContentState<T>();
-}
-
-class _ManageSelectionContentState<T> extends State<_ManageSelectionContent<T>> {
-  late Set<String> _tempSelectedIds;
-
-  @override
-  void initState() {
-    super.initState();
-    _tempSelectedIds = widget.selectedItems.map((item) => widget.getId(item)).toSet();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // 🚀 STANDARDIZED HEADER
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          color: theme.colorScheme.surface,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(widget.title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-              // 🚀 Always show the close button now!
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context), splashRadius: 20),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        
-        // --- CONTENT ---
-        Flexible(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
-            child: InlineSelectionFilter<T>(
-              allItems: widget.allItems, selectedIds: _tempSelectedIds, getName: widget.getName, getId: widget.getId,
-              onToggle: (id, isSelected) { setState(() { isSelected ? _tempSelectedIds.add(id) : _tempSelectedIds.remove(id); }); },
-            ),
-          ),
-        ),
-        const Divider(height: 1),
-        
-        // --- FOOTER ---
-        Padding(
-          padding: EdgeInsets.fromLTRB(24, 16, 24, widget.isDialog ? 16 : 32),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button(label: "Cancel", variant: ButtonVariant.outline, onPressed: () => Navigator.pop(context)),
-              const SizedBox(width: 12),
-              Button(
-                label: "Save Changes",
-                onPressed: () => {},
-                // onPressed: () {
-                //   final savedItems = widget.allItems.where((e) => _tempSelectedIds.contains(widget.getId(e))).toList();
-                //   widget.onSave(savedItems);
-                // },
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ==========================================
-// 3. CREATE GROUP WIZARD (STEPPER)
-// ==========================================
-class _CreateGroupWizard extends StatefulWidget {
-  final TagController controller;
-  const _CreateGroupWizard({required this.controller});
-
-  @override
-  State<_CreateGroupWizard> createState() => _CreateGroupWizardState();
-}
-
-class _CreateGroupWizardState extends State<_CreateGroupWizard> {
-  int _currentStep = 0;
-  bool _isSubmitting = false;
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-
-  final _newTagNameController = TextEditingController();
-  Color _newTagColor = const Color(0xFFC9D647);
-  final List<Map<String, String>> _newlyCreatedTags = [];
-  String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-  Color _hexToColor(String hex) => Color(int.parse(hex.replaceFirst('#', 'FF'), radix: 16));
-  
-  Set<String> _selectedTagIds = {};
-  Set<String> _selectedTemplateIds = {};
-
-  void _onStepContinue() async {
-    if (_currentStep == 0 && !(_formKey.currentState?.validate() ?? false)) return;
-
-    if (_currentStep < 2) {
-      setState(() => _currentStep += 1);
-    } else {
-      setState(() => _isSubmitting = true);
-      final newGroupId = await widget.controller.createTagGroup(
-        name: _nameController.text.trim(), 
-        tagIds: _selectedTagIds.toList(), 
-        templateIds: _selectedTemplateIds.toList(),
-        newTags: _newlyCreatedTags,
-      );
-      if (!mounted) return;
-
-     if (newGroupId != null) {
-        Navigator.pop(context, newGroupId);
-        ToastService.show(context, message: "Group created successfully", type: ToastType.success);
-      } else {
-        ToastService.show(context, message: "Failed to create group", type: ToastType.error);
-      }
-      setState(() => _isSubmitting = false);
-    }
-  }
-
-  void _onStepCancel() {
-    if (_currentStep > 0) setState(() => _currentStep -= 1);
-    else Navigator.pop(context);
-  }
-
-  void _addNewTagToLocalList() {
-    if (_newTagNameController.text.trim().isNotEmpty) {
-      setState(() {
-        _newlyCreatedTags.add({
-          "name": _newTagNameController.text.trim(),
-          "color": _colorToHex(_newTagColor),
-        });
-        _newTagNameController.clear();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDesktop = AppResponsive.isDesktopScreen(context);
-
-    return Form(
-      key: _formKey,
-      child: Stepper(
-        type: isDesktop ? StepperType.horizontal : StepperType.vertical,
-        currentStep: _currentStep,
-        elevation: 0,
-        controlsBuilder: (context, details) => Padding(
-          padding: const EdgeInsets.only(top: 24.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button(
-                label: _currentStep == 0 ? "Cancel" : "Back", 
-                variant: ButtonVariant.outline, 
-                onPressed: _isSubmitting ? null : _onStepCancel, 
-              ),
-              const SizedBox(width: 12),
-              Button(
-                label: _currentStep == 2 
-                    ? (_isSubmitting ? "Creating..." : "Create Group") 
-                    : "Continue", 
-                isLoading: _currentStep == 2 && _isSubmitting,
-                onPressed: _isSubmitting ? null : _onStepContinue, 
-              ),
-            ],
-          ),
-        ),
-        steps: [
-          Step(
-            title: const Text("Details"), isActive: _currentStep >= 0, state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Group Name", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                const SizedBox(height: 8),
-                FormControlTextField(controller: _nameController, hintText: "Enter group name...", prefixIcon: Icons.folder_outlined, validator: (val) => (val == null || val.trim().isEmpty) ? "Group name is required" : null),
-              ],
-            ),
-          ),
-          Step(
-            title: const Text("Tags"), 
-            isActive: _currentStep >= 1, 
-            state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 🚀 1. CREATE NEW TAG INLINE FORM
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 12),
-                      
-                      // Using a safe stacked layout to ensure the ColorPickerField doesn't get squished
-                      FormControlTextField(
-                        controller: _newTagNameController,
-                        hintText: "New tag name...",
-                        prefixIcon: Icons.local_offer_outlined,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ColorPickerField(
-                              currentColor: _newTagColor,
-                              onColorChanged: (c) => setState(() => _newTagColor = c),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Button(
-                            label: "Add Tag",
-                            icon: Icons.add,
-                            variant: ButtonVariant.filled,
-                            onPressed: _addNewTagToLocalList,
-                          ),
-                        ],
-                      ),
-                      
-                      // 🚀 CHIPS FOR STAGED NEW TAGS
-                      if (_newlyCreatedTags.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Divider(height: 1),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _newlyCreatedTags.map((t) {
-                            final tagColor = _hexToColor(t["color"]!);
-                            return Chip(
-                              label: Text(t["name"]!, style: TextStyle(color: tagColor, fontSize: 12, fontWeight: FontWeight.bold)),
-                              backgroundColor: tagColor.withOpacity(0.1),
-                              side: BorderSide(color: tagColor.withOpacity(0.5)),
-                              deleteIconColor: tagColor,
-                              onDeleted: () => setState(() => _newlyCreatedTags.remove(t)),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(height: 8),
-                
-                // 🚀 2. EXISTING TAG SELECTION (Your original component)
-                SizedBox(
-                  height: 250, // Slightly reduced to balance the screen
-                  child: InlineSelectionFilter<AppTag>(
-                    allItems: widget.controller.globalTags, 
-                    selectedIds: _selectedTagIds, 
-                    getName: (t) => t.name, 
-                    getId: (t) => t.id,
-                    onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Step(
-            title: const Text("Templates"), isActive: _currentStep >= 2,
-            content: SizedBox(
-              height: 350,
-              child: InlineSelectionFilter<AppTemplate>(
-                allItems: widget.controller.globalTemplates, selectedIds: _selectedTemplateIds, getName: (t) => t.name, getId: (t) => t.id,
-                onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTemplateIds.add(id) : _selectedTemplateIds.remove(id)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-
-class ManageTagsDialog extends StatefulWidget {
-  final TagController controller;
-  final Set<String> initialSelectedIds;
-
-  final Future<bool> Function(List<String> selectedIds, List<Map<String, String>> newTags) onSave;
-
-  const ManageTagsDialog({
-    Key? key,
-    required this.controller,
-    required this.initialSelectedIds,
-    required this.onSave,
-  }) : super(key: key);
-
-  @override
-  State<ManageTagsDialog> createState() => _ManageTagsDialogState();
-}
-
-class _ManageTagsDialogState extends State<ManageTagsDialog> {
-  late Set<String> _selectedTagIds;
-  
-  final _formKey = GlobalKey<FormState>();
-  final _newTagNameController = TextEditingController();
-  Color _newTagColor = const Color(0xFFC9D647);
-  final List<Map<String, String>> _newlyCreatedTags = [];
-  
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedTagIds = Set.from(widget.initialSelectedIds);
-  }
-
-  String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-  Color _hexToColor(String hex) => Color(int.parse(hex.replaceFirst('#', 'FF'), radix: 16));
-
-  void _addNewTagToLocalList() {
-    if (_newTagNameController.text.trim().isNotEmpty) {
-      setState(() {
-        _newlyCreatedTags.add({
-          "name": _newTagNameController.text.trim(),
-          "color": _colorToHex(_newTagColor),
-        });
-        _newTagNameController.clear();
-      });
-    }
-  }
-
-  Future<void> _onSave() async {
-    setState(() => _isSubmitting = true);
-
-    final success = await widget.onSave(
-      _selectedTagIds.toList(),
-      _newlyCreatedTags,
-    );
-
-    if (!mounted) return;
-
-    if (success) {
-      Navigator.pop(context); 
-    } else {
-      setState(() => _isSubmitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Dialog(
-      backgroundColor: theme.colorScheme.surfaceContainer,
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.hardEdge,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 800),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // --- HEADER ---
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              color: theme.colorScheme.surface,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("Manage Tags", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close), 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            
-            // --- BODY ---
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(height: 12),
-                            
-                            AbsorbPointer(
-                              absorbing: _isSubmitting,
-                              child: FormControlTextField(
-                                controller: _newTagNameController,
-                                hintText: "New tag name...",
-                                prefixIcon: Icons.local_offer_outlined,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: AbsorbPointer(
-                                    absorbing: _isSubmitting,
-                                    child: ColorPickerField(
-                                      currentColor: _newTagColor,
-                                      onColorChanged: (c) => setState(() => _newTagColor = c),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Button(
-                                  label: "Add Tag",
-                                  icon: Icons.add,
-                                  variant: ButtonVariant.filled,
-                                  onPressed: _isSubmitting ? null : _addNewTagToLocalList,
-                                ),
-                              ],
-                            ),
-                            
-                            if (_newlyCreatedTags.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              const Divider(height: 1),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: _newlyCreatedTags.map((t) {
-                                  final tagColor = _hexToColor(t["color"]!);
-                                  return Chip(
-                                    label: Text(t["name"]!, style: TextStyle(color: tagColor, fontSize: 12, fontWeight: FontWeight.bold)),
-                                    backgroundColor: tagColor.withOpacity(0.1),
-                                    side: BorderSide(color: tagColor.withOpacity(0.5)),
-                                    deleteIconColor: tagColor,
-                                    onDeleted: _isSubmitting ? null : () => setState(() => _newlyCreatedTags.remove(t)),
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 24),
-                    const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    
-                    // 🚀 2. EXISTING TAG SELECTION
-                    AbsorbPointer(
-                      absorbing: _isSubmitting,
-                      child: SizedBox(
-                        height: 300, 
-                        child: InlineSelectionFilter<AppTag>(
-                          allItems: widget.controller.globalTags, 
-                          selectedIds: _selectedTagIds, 
-                          getName: (t) => t.name, 
-                          getId: (t) => t.id,
-                          onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            
-            // --- FOOTER ---
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Button(
-                    label: "Cancel", 
-                    variant: ButtonVariant.outline, 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 12),
-                  Button(
-                    label: _isSubmitting ? "Saving..." : "Save Changes",
-                    isLoading: _isSubmitting,
-                    onPressed: _isSubmitting ? null : _onSave,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-class ManageTemplatesDialog extends StatefulWidget {
-  final TagController controller;
-  final Set<String> initialSelectedIds;
-  
-  final Future<bool> Function(List<String> selectedIds) onSave;
-
-  const ManageTemplatesDialog({
-    Key? key,
-    required this.controller,
-    required this.initialSelectedIds,
-    required this.onSave,
-  }) : super(key: key);
-
-  @override
-  State<ManageTemplatesDialog> createState() => _ManageTemplatesDialogState();
-}
-
-class _ManageTemplatesDialogState extends State<ManageTemplatesDialog> {
-  late Set<String> _selectedTemplateIds;
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedTemplateIds = Set.from(widget.initialSelectedIds);
-  }
-
-  Future<void> _onSave() async {
-    setState(() => _isSubmitting = true);
-
-    final success = await widget.onSave(_selectedTemplateIds.toList());
-
-    if (!mounted) return;
-
-    if (success) {
-      Navigator.pop(context); 
-    } else {
-      setState(() => _isSubmitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Dialog(
-      backgroundColor: theme.colorScheme.surfaceContainer,
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.hardEdge,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600), // Slightly shorter max height
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // --- HEADER ---
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              color: theme.colorScheme.surface,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("Manage Templates", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close), 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            
-            // --- BODY (Selection Only) ---
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: AbsorbPointer(
-                  absorbing: _isSubmitting,
-                  child: InlineSelectionFilter<AppTemplate>(
-                    allItems: widget.controller.globalTemplates, 
-                    selectedIds: _selectedTemplateIds, 
-                    getName: (t) => t.name, 
-                    getId: (t) => t.id,
-                    onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTemplateIds.add(id) : _selectedTemplateIds.remove(id)),
-                  ),
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            
-            // --- FOOTER ---
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Button(
-                    label: "Cancel", 
-                    variant: ButtonVariant.outline, 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 12),
-                  Button(
-                    label: _isSubmitting ? "Saving..." : "Save Changes",
-                    isLoading: _isSubmitting,
-                    onPressed: _isSubmitting ? null : _onSave,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
