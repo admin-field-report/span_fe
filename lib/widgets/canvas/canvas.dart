@@ -76,6 +76,8 @@ class CanvasState extends State<Canvas> {
   final List<List<DrawingObject>> _undoStack = [];
   final List<List<DrawingObject>> _redoStack = [];
 
+  List<DrawingObject> get objects => _drawingObjects;
+
   @override
   void dispose() {
     _canvasFocusNode.dispose();

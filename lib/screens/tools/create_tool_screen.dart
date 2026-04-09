@@ -1,21 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import '../../../widgets/button/button.dart';
 import '../../../widgets/canvas/canvas.dart';
 import '../../../widgets/form_components/text_field.dart';
 import '../../../widgets/form_components/select_field.dart';
 import '../../../widgets/search_field/search_field.dart';
 import './models/tool_group.dart';
-
-// MOCK DATA MODELS FOR TAGS
-class Tag {
-  final String id; final String name;
-  Tag(this.id, this.name);
-}
-
-class TagGroup {
-  final String name; final List<Tag> tags;
-  TagGroup(this.name, this.tags);
-}
+import '../../../models/tag_models.dart';
 
 // Wrapper for your custom Select field
 class GroupSelectableItem implements SelectableItem<String> {
@@ -29,8 +20,15 @@ class GroupSelectableItem implements SelectableItem<String> {
 
 class CreateToolScreen extends StatefulWidget {
   final List<ToolGroup> availableGroups;
+  final List<AppTagGroup> availableTagGroups; // 🚀 Using the real TagGroups
+  final String? initialGroupId;
 
-  const CreateToolScreen({super.key, required this.availableGroups});
+  const CreateToolScreen({
+    super.key, 
+    required this.availableGroups,
+    required this.availableTagGroups,
+    this.initialGroupId,
+  });
 
   @override
   State<CreateToolScreen> createState() => _CreateToolScreenState();
@@ -44,10 +42,14 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
   String? _selectedGroupId;
   final Set<String> _selectedTagIds = {};
 
-  final List<TagGroup> _tagGroups = [
-    TagGroup("Discipline", [Tag("t1", "Architecture"), Tag("t2", "Plumbing"), Tag("t3", "Electrical")]),
-    TagGroup("Phase", [Tag("t4", "Existing"), Tag("t5", "Demolition"), Tag("t6", "New Construction")]),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // Auto-select the group if passed in from the previous screen
+    if (widget.initialGroupId != null && widget.availableGroups.any((g) => g.id == widget.initialGroupId)) {
+      _selectedGroupId = widget.initialGroupId;
+    }
+  }
 
   @override
   void dispose() {
@@ -61,37 +63,49 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
 
     // 2. Canvas Validation
     final canvasState = _canvasKey.currentState;
-    // if (canvasState == null || canvasState.objects.isEmpty) {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(
-    //       content: const Text("Please draw a tool on the canvas before saving."),
-    //       backgroundColor: Theme.of(context).colorScheme.error,
-    //     ),
-    //   );
-    //   return;
-    // }
+    if (canvasState == null || canvasState.objects.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("⚠️ Please draw a tool on the canvas before saving."),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     String toolName = _nameController.text.trim();
-    // String canvasJson = jsonEncode(canvasState.objects.map((e) => e.toJson()).toList());
+    String canvasJson = jsonEncode(canvasState.objects.map((e) => e.toJson()).toList());
+    debugPrint("🚀 Canvas JSON: $canvasJson");
+
+    final payload = {
+      "name": toolName,
+      "tool_group_id": _selectedGroupId,
+      "canvas_json": canvasJson,
+      "tags": _selectedTagIds.toList(), 
+    };
+
+    debugPrint("🚀 ====== CREATE TOOL PAYLOAD ======");
+    debugPrint(jsonEncode(payload)); 
+    debugPrint("=====================================");
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Tool '$toolName' created!"), backgroundColor: Colors.green),
     );
-    Navigator.pop(context); // Go back to the tools list
+    Navigator.pop(context); 
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // 🚀 FULL SCREEN SCAFFOLD
     return Scaffold(
       backgroundColor: theme.colorScheme.surfaceContainer,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🚀 CLEAN BACK BUTTON HEADER
+            // --- BACK BUTTON HEADER ---
             Padding(
               padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 8.0),
               child: TextButton.icon(
@@ -107,43 +121,64 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
             
             Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
 
-            // 🚀 RESPONSIVE LAYOUT
+            // --- RESPONSIVE LAYOUT WITH STICKY FOOTER ---
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   bool isMobile = constraints.maxWidth < 800;
                   Widget canvasSection = _buildCanvasSection(theme);
-                  Widget formSection = _buildFormSection(theme);
+                  Widget formFields = _buildFormFields(theme);
+                  Widget stickyFooter = _buildStickyFooter(theme);
 
                   if (isMobile) {
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          canvasSection,
-                          const SizedBox(height: 32),
-                          formSection,
-                        ],
-                      ),
+                    return Column(
+                      children: [
+                        // Scrollable Body
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                canvasSection,
+                                const SizedBox(height: 32),
+                                formFields,
+                              ],
+                            ),
+                          ),
+                        ),
+                        // 🚀 Sticky Footer at the bottom of the screen
+                        stickyFooter,
+                      ],
                     );
                   } else {
                     return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Left Canvas Area
                         Expanded(
                           flex: 3,
-                          child: Padding(
+                          child: SingleChildScrollView(
                             padding: const EdgeInsets.all(32.0),
                             child: canvasSection,
                           ),
                         ),
                         Container(width: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                        // Right Form Area
                         Expanded(
                           flex: 2,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(32.0),
-                            child: formSection,
+                          child: Column(
+                            children: [
+                              // Scrollable Form
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.all(32.0),
+                                  child: formFields,
+                                ),
+                              ),
+                              // 🚀 Sticky Footer at the bottom of the right panel
+                              stickyFooter,
+                            ],
                           ),
                         ),
                       ],
@@ -175,7 +210,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
         ),
         const SizedBox(height: 12),
         Container(
-          height: 600, // Taller canvas since it's a full screen!
+          height: 600, 
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
@@ -191,7 +226,8 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  Widget _buildFormSection(ThemeData theme) {
+  // 🚀 EXTRACTED JUST THE FIELDS
+  Widget _buildFormFields(ThemeData theme) {
     return Form(
       key: _formKey,
       child: Column(
@@ -224,53 +260,99 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
 
           const Text("3. Tags (Optional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          ..._tagGroups.map((tagGroup) {
+          
+          // 🚀 RENDER THE COLORED TAG GROUPS
+          ...widget.availableTagGroups.map((tagGroup) {
             return Padding(
-              padding: const EdgeInsets.only(bottom: 16.0),
+              padding: const EdgeInsets.only(bottom: 24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(tagGroup.name, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Wrap(
-                    spacing: 8, runSpacing: 8,
-                    children: tagGroup.tags.map((tag) {
-                      bool isSelected = _selectedTagIds.contains(tag.id);
-                      return FilterChip(
-                        label: Text(tag.name),
-                        selected: isSelected,
-                        onSelected: (bool selected) => setState(() {
-                          selected ? _selectedTagIds.add(tag.id) : _selectedTagIds.remove(tag.id);
-                        }),
-                        selectedColor: theme.colorScheme.primaryContainer,
-                        checkmarkColor: theme.colorScheme.primary,
-                      );
-                    }).toList(),
+                    spacing: 8, 
+                    runSpacing: 8,
+                    children: tagGroup.tags.map((tag) => _buildColoredTagChip(tag, theme)).toList(),
                   )
                 ],
               ),
             );
           }),
-          
-          const SizedBox(height: 32),
-          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-          const SizedBox(height: 24),
-
-          Button(
-            label: "Save Tool",
-            variant: ButtonVariant.filled,
-            width: double.infinity, 
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            onPressed: _saveTool, 
-          ),
         ],
       ),
     );
   }
+
+  // 🚀 THE PREMIUM COLORED TAG COMPONENT
+  Widget _buildColoredTagChip(AppTag tag, ThemeData theme) {
+    bool isSelected = _selectedTagIds.contains(tag.id);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          isSelected ? _selectedTagIds.remove(tag.id) : _selectedTagIds.add(tag.id);
+        });
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          // 15% opacity background if selected, clear if not
+          color: isSelected ? tag.color.withOpacity(0.15) : Colors.transparent,
+          border: Border.all(
+            // Colored border if selected, dim grey outline if not
+            color: isSelected ? tag.color : theme.colorScheme.outlineVariant.withOpacity(0.5),
+            width: isSelected ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The colored circle indicator
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: tag.color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text(
+              tag.name,
+              style: TextStyle(
+                color: isSelected ? tag.color : theme.colorScheme.onSurface,
+                fontSize: 13,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🚀 THE NEW STICKY FOOTER
+  Widget _buildStickyFooter(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(top: BorderSide(color: theme.dividerColor.withOpacity(0.1))),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, -4))
+        ]
+      ),
+      child: SafeArea(
+        top: false, // Only apply safe area to the bottom (for iPhones with home bars)
+        child: Button(
+          label: "Save Tool",
+          variant: ButtonVariant.filled,
+          width: double.infinity,
+          icon: Icons.check,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          onPressed: _saveTool,
+        ),
+      ),
+    );
+  }
 }
-
-
-
 
 
 class CreateToolGroupPanel extends StatefulWidget {

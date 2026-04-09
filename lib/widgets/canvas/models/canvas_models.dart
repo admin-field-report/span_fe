@@ -118,6 +118,104 @@ class DrawingObject {
         base64Image: base64Image,
         customImage: customImage,
       );
+
+  // 🚀 1. TO JSON: Converts the object into a Map for the API
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name, // Converts enum to string (e.g., 'brick', 'pencil')
+      'start': {'dx': start.dx, 'dy': start.dy},
+      'end': {'dx': end.dx, 'dy': end.dy},
+      if (points != null) 'points': points!.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
+      if (text != null) 'text': text,
+      'strokeWidth': strokeWidth,
+      // Convert colors to ARGB Hex strings
+      'color': color.value.toRadixString(16).padLeft(8, '0'),
+      'fillColor': fillColor.value.toRadixString(16).padLeft(8, '0'),
+      'borderColor': borderColor.value.toRadixString(16).padLeft(8, '0'),
+      'opacity': opacity,
+      'rotation': rotation,
+      'fontSize': fontSize,
+      'isBold': isBold,
+      'isItalic': isItalic,
+      'isUnderline': isUnderline,
+      'isStrikethrough': isStrikethrough,
+      'isCallout': isCallout,
+      if (description != null) 'description': description,
+      if (tagIds != null) 'tagIds': tagIds,
+      if (imageUrls != null) 'imageUrls': imageUrls,
+      if (base64Image != null) 'base64Image': base64Image,
+      if (toolId != null) 'toolId': toolId,
+      'patternDensity': patternDensity,
+      // Note: customImage (ui.Image) is NOT saved because raw memory textures cannot be serialized.
+      // It will be re-decoded from base64Image when fromJson is called!
+    };
+  }
+
+  // 🚀 2. FROM JSON: Rebuilds the DrawingObject from the API data
+  factory DrawingObject.fromJson(Map<String, dynamic> json) {
+    // Helper to safely parse Colors from hex strings
+    Color parseColor(dynamic colorVal, Color defaultColor) {
+      if (colorVal == null) return defaultColor;
+      if (colorVal is int) return Color(colorVal);
+      if (colorVal is String) {
+        String hex = colorVal.replaceAll('#', '');
+        if (hex.length == 6) hex = 'FF$hex'; // Add alpha if missing
+        return Color(int.parse(hex, radix: 16));
+      }
+      return defaultColor;
+    }
+
+    // Helper to safely parse Offsets
+    Offset parseOffset(dynamic val) {
+      if (val == null) return Offset.zero;
+      return Offset((val['dx'] ?? 0).toDouble(), (val['dy'] ?? 0).toDouble());
+    }
+
+    // Match string to DrawingType Enum
+    DrawingType parseType(String? typeStr) {
+      if (typeStr == null) return DrawingType.pencil;
+      return DrawingType.values.firstWhere(
+        (e) => e.name == typeStr, 
+        orElse: () => DrawingType.pencil
+      );
+    }
+
+    List<Offset>? parsedPoints;
+    if (json['points'] != null) {
+      parsedPoints = (json['points'] as List).map((p) => parseOffset(p)).toList();
+    }
+
+    var obj = DrawingObject(
+      type: parseType(json['type']),
+      start: parseOffset(json['start']),
+      end: parseOffset(json['end']),
+      points: parsedPoints,
+      text: json['text'],
+      strokeWidth: (json['strokeWidth'] ?? 2.0).toDouble(),
+      color: parseColor(json['color'], Colors.black),
+      fillColor: parseColor(json['fillColor'], Colors.transparent),
+      borderColor: parseColor(json['borderColor'], Colors.transparent),
+      opacity: (json['opacity'] ?? 1.0).toDouble(),
+      rotation: (json['rotation'] ?? 0.0).toDouble(),
+      fontSize: (json['fontSize'] ?? 24.0).toDouble(),
+      isBold: json['isBold'] ?? false,
+      isItalic: json['isItalic'] ?? false,
+      isUnderline: json['isUnderline'] ?? false,
+      isStrikethrough: json['isStrikethrough'] ?? false,
+      isCallout: json['isCallout'] ?? false,
+      description: json['description'],
+      tagIds: json['tagIds'] != null ? List<String>.from(json['tagIds']) : null,
+      imageUrls: json['imageUrls'] != null ? List<String>.from(json['imageUrls']) : null,
+      base64Image: json['base64Image'],
+      toolId: json['toolId'],
+    );
+    
+    if (json['patternDensity'] != null) {
+      obj.patternDensity = json['patternDensity'].toDouble();
+    }
+    
+    return obj;
+  }
 }
 
 class PageData {

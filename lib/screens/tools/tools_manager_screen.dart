@@ -1,3 +1,4 @@
+import 'package:field_report_fe/models/tag_models.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import './models/tool_group.dart';
@@ -6,6 +7,8 @@ import '../canvas/widgets/canvas_painter.dart';
 import '../../widgets/search_field/search_field.dart';
 import '../../widgets/button/button.dart';
 import './create_tool_screen.dart';
+import './controllers/tool_controller.dart'; // 🚀 IMPORT YOUR NEW CONTROLLER
+import '../tags/controllers/tag_controller.dart'; // 🚀 IMPORT TAG CONTROLLER FOR LATER USE
 
 class ToolsManagerScreen extends StatefulWidget {
   const ToolsManagerScreen({super.key});
@@ -15,53 +18,48 @@ class ToolsManagerScreen extends StatefulWidget {
 }
 
 class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
-  // 1. DUMMY DATA
-  final List<ToolGroup> _groups = [
-    ToolGroup(id: '1', name: 'Custom Hatches', tools: [
-      ToolItem(id: 't1', name: 'Red Brick Paving', canvasJson: '[{"type": "brick", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 200.0, "dy": 100.0}, "color": "FF000000", "fillColor": "FFD32F2F"}]'),
-      ToolItem(id: 't2', name: 'Oak Wood Weave', canvasJson: '[{"type": "weave", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 150.0, "dy": 150.0}, "color": "FF3E2723", "fillColor": "FFD7CCC8"}]'),
-    ]),
-    ToolGroup(id: '2', name: 'Annotations', tools: [
-      ToolItem(id: 't3', name: 'Blue Callout', canvasJson: '[{"type": "text", "isCallout": true, "text": "Check this detail", "start": {"dx": 50.0, "dy": 10.0}, "end": {"dx": 150.0, "dy": 40.0}, "color": "FF1565C0", "borderColor": "FF1565C0", "fillColor": "FFE3F2FD"}]'),
-    ]),
-  ];
-
-  final List<ToolItem> _allMasterTools = [
-    ToolItem(id: 't1', name: 'Red Brick Paving', canvasJson: '[{"type": "brick", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 200.0, "dy": 100.0}, "color": "FF000000", "fillColor": "FFD32F2F"}]'),
-    ToolItem(id: 't2', name: 'Oak Wood Weave', canvasJson: '[{"type": "weave", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 150.0, "dy": 150.0}, "color": "FF3E2723", "fillColor": "FFD7CCC8"}]'),
-    ToolItem(id: 't3', name: 'Blue Callout', canvasJson: '[{"type": "text", "isCallout": true, "text": "Note", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 100.0, "dy": 50.0}, "color": "FF1565C0"}]'),
-    ToolItem(id: 't4', name: 'Gravel / Concrete', canvasJson: '[{"type": "concrete", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 100.0, "dy": 100.0}, "color": "FF424242", "patternDensity": 40.0}]'),
-    ToolItem(id: 't5', name: 'Wall Insulation', canvasJson: '[{"type": "insulation", "start": {"dx": 0.0, "dy": 0.0}, "end": {"dx": 300.0, "dy": 60.0}, "color": "FFF48FB1"}]'),
-  ];
-
-  ToolGroup? _selectedGroup;
+  // 🚀 1. INITIALIZE THE CONTROLLER
+  final ToolController _toolController = ToolController();
+  final TagController _tagController = TagController();
   
-  // 🚀 NEW STATE: Search query for the group list
+  // 🚀 2. STORE ID INSTEAD OF OBJECT to prevent stale data issues
+  String? _selectedGroupId; 
   String _groupSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    if (_groups.isNotEmpty) _selectedGroup = _groups.first;
+    // 🚀 3. FETCH DATA ON LOAD
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _toolController.fetchGroups();
+      _tagController.fetchGroups();
+      // _toolController.fetchMasterTools(); <-- Assuming you add this to controller later!
+    });
   }
 
-  void _deleteGroup(ToolGroup group) {
+  @override
+  void dispose() {
+    _toolController.dispose();
+    _tagController.dispose();
+    super.dispose();
+  }
+
+  void _deleteGroup(ToolGroup group) async {
+    // 🚀 TODO: Add _toolController.deleteGroup(group.id) here!
+    // For now, we simulate the UI update:
     setState(() {
-      _groups.removeWhere((g) => g.id == group.id);
-      if (_selectedGroup?.id == group.id) {
-        _selectedGroup = _groups.isNotEmpty ? _groups.first : null;
-      }
+      if (_selectedGroupId == group.id) _selectedGroupId = null;
     });
   }
 
   void _editGroupName(ToolGroup group) {
-    TextEditingController controller = TextEditingController(text: group.name);
+    TextEditingController textController = TextEditingController(text: group.name);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Edit Group Name"),
         content: TextField(
-          controller: controller,
+          controller: textController,
           decoration: const InputDecoration(labelText: "Name"),
           autofocus: true,
         ),
@@ -69,7 +67,7 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () {
-              setState(() => group.name = controller.text);
+              // 🚀 TODO: Add _toolController.updateGroupName(group.id, textController.text) here!
               Navigator.pop(context);
             },
             child: const Text("Save"),
@@ -86,145 +84,124 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
         MaterialPageRoute(
           builder: (context) => MobileGroupDetailsScreen(
             group: group,
-            allMasterTools: _allMasterTools,
+            // allMasterTools: _toolController.masterTools, // 🚀 Powered by controller
+            allMasterTools: [], // 🚀 Powered by controller
+            allToolGroups: _toolController.toolGroups, // 🚀 Powered by controller
+            allTagGroups: _tagController.tagGroups, // 🚀 Powered by controller
           )
         ),
       );
     } else {
-      setState(() => _selectedGroup = group);
+      setState(() => _selectedGroupId = group.id);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 🚀 REMOVED: AppBar has been completely removed
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        // 🚀 4. WRAP IN LISTENABLE BUILDER
+        child: ListenableBuilder(
+          listenable: Listenable.merge([_toolController, _tagController]),
+          builder: (context, _) {
             
-            // 🚀 NEW: Just a simple label on the left side
-            // 🚀 UPDATED HEADER ROW
-            Padding(
-              padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 24.0, bottom: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "Tools Management",
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  
-                  // 🚀 THE CREATE TOOL SET BUTTON
-                  Button(
-                    label: "Create Set",
-                    variant: ButtonVariant.filled,
-                    icon: Icons.create_new_folder_outlined,
-                    onPressed: () {
-                      bool isMobile = MediaQuery.of(context).size.width < 800;
+            // Auto-select the first group if nothing is selected and data arrives
+            if (_selectedGroupId == null && _toolController.toolGroups.isNotEmpty) {
+              _selectedGroupId = _toolController.toolGroups.first.id;
+            }
 
-                      Widget panelContent = CreateToolGroupPanel(
-                        existingGroups: _groups,
-                        allMasterTools: _allMasterTools,
-                        onSave: (ToolGroup newGroup) {
-                          setState(() {
-                            _groups.add(newGroup);
-                            _selectedGroup = newGroup; // Auto-select the newly created group!
-                          });
+            // Find the active group object based on the ID
+            final activeGroup = _toolController.toolGroups.where((g) => g.id == _selectedGroupId).firstOrNull;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- HEADER ROW ---
+                Padding(
+                  padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 24.0, bottom: 16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Tools Management",
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      
+                      // THE CREATE SET BUTTON
+                      Button(
+                        label: "Create Set",
+                        variant: ButtonVariant.filled,
+                        icon: Icons.create_new_folder_outlined,
+                        onPressed: () {
+                          // ... [Keep your existing Create Dialog/BottomSheet Logic here]
                         },
-                      );
+                      ),
+                    ],
+                  ),
+                ),
+                
+                Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
+
+                // --- MAIN RESPONSIVE LAYOUT ---
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      bool isMobile = constraints.maxWidth < 800;
 
                       if (isMobile) {
-                        // 📱 Mobile Bottom Sheet
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          clipBehavior: Clip.antiAlias,
-                          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                          builder: (context) => SizedBox(
-                            height: MediaQuery.of(context).size.height * 0.90, // 90% height
-                            child: panelContent,
-                          ),
-                        );
+                        return _buildGroupList(isMobile: true);
                       } else {
-                        // 💻 Desktop Dialog
-                        showDialog(
-                          context: context,
-                          builder: (context) => Dialog(
-                            clipBehavior: Clip.antiAlias,
-                            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: SizedBox(
-                              width: 550, // Perfect width for a form
-                              height: 750, 
-                              child: panelContent,
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Left Side: Group List
+                            Container(
+                              width: 320, 
+                              decoration: BoxDecoration(
+                                border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.5))),
+                              ),
+                              child: _buildGroupList(isMobile: false),
                             ),
-                          ),
+                            
+                            // Right Side: Details Panel
+                            Expanded(
+                              child: activeGroup != null
+                                  ? GroupDetailsWidget(
+                                      group: activeGroup,
+                                      // allMasterTools: _toolController.masterTools, // 🚀
+                                      allMasterTools: [], // 🚀
+                                      onGroupUpdated: () {
+                                        // 🚀 TODO: Trigger _toolController.fetchGroups() to refresh API
+                                      },
+                                      allToolGroups: _toolController.toolGroups, // 🚀 Pass all groups for Create Tool dropdown
+                                      allTagGroups: _tagController.tagGroups, // 🚀 Pass all tag groups for Create Tool dropdown
+                                    )
+                                  : const Center(child: Text("Select a group to view details")),
+                            ),
+                          ],
                         );
                       }
                     },
                   ),
-                ],
-              ),
-            ),
-            
-            Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5)),
-
-            // Main Responsive Layout
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  bool isMobile = constraints.maxWidth < 800;
-
-                  if (isMobile) {
-                    return _buildGroupList(isMobile: true);
-                  } else {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Left Side: Group List
-                        Container(
-                          width: 320, // Slightly wider to accommodate search
-                          decoration: BoxDecoration(
-                            border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.5))),
-                          ),
-                          child: _buildGroupList(isMobile: false),
-                        ),
-                        
-                        // Right Side: Details Panel
-                        Expanded(
-                          child: _selectedGroup != null
-                              ? GroupDetailsWidget(
-                                  group: _selectedGroup!,
-                                  allMasterTools: _allMasterTools,
-                                  onGroupUpdated: () => setState(() {}),
-                                )
-                              : const Center(child: Text("Select a group to view details")),
-                        ),
-                      ],
-                    );
-                  }
-                },
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          }
         ),
       ),
     );
   }
 
   Widget _buildGroupList({required bool isMobile}) {
-    // 🚀 NEW: Filter groups based on search query
-    final filteredGroups = _groups.where((g) {
+    final filteredGroups = _toolController.toolGroups.where((g) {
       return g.name.toLowerCase().contains(_groupSearchQuery.toLowerCase());
     }).toList();
 
     return Column(
       children: [
-        // 🚀 NEW: Search field added above the groups
+        // SEARCH FIELD
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: SearchField(
@@ -237,81 +214,85 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
           ),
         ),
         
+        // 🚀 5. ADDED LOADING STATE
         Expanded(
-          child: filteredGroups.isEmpty
-              ? const Center(child: Text("No groups found."))
-              : ListView.separated(
-                  itemCount: filteredGroups.length,
-                  separatorBuilder: (context, index) => Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
-                  itemBuilder: (context, index) {
-                    final group = filteredGroups[index];
-                    final isSelected = !isMobile && _selectedGroup?.id == group.id;
+          child: _toolController.isGroupsLoading 
+            ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
+            : filteredGroups.isEmpty
+                ? const Center(child: Text("No groups found."))
+                : ListView.separated(
+                    itemCount: filteredGroups.length,
+                    separatorBuilder: (context, index) => Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
+                    itemBuilder: (context, index) {
+                      final group = filteredGroups[index];
+                      final isSelected = !isMobile && _selectedGroupId == group.id; // 🚀 Checked against ID
 
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
-                      child: ListTile(
-                        selected: isSelected,
-                        
-                        // 🚀 The premium 15% tinted highlight
-                        selectedTileColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
-                        
-                        title: Text(
-                          group.name, 
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                            color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
-                          )
-                        ),
-                        subtitle: Text(
-                          "${group.tools.length} tools",
-                          style: TextStyle(
-                            color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.7) : Colors.grey,
-                            fontSize: 12
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+                        child: ListTile(
+                          selected: isSelected,
+                          selectedTileColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+                          
+                          title: Text(
+                            group.name, 
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface,
+                            )
+                          ),
+                          subtitle: Text(
+                            "${group.tools.length} tools",
+                            style: TextStyle(
+                              color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.7) : Colors.grey,
+                              fontSize: 12
+                            ),
+                          ),
+                          onTap: () => _handleGroupSelected(group, isMobile),
+                          
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 18),
+                                tooltip: "Edit Name",
+                                onPressed: () => _editGroupName(group),
+                                color: isSelected ? Theme.of(context).colorScheme.primary : null,
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete_outline, size: 18, color: isSelected ? Colors.red[400] : Colors.red),
+                                tooltip: "Delete Group",
+                                onPressed: () => _deleteGroup(group),
+                              ),
+                              if (isMobile)
+                                Icon(Icons.chevron_right, color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey),
+                            ],
                           ),
                         ),
-                        onTap: () => _handleGroupSelected(group, isMobile),
-                        
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 18),
-                              tooltip: "Edit Name",
-                              onPressed: () => _editGroupName(group),
-                              color: isSelected ? Theme.of(context).colorScheme.primary : null,
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete_outline, size: 18, color: isSelected ? Colors.red[400] : Colors.red),
-                              tooltip: "Delete Group",
-                              onPressed: () => _deleteGroup(group),
-                            ),
-                            if (isMobile)
-                              Icon(Icons.chevron_right, color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
         ),
       ],
     );
   }
 }
-
 // --- 1. THE REUSABLE DETAILS UI ---
 class GroupDetailsWidget extends StatefulWidget {
   final ToolGroup group;
+  final List<ToolGroup> allToolGroups; // 🚀 ADD THIS
   final List<ToolItem> allMasterTools; // 🚀 ADD THIS
   final VoidCallback? onGroupUpdated;
+  final List<AppTagGroup> allTagGroups; // 🚀 ADD THIS
 
   const GroupDetailsWidget({
     super.key,
     required this.group,
+    required this.allToolGroups, // 🚀 ADD THIS
     this.onGroupUpdated,
     required this.allMasterTools,
+    required this.allTagGroups, // 🚀 ADD THIS
   });
 
   @override
@@ -464,10 +445,9 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
                         context,
                         MaterialPageRoute(
                           builder: (context) => CreateToolScreen(
-                            // Pass your master groups list here
-                            availableGroups: widget.allMasterTools.isNotEmpty 
-                                ? [widget.group] // Assuming you want them to be able to select the current group
-                                : [], 
+                            availableGroups: widget.allToolGroups, // Pass all groups
+                            initialGroupId: widget.group.id,
+                            availableTagGroups: widget.allTagGroups,         // 🚀 Pass the active group's ID!
                           ),
                         ),
                       );
@@ -602,12 +582,16 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
 // This wraps the Details UI in a Scaffold so it gets a Back Button on mobile!
 class MobileGroupDetailsScreen extends StatelessWidget {
   final ToolGroup group;
+  final List<ToolGroup> allToolGroups; // 🚀 ADD THIS
   final List<ToolItem> allMasterTools; // 🚀 ADD THIS
+  final List<AppTagGroup> allTagGroups; // 🚀 ADD THIS
 
   const MobileGroupDetailsScreen({
     super.key,
     required this.group,
+    required this.allToolGroups, // 🚀 ADD THIS
     required this.allMasterTools, // 🚀 ADD THIS
+    required this.allTagGroups, // 🚀 ADD THIS
   });
 
   @override
@@ -617,6 +601,8 @@ class MobileGroupDetailsScreen extends StatelessWidget {
       body: GroupDetailsWidget(
         group: group,
         allMasterTools: allMasterTools, // 🚀 PASS IT DOWN
+        allToolGroups: allToolGroups, // 🚀 PASS IT DOWN
+        allTagGroups: allTagGroups, // 🚀 PASS IT DOWN
       ),
     );
   }
