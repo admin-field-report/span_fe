@@ -45,8 +45,11 @@ class MainPainter extends CustomPainter {
     for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
     for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
 
-    void drawShape(DrawingObject obj) {
+    // 🚀 CHANGE 1: Added {bool isInternal = false}
+    void drawShape(DrawingObject obj, {bool isInternal = false}) {
       canvas.save();
+      
+      // The canvas handles Rotation here!
       canvas.translate(obj.center.dx, obj.center.dy);
       canvas.rotate(obj.rotation);
       canvas.translate(-obj.center.dx, -obj.center.dy);
@@ -57,9 +60,6 @@ class MainPainter extends CustomPainter {
         double fontSize = obj.fontSize;
         if (fontSize < 1) fontSize = 1;
 
-        // 🚀 START OF CHANGES 🚀
-        
-        // 1. Determine the decoration for underline / strikethrough
         TextDecoration textDecoration = TextDecoration.none;
 
         if (obj.isUnderline && obj.isStrikethrough) {
@@ -70,17 +70,15 @@ class MainPainter extends CustomPainter {
           textDecoration = TextDecoration.lineThrough;
         }
 
-        // 2. Define the style using the decoration
         final textStyle = TextStyle(
           color: obj.color, 
           fontSize: fontSize, 
           fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal, 
           fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal,
-          decoration: textDecoration, // Applies the decoration
-          decorationColor: obj.color, // Matches the line color to the text color
+          decoration: textDecoration, 
+          decorationColor: obj.color, 
         );
 
-        // 3. Update the TextPainter to use the new textStyle
         final textPainter = TextPainter(
           text: TextSpan(text: obj.text, style: textStyle),
           textDirection: TextDirection.ltr, 
@@ -127,7 +125,8 @@ class MainPainter extends CustomPainter {
         
         textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
 
-        if (obj.isSelected && obj.isCallout && obj.points != null) {
+        // 🚀 CHANGE 2: Added !isInternal to prevent inner text from showing selection handles
+        if (!isInternal && obj.isSelected && obj.isCallout && obj.points != null) {
           Paint hP = Paint()..color = Colors.blue; 
           Paint wP = Paint()..color = Colors.white; 
           canvas.drawCircle(obj.points![0], 7, wP); canvas.drawCircle(obj.points![0], 5, hP);
@@ -160,7 +159,28 @@ class MainPainter extends CustomPainter {
           canvas.drawCircle(Offset(rect.center.dx, rect.top + r), r * 0.35, borderPaint);
       
       } else if (obj.type == DrawingType.customTool) {
-          if (obj.customImage != null) {
+          
+          // 🚀 CHANGE 3: The customTool now draws JSON shapes dynamically, scaling to fit the box
+          if (obj.internalShapes != null && obj.internalShapes!.isNotEmpty) {
+             Rect originalBounds = obj.originalBounds ?? rect;
+
+             canvas.save();
+             
+             double scaleX = originalBounds.width != 0 ? rect.width / originalBounds.width : 1.0;
+             double scaleY = originalBounds.height != 0 ? rect.height / originalBounds.height : 1.0;
+
+             canvas.translate(rect.left, rect.top);
+             canvas.scale(scaleX, scaleY);
+             canvas.translate(-originalBounds.left, -originalBounds.top);
+
+             // Draw all the hidden JSON shapes!
+             for (var child in obj.internalShapes!) {
+               drawShape(child, isInternal: true); 
+             }
+             
+             canvas.restore();
+             
+          } else if (obj.customImage != null) {
             final srcRect = Rect.fromLTWH(
               0, 0, 
               obj.customImage!.width.toDouble(), 
@@ -181,6 +201,7 @@ class MainPainter extends CustomPainter {
               ..style = PaintingStyle.fill;
             canvas.drawRect(obj.rect, fallbackPaint);
           }
+
       } else {
         
         // 1. DRAW FILLS (Rect, Circle, Polygon)
@@ -207,19 +228,17 @@ class MainPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round;
 
-        // 3. 🚀 MASTER PATTERN ENGINE (Architectural Hatches)
+        // 3. MASTER PATTERN ENGINE (Architectural Hatches)
         if ([DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(obj.type)) {
           canvas.save();
-          canvas.clipRect(rect); // Instantly bounds ANY pattern inside the dragged box!
+          canvas.clipRect(rect); 
 
-          // Draw the background fill
           if (obj.fillColor != Colors.transparent) {
             canvas.drawRect(rect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
           }
 
-          double spacing = 20.0; // Density of the lines for grids/diagonals
+          double spacing = 20.0; 
 
-          // A. BRICK PATTERN
           if (obj.type == DrawingType.brick) {
             double bWidth = 40.0, bHeight = 16.0;
             int row = 0;
@@ -233,21 +252,18 @@ class MainPainter extends CustomPainter {
             }
           }
 
-          // B. HORIZONTAL LINES (Siding) & GRID (Tile)
           if (obj.type == DrawingType.horizontal || obj.type == DrawingType.grid) {
             for (double y = rect.top; y < rect.bottom; y += spacing) {
               canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint);
             }
           }
 
-          // C. VERTICAL LINES (Studs) & GRID (Tile)
           if (obj.type == DrawingType.vertical || obj.type == DrawingType.grid) {
             for (double x = rect.left; x < rect.right; x += spacing) {
               canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), strokePaint);
             }
           }
 
-          // D. DIAGONAL 1 (Forward /) & DIAMOND
           if (obj.type == DrawingType.forwardDiag || obj.type == DrawingType.diamond) {
             for (double d = -rect.height; d < rect.width + rect.height; d += spacing) {
               canvas.drawLine(
@@ -258,7 +274,6 @@ class MainPainter extends CustomPainter {
             }
           }
 
-          // E. DIAGONAL 2 (Reverse \) & DIAMOND
           if (obj.type == DrawingType.reverseDiag || obj.type == DrawingType.diamond) {
             for (double d = -rect.height; d < rect.width + rect.height; d += spacing) {
               canvas.drawLine(
@@ -269,26 +284,19 @@ class MainPainter extends CustomPainter {
             }
           }
 
-          // F. WEAVE (Classic Basket Weave)
           if (obj.type == DrawingType.weave) {
-            double wSize = 40.0; // The size of each square "block"
-            double wSpace = 10.0; // The spacing between the lines inside the block
+            double wSize = 40.0; 
+            double wSpace = 10.0; 
             
             for (double y = rect.top; y < rect.bottom; y += wSize) {
               for (double x = rect.left; x < rect.right; x += wSize) {
-                
-                // Calculate which grid cell we are currently in
                 int row = ((y - rect.top) / wSize).floor();
                 int col = ((x - rect.left) / wSize).floor();
-                
-                // The "Chessboard" trick: alternate based on even/odd cells
                 if ((row + col) % 2 == 0) {
-                  // Draw Horizontal Lines for this block
                   for (double i = y + wSpace; i < y + wSize; i += wSpace) {
                     canvas.drawLine(Offset(x, i), Offset(x + wSize, i), strokePaint);
                   }
                 } else {
-                  // Draw Vertical Lines for this block
                   for (double i = x + wSpace; i < x + wSize; i += wSpace) {
                     canvas.drawLine(Offset(i, y), Offset(i, y + wSize), strokePaint);
                   }
@@ -297,90 +305,62 @@ class MainPainter extends CustomPainter {
             }
           }
 
-          // G. DOTS / SAND (Stipple)
           if (obj.type == DrawingType.dots) {
-            // Seed the randomizer so the dots lock into place and don't flicker
             math.Random rand = math.Random(obj.hashCode);
-            
             double area = rect.width * rect.height;
             int numDots = (area * (obj.patternDensity / 100.0) * (1/15.0)).toInt(); 
-            
-            final dotPaint = Paint()
-              ..color = strokePaint.color
-              ..style = PaintingStyle.fill;
-
+            final dotPaint = Paint()..color = strokePaint.color..style = PaintingStyle.fill;
             for (int i = 0; i < numDots; i++) {
               double dx = rect.left + rand.nextDouble() * rect.width;
               double dy = rect.top + rand.nextDouble() * rect.height;
-              
-              // We use strokeWidth so the thickness slider changes the size of the dots
               canvas.drawCircle(Offset(dx, dy), strokePaint.strokeWidth / 2, dotPaint);
             }
           }
 
-          // H. HERRINGBONE (Zig-Zag Interlocking)
           if (obj.type == DrawingType.herringbone) {
             double size = 20.0;
             for (double y = rect.top - size; y < rect.bottom + size; y += size) {
                for (double x = rect.left - size; x < rect.right + size; x += size * 2) {
-                   // Draw Zig
                    canvas.drawLine(Offset(x, y), Offset(x + size, y + size), strokePaint);
-                   // Draw Zag
                    canvas.drawLine(Offset(x + size, y + size), Offset(x + size * 2, y), strokePaint);
-                   // Draw vertical drop to create the "L" shape blocks
                    canvas.drawLine(Offset(x + size, y + size), Offset(x + size, y + size * 2), strokePaint);
                }
             }
           }
 
-          // I. CONCRETE (Sand + Aggregate Rocks)
           if (obj.type == DrawingType.concrete) {
-            math.Random rand = math.Random(obj.hashCode); // Seed for frozen pattern
+            math.Random rand = math.Random(obj.hashCode); 
             double area = rect.width * rect.height;
             int numItems = (area * (obj.patternDensity / 100.0) * (1/12.0)).toInt(); 
-            
             final dotPaint = Paint()..color = strokePaint.color..style = PaintingStyle.fill;
-
             for (int i = 0; i < numItems; i++) {
               double dx = rect.left + rand.nextDouble() * rect.width;
               double dy = rect.top + rand.nextDouble() * rect.height;
-              
               if (rand.nextDouble() > 0.3) {
-                // 70% chance to draw Sand (Dot)
                 canvas.drawCircle(Offset(dx, dy), strokePaint.strokeWidth / 2, dotPaint);
               } else {
-                // 30% chance to draw Aggregate (Small Triangle)
                 double s = strokePaint.strokeWidth * 2 + 1.5;
-                Path rock = Path()
-                  ..moveTo(dx, dy - s)
-                  ..lineTo(dx + s, dy + s)
-                  ..lineTo(dx - s, dy + s)
-                  ..close();
+                Path rock = Path()..moveTo(dx, dy - s)..lineTo(dx + s, dy + s)..lineTo(dx - s, dy + s)..close();
                 canvas.drawPath(rock, strokePaint);
               }
             }
           }
 
-          // J. WOOD SHAKES / SHINGLES (Irregular staggered brick)
           if (obj.type == DrawingType.shingles) {
-            math.Random rand = math.Random(obj.hashCode); // Seed for frozen lines
+            math.Random rand = math.Random(obj.hashCode); 
             double rowH = 15.0;
             for (double y = rect.top; y < rect.bottom; y += rowH) {
-              canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint); // Continuous horizontal
-              // Irregularly spaced vertical cut-lines
+              canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), strokePaint); 
               for (double x = rect.left; x < rect.right; x += 10.0 + rand.nextDouble() * 25.0) {
                 canvas.drawLine(Offset(x, y), Offset(x, y + rowH), strokePaint);
               }
             }
           }
 
-          // K. BATT INSULATION (Continuous Squiggle Wave)
           if (obj.type == DrawingType.insulation) {
             double waveW = 30.0;
             double waveH = 15.0;
             Path wavePath = Path();
-            
-            // Draw looping waves filling the box
             for (double y = rect.top + waveH; y < rect.bottom + waveH; y += waveH * 2) {
               wavePath.moveTo(rect.left, y);
               for (double x = rect.left; x < rect.right; x += waveW) {
@@ -391,7 +371,6 @@ class MainPainter extends CustomPainter {
             canvas.drawPath(wavePath, strokePaint);
           }
 
-          // Draw the outer bounding border
           canvas.drawRect(rect, strokePaint);
           canvas.restore();
         }
@@ -416,7 +395,8 @@ class MainPainter extends CustomPainter {
           
           canvas.drawPath(path, strokePaint);
 
-          if (obj == preview && obj.type == DrawingType.pen) {
+          // 🚀 CHANGE 4: Added !isInternal to prevent inner pencil drawing handles
+          if (!isInternal && obj == preview && obj.type == DrawingType.pen) {
             canvas.drawCircle(obj.points![0], 6, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2);
           }
         } else if (obj.type == DrawingType.line) {
@@ -459,8 +439,8 @@ class MainPainter extends CustomPainter {
         }
       }
 
-      // 5. SELECTION HANDLES (This code should already be here, leave it alone!)
-      if (obj.isSelected) {
+      // 🚀 CHANGE 5: Added !isInternal to prevent inner shapes from drawing the main 8-point resize handles
+      if (!isInternal && obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
         

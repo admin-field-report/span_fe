@@ -44,6 +44,9 @@ class DrawingObject {
 
   double patternDensity = 20.0;
 
+  List<DrawingObject>? internalShapes; 
+  Rect? originalBounds;
+
   DrawingObject({
     required this.start,
     required this.end,
@@ -72,6 +75,9 @@ class DrawingObject {
     this.customImage,
 
     this.toolId,
+
+    this.internalShapes,
+    this.originalBounds,
   });
 
   Rect get rect {
@@ -117,6 +123,8 @@ class DrawingObject {
         imageUrls: imageUrls != null ? List.from(imageUrls!) : null,
         base64Image: base64Image,
         customImage: customImage,
+        internalShapes: internalShapes != null ? List.from(internalShapes!) : null,
+        originalBounds: originalBounds,
       );
 
   // 🚀 1. TO JSON: Converts the object into a Map for the API
