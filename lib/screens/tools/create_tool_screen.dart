@@ -1,3 +1,4 @@
+import 'package:field_report_fe/services/toast_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../widgets/button/button.dart';
@@ -64,13 +65,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     // 2. Canvas Validation
     final canvasState = _canvasKey.currentState;
     if (canvasState == null || canvasState.objects.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text("⚠️ Please draw a tool on the canvas before saving."),
-          backgroundColor: Theme.of(context).colorScheme.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      ToastService.show(context, message: "Please draw a tool on the canvas before saving.", type: ToastType.error);
       return;
     }
 
@@ -355,10 +350,12 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
 }
 
 
+
 class CreateToolGroupPanel extends StatefulWidget {
   final List<ToolGroup> existingGroups;
   final List<ToolItem> allMasterTools;
-  final Function(ToolGroup) onSave;
+  final Future<bool> Function(String groupName, List<String> toolIds, List<String> toolGroupIds) onSave;
+  
 
   const CreateToolGroupPanel({
     super.key,
@@ -378,6 +375,7 @@ class _CreateToolGroupPanelState extends State<CreateToolGroupPanel> {
   final Set<String> _selectedGroupIds = {};
   final Set<String> _selectedToolIds = {};
   String _searchQuery = '';
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -393,190 +391,193 @@ class _CreateToolGroupPanelState extends State<CreateToolGroupPanel> {
     return false;
   }
 
-  void _handleSave() {
+  void _handleSave() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-    // 1. Gather all unique tools from both selected groups and individually checked tools
-    Set<String> finalToolIds = {..._selectedToolIds};
-    for (var group in widget.existingGroups.where((g) => _selectedGroupIds.contains(g.id))) {
-      finalToolIds.addAll(group.tools.map((t) => t.id));
-    }
+    // Set<String> finalToolIds = {..._selectedToolIds};
+    // for (var group in widget.existingGroups.where((g) => _selectedGroupIds.contains(g.id))) {
+    //   finalToolIds.addAll(group.tools.map((t) => t.id));
+    // }
 
-    List<ToolItem> finalTools = widget.allMasterTools
-        .where((t) => finalToolIds.contains(t.id))
-        .toList();
-
-    // 2. Create the new Group
-    ToolGroup newGroup = ToolGroup(
-      id: "g_${DateTime.now().millisecondsSinceEpoch}", // Generate a unique ID
-      name: _nameController.text.trim(),
-      tools: finalTools,
+    bool success = await widget.onSave(
+      _nameController.text.trim(), 
+      _selectedToolIds.toList(),
+      _selectedGroupIds.toList()
     );
+    
+    // Make sure the widget is still on screen after the await
+    if (!mounted) return; 
 
-    // 3. Save and Close
-    widget.onSave(newGroup);
-    Navigator.pop(context);
+    setState(() => _isLoading = false);
+
+    // 🚀 4. ONLY CLOSE THE POPUP IF SUCCESSFUL
+    if (success) {
+      Navigator.pop(context);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    // Filter the individual tools list based on the search query
     final filteredTools = widget.allMasterTools
         .where((t) => t.name.toLowerCase().contains(_searchQuery.toLowerCase()))
         .toList();
 
     return Container(
       color: theme.colorScheme.surfaceContainer,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          
-          // 🚀 HEADER
-          Container(
-            color: theme.colorScheme.surface,
-            padding: const EdgeInsets.only(left: 24, right: 16, top: 16, bottom: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Create Tool Set", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                  color: theme.colorScheme.onSurfaceVariant,
-                )
-              ],
-            ),
-          ),
-          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-
-          // 🚀 SCROLLABLE FORM BODY
-          Expanded(
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(24.0),
+      // Wrap in AbsorbPointer to prevent ANY clicks while loading
+      child: AbsorbPointer(
+        absorbing: _isLoading,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            
+            // --- HEADER ---
+            Container(
+              color: theme.colorScheme.surface,
+              padding: const EdgeInsets.only(left: 24, right: 16, top: 16, bottom: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  
-                  // 1. SET NAME (Required)
-                  const Text("Tool Set Name *", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  FormControlTextField(
-                    controller: _nameController,
-                    hintText: "Enter a name for this tool set...",
-                    prefixIcon: Icons.folder_special_outlined,
-                    validator: (val) => (val == null || val.trim().isEmpty) ? "Set name is required" : null,
-                  ),
-                  const SizedBox(height: 32),
+                  const Text("Create Tool Set", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    // Disable close button while loading
+                    onPressed: _isLoading ? null : () => Navigator.pop(context),
+                    color: theme.colorScheme.onSurfaceVariant,
+                  )
+                ],
+              ),
+            ),
+            Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
 
-                  // 2. QUICK ADD: EXISTING SETS
-                  if (widget.existingGroups.isNotEmpty) ...[
-                    const Text("Include Existing Tool Sets (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8, runSpacing: 8,
-                      children: widget.existingGroups.map((group) {
-                        bool isSelected = _selectedGroupIds.contains(group.id);
-                        return FilterChip(
-                          label: Text(group.name),
-                          selected: isSelected,
-                          onSelected: (bool selected) {
-                            setState(() {
-                              selected ? _selectedGroupIds.add(group.id) : _selectedGroupIds.remove(group.id);
-                            });
-                          },
-                          selectedColor: theme.colorScheme.primaryContainer,
-                          checkmarkColor: theme.colorScheme.primary,
-                        );
-                      }).toList(),
+            // --- SCROLLABLE FORM BODY ---
+            Expanded(
+              child: Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.all(24.0),
+                  children: [
+                    const Text("Tool Set Name *", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    FormControlTextField(
+                      controller: _nameController,
+                      hintText: "Enter a name for this tool set...",
+                      prefixIcon: Icons.folder_special_outlined,
+                      validator: (val) => (val == null || val.trim().isEmpty) ? "Set name is required" : null,
                     ),
                     const SizedBox(height: 32),
-                  ],
 
-                  // 3. INDIVIDUAL TOOLS LIST
-                  const Text("Select Individual Tools", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  SearchField(
-                    hintText: "Search tools...",
-                    onChanged: (val) => setState(() => _searchQuery = val),
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Bounded Box for the tools list so it doesn't take up the whole screen
-                  Container(
-                    height: 250, 
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-                    ),
-                    child: filteredTools.isEmpty
-                        ? Center(child: Text("No tools found.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
-                        : ListView.separated(
-                            itemCount: filteredTools.length,
-                            separatorBuilder: (context, index) => Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.3)),
-                            itemBuilder: (context, index) {
-                              final tool = filteredTools[index];
-                              bool isSelectedViaGroup = _isToolSelectedViaGroup(tool.id);
-                              bool isChecked = isSelectedViaGroup || _selectedToolIds.contains(tool.id);
-
-                              return CheckboxListTile(
-                                title: Text(
-                                  tool.name, 
-                                  style: TextStyle(
-                                    fontWeight: isChecked ? FontWeight.bold : FontWeight.normal,
-                                    // Dim the text if it's forced-selected by a group
-                                    color: isSelectedViaGroup ? theme.colorScheme.onSurfaceVariant : null,
-                                  )
-                                ),
-                                subtitle: isSelectedViaGroup 
-                                    ? Text("Included via selected set", style: TextStyle(color: theme.colorScheme.primary, fontSize: 11))
-                                    : null,
-                                value: isChecked,
-                                activeColor: theme.colorScheme.primary,
-                                controlAffinity: ListTileControlAffinity.trailing,
-                                // Disable the checkbox if the tool is already included via a selected group
-                                onChanged: isSelectedViaGroup ? null : (bool? checked) {
-                                  setState(() {
-                                    if (checked == true) _selectedToolIds.add(tool.id);
-                                    else _selectedToolIds.remove(tool.id);
-                                  });
-                                },
-                              );
+                    if (widget.existingGroups.isNotEmpty) ...[
+                      const Text("Include Existing Tool Sets (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8, runSpacing: 8,
+                        children: widget.existingGroups.map((group) {
+                          bool isSelected = _selectedGroupIds.contains(group.id);
+                          return FilterChip(
+                            label: Text(group.name),
+                            selected: isSelected,
+                            onSelected: (bool selected) {
+                              setState(() {
+                                selected ? _selectedGroupIds.add(group.id) : _selectedGroupIds.remove(group.id);
+                              });
                             },
-                          ),
+                            selectedColor: theme.colorScheme.primaryContainer,
+                            checkmarkColor: theme.colorScheme.primary,
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+
+                    const Text("Select Individual Tools", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    SearchField(
+                      hintText: "Search tools...",
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    Container(
+                      height: 250, 
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                      ),
+                      child: filteredTools.isEmpty
+                          ? Center(child: Text("No tools found.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                          : ListView.separated(
+                              itemCount: filteredTools.length,
+                              separatorBuilder: (context, index) => Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.3)),
+                              itemBuilder: (context, index) {
+                                final tool = filteredTools[index];
+                                bool isSelectedViaGroup = _isToolSelectedViaGroup(tool.id);
+                                bool isChecked = isSelectedViaGroup || _selectedToolIds.contains(tool.id);
+
+                                return CheckboxListTile(
+                                  title: Text(
+                                    tool.name, 
+                                    style: TextStyle(
+                                      fontWeight: isChecked ? FontWeight.bold : FontWeight.normal,
+                                      color: isSelectedViaGroup ? theme.colorScheme.onSurfaceVariant : null,
+                                    )
+                                  ),
+                                  subtitle: isSelectedViaGroup 
+                                      ? Text("Included via selected set", style: TextStyle(color: theme.colorScheme.primary, fontSize: 11))
+                                      : null,
+                                  value: isChecked,
+                                  activeColor: theme.colorScheme.primary,
+                                  controlAffinity: ListTileControlAffinity.trailing,
+                                  onChanged: isSelectedViaGroup ? null : (bool? checked) {
+                                    setState(() {
+                                      if (checked == true) _selectedToolIds.add(tool.id);
+                                      else _selectedToolIds.remove(tool.id);
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+            // --- ACTION BUTTONS ---
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Button(
+                    label: "Cancel",
+                    variant: ButtonVariant.outline,
+                    // Disable cancel button while loading
+                    onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // 🚀 5. UPDATE THE SAVE BUTTON UI
+                  Button(
+                    label: _isLoading ? "Creating..." : "Create Set",
+                    variant: ButtonVariant.filled,
+                    icon: _isLoading ? Icons.hourglass_top : Icons.check,
+                    // Setting onPressed to null disables the button natively in Flutter!
+                    onPressed: _isLoading ? null : _handleSave,
                   ),
                 ],
               ),
             ),
-          ),
-
-          Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-
-          // 🚀 ACTION BUTTONS
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Button(
-                  label: "Cancel",
-                  variant: ButtonVariant.outline,
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const SizedBox(width: 12),
-                Button(
-                  label: "Create Set",
-                  variant: ButtonVariant.filled,
-                  icon: Icons.check,
-                  onPressed: _handleSave,
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+

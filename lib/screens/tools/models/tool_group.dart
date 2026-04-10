@@ -8,6 +8,14 @@ class ToolItem {
     required this.name,
     required this.canvasJson,
   });
+
+  factory ToolItem.fromJson(Map<String, dynamic> json) {
+    return ToolItem(
+      id: json['tool_id'] ?? json['id'] ?? '',
+      name: json['name'] ?? 'Unnamed Tool',
+      canvasJson: json['canvas_json'] ?? '{}',
+    );
+  }
 }
 
 class ToolGroup {

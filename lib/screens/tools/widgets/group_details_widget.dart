@@ -1,0 +1,267 @@
+import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:field_report_fe/models/tag_models.dart';
+import '../models/tool_group.dart';
+import '../../canvas/models/canvas_models.dart';
+import '../../canvas/widgets/canvas_painter.dart';
+import '../../../widgets/search_field/search_field.dart';
+import '../../../widgets/button/button.dart';
+import '../create_tool_screen.dart';
+import './manage_tools_panel.dart';
+
+class GroupDetailsWidget extends StatefulWidget {
+  final ToolGroup group;
+  final List<ToolGroup> allToolGroups;
+  final List<ToolItem> allMasterTools;
+  final List<AppTagGroup> allTagGroups;
+  final VoidCallback? onGroupUpdated;
+  final Future<bool> Function(String groupId, String newName, List<String> toolIds) onManageSave;
+
+  const GroupDetailsWidget({
+    super.key,
+    required this.group,
+    required this.allToolGroups,
+    required this.allMasterTools,
+    required this.allTagGroups,
+    this.onGroupUpdated,
+    required this.onManageSave,
+  });
+
+  @override
+  State<GroupDetailsWidget> createState() => _GroupDetailsWidgetState();
+}
+
+class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
+  String _searchQuery = '';
+
+  void _deleteTool(ToolItem tool) {
+    setState(() {
+      widget.group.tools.removeWhere((t) => t.id == tool.id);
+    });
+    if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
+  }
+
+  Widget _buildCanvasPreview(BuildContext context, String jsonString) {
+    try {
+      List<dynamic> decodedJson = jsonDecode(jsonString);
+      List<DrawingObject> objects = decodedJson.map((json) => DrawingObject.fromJson(json)).toList();
+
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: IgnorePointer(
+            child: SizedBox(
+              width: 300,
+              height: 300,
+              child: CustomPaint(painter: MainPainter(context, objects, null)),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image, color: Colors.grey[400], size: 32),
+            const SizedBox(height: 8),
+            Text("Preview Error", style: TextStyle(color: Colors.grey[600], fontSize: 10)),
+          ],
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredTools = widget.group.tools.where((tool) {
+      return tool.name.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.group.name, style: Theme.of(context).textTheme.headlineMedium),
+                    const SizedBox(height: 4),
+                    Text("Group ID: ${widget.group.id}", style: const TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Button(
+                    label: "Manage Tools",
+                    variant: ButtonVariant.outline,
+                    icon: Icons.settings,
+                    onPressed: () {
+                      bool isMobile = MediaQuery.of(context).size.width < 800;
+
+                      Widget panelContent = ManageToolsPanel(
+                        group: widget.group,
+                        allMasterTools: widget.allMasterTools,
+                        onSave: (String newName, List<String> selectedToolIds) async {
+                          bool success = await widget.onManageSave(widget.group.id, newName, selectedToolIds);
+                          if (success) {
+                            setState(() {
+                              widget.group.name = newName;
+                              widget.group.tools = widget.allMasterTools.where((t) => selectedToolIds.contains(t.id)).toList();
+                            });
+                            if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
+                          }
+                          return success;
+                        },
+                      );
+
+                      if (isMobile) {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          clipBehavior: Clip.antiAlias,
+                          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                          builder: (context) => SizedBox(height: MediaQuery.of(context).size.height * 0.85, child: panelContent),
+                        );
+                      } else {
+                        showDialog(
+                          context: context,
+                          builder: (context) => Dialog(
+                            clipBehavior: Clip.antiAlias,
+                            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: SizedBox(width: 500, height: 600, child: panelContent),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  Button(
+                    label: "Create Tool",
+                    variant: ButtonVariant.outline,
+                    icon: Icons.add,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CreateToolScreen(
+                            availableGroups: widget.allToolGroups,
+                            initialGroupId: widget.group.id,
+                            availableTagGroups: widget.allTagGroups,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              Text("${filteredTools.length} Tools found:", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              SearchField(width: 250, hintText: "Search tools...", onChanged: (value) => setState(() => _searchQuery = value)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (filteredTools.isEmpty)
+            Expanded(child: Center(child: Text(_searchQuery.isEmpty ? "No tools assigned yet." : "No tools match your search.")))
+          else
+            Expanded(
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 220, childAspectRatio: 0.85, crossAxisSpacing: 16, mainAxisSpacing: 16,
+                ),
+                itemCount: filteredTools.length,
+                itemBuilder: (context, index) {
+                  final tool = filteredTools[index];
+                  return Card(
+                    elevation: 2,
+                    clipBehavior: Clip.antiAlias,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Container(
+                            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+                            child: _buildCanvasPreview(context, tool.canvasJson ?? "[]"),
+                          ),
+                        ),
+                        Container(
+                          color: Theme.of(context).colorScheme.surface,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(tool.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: () => _deleteTool(tool),
+                                borderRadius: BorderRadius.circular(16),
+                                child: const Padding(padding: EdgeInsets.all(4.0), child: Icon(Icons.delete_outline, size: 20, color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+class MobileGroupDetailsScreen extends StatelessWidget {
+  final ToolGroup group;
+  final List<ToolGroup> allToolGroups; 
+  final List<ToolItem> allMasterTools; 
+  final List<AppTagGroup> allTagGroups; 
+  final VoidCallback? onGroupUpdated;
+  final Future<bool> Function(String groupId, String newName, List<String> toolIds) onManageSave;
+
+  const MobileGroupDetailsScreen({
+    super.key,
+    required this.group,
+    required this.allToolGroups, 
+    required this.allMasterTools, 
+    required this.allTagGroups, 
+    this.onGroupUpdated,
+    required this.onManageSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(group.name)),
+      body: GroupDetailsWidget(
+        group: group,
+        allToolGroups: allToolGroups, 
+        allMasterTools: allMasterTools, 
+        allTagGroups: allTagGroups, 
+        onGroupUpdated: onGroupUpdated,
+        onManageSave: onManageSave, 
+      ),
+    );
+  }
+}
