@@ -11,6 +11,8 @@ import '../screens/projects/widgets/inspection_details.dart';
 
 import '../screens/canvas/canvas_screen.dart';
 
+import '../screens/templates/templates_screen.dart';
+
 import '../screens/tools/tools_manager_screen.dart';
 
 import '../screens/tags/tag_management_screen.dart';
@@ -100,6 +102,10 @@ final router = GoRouter(
               ],
             ),
           ],
+          ),
+          GoRoute(
+            path: '/templates/projects',
+            builder: (context, state) => const TemplateManagementScreen(),
           ),
           GoRoute(
             path: '/templates/tags',
