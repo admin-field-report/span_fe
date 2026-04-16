@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:field_report_fe/models/tag_models.dart';
 import '../models/tool_group.dart';
-import '../../canvas/models/canvas_models.dart';
-import '../../canvas/widgets/canvas_painter.dart';
+import '../../../widgets/canvas/models/canvas_models.dart';
+import './custom_tool_preview.dart';
 import '../../../widgets/search_field/search_field.dart';
 import '../../../widgets/button/button.dart';
 import '../create_tool_screen.dart';
 import './manage_tools_panel.dart';
+import '../controllers/tool_controller.dart';
+import '../../../utils/app_responsive.dart';
 
 class GroupDetailsWidget extends StatefulWidget {
   final ToolGroup group;
@@ -41,20 +43,44 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
     if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
   }
 
-  Widget _buildCanvasPreview(BuildContext context, String jsonString) {
+  Widget _buildCanvasPreview(BuildContext context, String? jsonString) {
+    if (jsonString == null || jsonString.trim().isEmpty || jsonString == "[]" || jsonString == "{}") {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.brush_outlined, color: Theme.of(context).colorScheme.outlineVariant, size: 32),
+            const SizedBox(height: 8),
+            Text("Empty Canvas", style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10)),
+          ],
+        ),
+      );
+    }
+
     try {
-      List<dynamic> decodedJson = jsonDecode(jsonString);
-      List<DrawingObject> objects = decodedJson.map((json) => DrawingObject.fromJson(json)).toList();
+      final dynamic decoded = jsonDecode(jsonString);
+      List<dynamic> rawObjects = [];
+
+      if (decoded is List) {
+        rawObjects = decoded;
+      } else if (decoded is Map) {
+        if (decoded.containsKey('objects') && decoded['objects'] is List) {
+          rawObjects = decoded['objects'];
+        } else {
+          rawObjects = [decoded];
+        }
+      }
+
+      List<DrawingObject> objects = rawObjects.map((json) => DrawingObject.fromJson(json as Map<String, dynamic>)).toList();
 
       return Padding(
         padding: const EdgeInsets.all(16.0),
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: IgnorePointer(
-            child: SizedBox(
-              width: 300,
-              height: 300,
-              child: CustomPaint(painter: MainPainter(context, objects, null)),
+        child: IgnorePointer(
+          child: SizedBox(
+            width: 300,
+            height: 300,
+            child: CustomPaint(
+              painter: CenteredPreviewPainter(context, objects), // 🚀 Use the new wrapper
             ),
           ),
         ),
@@ -75,115 +101,141 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isMobile = AppResponsive.isMobileScreen(context);
+
     final filteredTools = widget.group.tools.where((tool) {
       return tool.name.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
+
+    Widget actionButtons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Button(
+          label: "Manage Tools",
+          variant: ButtonVariant.outline,
+          icon: Icons.settings,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          onPressed: () {
+            Widget panelContent = ManageToolsPanel(
+              group: widget.group,
+              allMasterTools: widget.allMasterTools,
+              onSave: (String newName, List<String> selectedToolIds) async {
+                bool success = await widget.onManageSave(widget.group.id, newName, selectedToolIds);
+                if (success) {
+                  setState(() {
+                    widget.group.name = newName;
+                    widget.group.tools = widget.allMasterTools.where((t) => selectedToolIds.contains(t.id)).toList();
+                  });
+                  if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
+                }
+                return success;
+              },
+            );
+
+            if (isMobile) {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                clipBehavior: Clip.antiAlias,
+                backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                builder: (context) => SizedBox(height: MediaQuery.of(context).size.height * 0.85, child: panelContent),
+              );
+            } else {
+              showDialog(
+                context: context,
+                builder: (context) => Dialog(
+                  clipBehavior: Clip.antiAlias,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: SizedBox(width: 500, height: 600, child: panelContent),
+                ),
+              );
+            }
+          },
+        ),
+        const SizedBox(width: 12),
+        Button(
+          label: "Create Tool",
+          variant: ButtonVariant.outline,
+          icon: Icons.add,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          onPressed: () async {
+            final didCreate = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CreateToolScreen(
+                  availableGroups: widget.allToolGroups, 
+                  initialGroupId: widget.group.id,
+                  availableTagGroups: widget.allTagGroups,
+                ),
+              ),
+            );
+
+            if (didCreate == true && widget.onGroupUpdated != null) {
+              widget.onGroupUpdated!();
+            }
+          },
+        ),
+      ],
+    );
+
+    // 🚀 3. The Responsive Header Setup
+    Widget responsiveHeader = isMobile
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Text(widget.group.name, style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [actionButtons],
+              ),
+            ],
+          )
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  widget.group.name, 
+                  style: Theme.of(context).textTheme.headlineMedium,
+                  maxLines: 1, 
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 16),
+              actionButtons,
+            ],
+          );
 
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(widget.group.name, style: Theme.of(context).textTheme.headlineMedium),
-                    const SizedBox(height: 4),
-                    Text("Group ID: ${widget.group.id}", style: const TextStyle(color: Colors.grey)),
-                  ],
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Button(
-                    label: "Manage Tools",
-                    variant: ButtonVariant.outline,
-                    icon: Icons.settings,
-                    onPressed: () {
-                      bool isMobile = MediaQuery.of(context).size.width < 800;
+          responsiveHeader,
 
-                      Widget panelContent = ManageToolsPanel(
-                        group: widget.group,
-                        allMasterTools: widget.allMasterTools,
-                        onSave: (String newName, List<String> selectedToolIds) async {
-                          bool success = await widget.onManageSave(widget.group.id, newName, selectedToolIds);
-                          if (success) {
-                            setState(() {
-                              widget.group.name = newName;
-                              widget.group.tools = widget.allMasterTools.where((t) => selectedToolIds.contains(t.id)).toList();
-                            });
-                            if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
-                          }
-                          return success;
-                        },
-                      );
-
-                      if (isMobile) {
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          clipBehavior: Clip.antiAlias,
-                          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                          builder: (context) => SizedBox(height: MediaQuery.of(context).size.height * 0.85, child: panelContent),
-                        );
-                      } else {
-                        showDialog(
-                          context: context,
-                          builder: (context) => Dialog(
-                            clipBehavior: Clip.antiAlias,
-                            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: SizedBox(width: 500, height: 600, child: panelContent),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  Button(
-                    label: "Create Tool",
-                    variant: ButtonVariant.outline,
-                    icon: Icons.add,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CreateToolScreen(
-                            availableGroups: widget.allToolGroups,
-                            initialGroupId: widget.group.id,
-                            availableTagGroups: widget.allTagGroups,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
           const SizedBox(height: 24),
+          
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 16,
             runSpacing: 16,
             children: [
-              Text("${filteredTools.length} Tools found:", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               SearchField(width: 250, hintText: "Search tools...", onChanged: (value) => setState(() => _searchQuery = value)),
             ],
           ),
+          
           const SizedBox(height: 16),
+          
           if (filteredTools.isEmpty)
             Expanded(child: Center(child: Text(_searchQuery.isEmpty ? "No tools assigned yet." : "No tools match your search.")))
           else
             Expanded(
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 220, childAspectRatio: 0.85, crossAxisSpacing: 16, mainAxisSpacing: 16,
+                  maxCrossAxisExtent: 250, childAspectRatio: 0.85, crossAxisSpacing: 16, mainAxisSpacing: 16,
                 ),
                 itemCount: filteredTools.length,
                 itemBuilder: (context, index) {
@@ -239,6 +291,7 @@ class MobileGroupDetailsScreen extends StatelessWidget {
   final List<AppTagGroup> allTagGroups; 
   final VoidCallback? onGroupUpdated;
   final Future<bool> Function(String groupId, String newName, List<String> toolIds) onManageSave;
+  final ToolController toolController;
 
   const MobileGroupDetailsScreen({
     super.key,
@@ -248,19 +301,39 @@ class MobileGroupDetailsScreen extends StatelessWidget {
     required this.allTagGroups, 
     this.onGroupUpdated,
     required this.onManageSave,
+    required this.toolController,
   });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(group.name)),
-      body: GroupDetailsWidget(
-        group: group,
-        allToolGroups: allToolGroups, 
-        allMasterTools: allMasterTools, 
-        allTagGroups: allTagGroups, 
-        onGroupUpdated: onGroupUpdated,
-        onManageSave: onManageSave, 
+      
+      // 🚀 LISTEN TO THE CONTROLLER NATIVELY
+      body: ListenableBuilder(
+        listenable: toolController,
+        builder: (context, child) {
+        
+          if (toolController.isGroupDetailsLoading) {
+            return Center(
+              child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+            );
+          }
+          final freshGroup = toolController.toolGroups.firstWhere(
+            (g) => g.id == group.id,
+            orElse: () => group,
+          );
+          return GroupDetailsWidget(
+            group: freshGroup,
+            
+            allToolGroups: toolController.toolGroups, 
+            allMasterTools: toolController.masterTools, 
+            
+            allTagGroups: allTagGroups, 
+            onGroupUpdated: onGroupUpdated,
+            onManageSave: onManageSave, 
+          );
+        },
       ),
     );
   }

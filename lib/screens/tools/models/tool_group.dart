@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ToolItem {
   String id;
   String name;
@@ -10,10 +12,22 @@ class ToolItem {
   });
 
   factory ToolItem.fromJson(Map<String, dynamic> json) {
+    final rawJsonData = json['jsonData'] ?? json['json_data'];
+    
+    String canvasDataString = '[]'; 
+
+    if (rawJsonData != null) {
+      if (rawJsonData is String) {
+        canvasDataString = rawJsonData;
+      } else {
+        canvasDataString = jsonEncode(rawJsonData);
+      }
+    }
+
     return ToolItem(
       id: json['tool_id'] ?? json['id'] ?? '',
       name: json['name'] ?? 'Unnamed Tool',
-      canvasJson: json['canvas_json'] ?? '{}',
+      canvasJson: canvasDataString,
     );
   }
 }

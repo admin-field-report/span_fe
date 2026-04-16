@@ -8,6 +8,7 @@ import '../../../widgets/form_components/select_field.dart';
 import '../../../widgets/search_field/search_field.dart';
 import './models/tool_group.dart';
 import '../../../models/tag_models.dart';
+import './controllers/tool_controller.dart';
 
 // Wrapper for your custom Select field
 class GroupSelectableItem implements SelectableItem<String> {
@@ -39,6 +40,9 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
   final GlobalKey<CanvasState> _canvasKey = GlobalKey<CanvasState>();
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+
+  final ToolController _toolController = ToolController();
+  bool _isLoading = false;
   
   String? _selectedGroupId;
   final Set<String> _selectedTagIds = {};
@@ -58,7 +62,8 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     super.dispose();
   }
 
-  void _saveTool() {
+  // 🚀 2. MAKE THIS ASYNC
+  Future<void> _saveTool() async {
     // 1. Form Validation
     if (!_formKey.currentState!.validate()) return;
 
@@ -69,25 +74,31 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       return;
     }
 
+    // 3. Start Loading
+    setState(() => _isLoading = true);
+
     String toolName = _nameController.text.trim();
     String canvasJson = jsonEncode(canvasState.objects.map((e) => e.toJson()).toList());
-    debugPrint("🚀 Canvas JSON: $canvasJson");
 
-    final payload = {
-      "name": toolName,
-      "tool_group_id": _selectedGroupId,
-      "canvas_json": canvasJson,
-      "tags": _selectedTagIds.toList(), 
-    };
-
-    debugPrint("🚀 ====== CREATE TOOL PAYLOAD ======");
-    debugPrint(jsonEncode(payload)); 
-    debugPrint("=====================================");
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Tool '$toolName' created!"), backgroundColor: Colors.green),
+    // 4. Call the API (We will build this in the controller next!)
+    bool success = await _toolController.createTool(
+      name: toolName,
+      groupId: _selectedGroupId!,
+      canvasJson: canvasJson,
+      tagIds: _selectedTagIds.toList(),
     );
-    Navigator.pop(context); 
+
+    // 5. Stop Loading
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    // 6. Handle Success/Fail
+    if (success) {
+      ToastService.show(context, message: "Tool '$toolName' created successfully!", type: ToastType.success);
+      Navigator.pop(context, true); // Pass 'true' back so the parent screen knows to refresh!
+    } else {
+      ToastService.show(context, message: "Failed to create tool. Please try again.", type: ToastType.error);
+    }
   }
 
   @override
@@ -335,14 +346,15 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
         ]
       ),
       child: SafeArea(
-        top: false, // Only apply safe area to the bottom (for iPhones with home bars)
+        top: false, 
         child: Button(
-          label: "Save Tool",
+          label: _isLoading ? "Saving..." : "Save Tool", // 🚀 Dynamic Label
           variant: ButtonVariant.filled,
           width: double.infinity,
           icon: Icons.check,
+          isLoading: _isLoading, // 🚀 Triggers the spinner inside your custom button
           padding: const EdgeInsets.symmetric(vertical: 16),
-          onPressed: _saveTool,
+          onPressed: _isLoading ? null : _saveTool, // 🚀 Disable clicks while loading
         ),
       ),
     );

@@ -87,14 +87,23 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
             allToolGroups: _toolController.toolGroups,
             allMasterTools: _toolController.masterTools,
             allTagGroups: _tagController.tagGroups,
-            onManageSave: (groupId, newName, toolIds) async {
-               bool success = await _toolController.updateToolGroup(groupId, newName, toolIds);
-               if (success) {
-                  _toolController.fetchGroups();
-                  if (context.mounted) ToastService.show(context, message: "Tool Set updated successfully!", type: ToastType.success);
-               }
-               return success;
+            onGroupUpdated: () {
+              _toolController.fetchGroupDetails(group.id);
             },
+            onManageSave: (groupId, newName, toolIds) async {
+              bool success = await _toolController.updateToolGroup(
+                groupId: groupId,
+                name: newName,
+                toolIds: toolIds,
+              );
+
+              if (success) {
+                 _toolController.fetchGroups();
+              }
+
+              return success;
+            },
+            toolController: _toolController,
           )
         ),
       );
@@ -166,7 +175,13 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("Tools Management", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                      Button(label: "Create Tool Set", variant: ButtonVariant.filled, icon: Icons.create_new_folder_outlined, onPressed: () => _showCreateSetPanel(context)),
+                      Button(
+                        label: "Create Tool Set",
+                        variant: ButtonVariant.filled,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        icon: Icons.create_new_folder_outlined,
+                        onPressed: () => _showCreateSetPanel(context)
+                      ),
                     ],
                   ),
                 ),
@@ -196,13 +211,24 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                                           allToolGroups: _toolController.toolGroups,
                                           allMasterTools: _toolController.masterTools,
                                           allTagGroups: _tagController.tagGroups,
+                                          onGroupUpdated: () {
+                                            _toolController.fetchGroupDetails(activeGroup.id); 
+                                          },
+
+                                          // 🚀 1. UPDATE THE DESKTOP CALLBACK
                                           onManageSave: (groupId, newName, toolIds) async {
-                                             bool success = await _toolController.updateToolGroup(groupId, newName, toolIds);
-                                             if (success && context.mounted) {
-                                                ToastService.show(context, message: "Tool Set updated successfully!", type: ToastType.success);
-                                                _toolController.fetchGroups(); 
-                                             }
-                                             return success;
+                                            bool success = await _toolController.updateToolGroup(
+                                              groupId: groupId,
+                                              name: newName,
+                                              toolIds: toolIds,
+                                            );
+
+                                            // If successful, silently refresh the left menu to show the new group name!
+                                            if (success) {
+                                               _toolController.fetchGroups();
+                                            }
+
+                                            return success;
                                           },
                                         )
                                   : const Center(child: Text("Select a group to view details")),

@@ -49,7 +49,8 @@ class ToolController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _api.get('/customToolGroupItem/custom-tool-group/$groupId');
+      // final response = await _api.get('/customToolGroupItem/custom-tool-group/$groupId');
+      final response = await _api.get('/customToolGroupItem/customToolGroup/$groupId');
       final data = jsonDecode(response.body);
 
       if (data['data'] != null) {
@@ -121,21 +122,28 @@ class ToolController extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateToolGroup(String groupId, String name, List<String> toolIds) async {
+  // 🚀 UPDATE EXISTING TOOL GROUP
+  Future<bool> updateToolGroup({
+    required String groupId,
+    required String name,
+    required List<String> toolIds,
+  }) async {
     try {
       final payload = {
         "name": name,
-        "tool_ids": toolIds, 
+        "custom_tool_id_list": toolIds,
       };
 
-      // Assuming your ApiService uses a PUT or POST for updates
-      final response = await _api.put('/customToolGroup/company/$groupId', payload);
+      // Make the API call
+      final response = await _api.put('/customToolGroup/update/$groupId', payload);
       
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        debugPrint("✅ Tool Group updated successfully!");
-        return true; 
+      // Parse the JSON response
+      final responseData = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
       } else {
-        error = "Failed to update group. Server responded with ${response.statusCode}";
+        error = responseData['message'] ?? "Failed to update group.";
         notifyListeners();
         return false;
       }
@@ -160,6 +168,40 @@ class ToolController extends ChangeNotifier {
       }
     } catch (e) {
       error = "Network error while deleting group.";
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 🚀 CREATE A NEW TOOL
+  Future<bool> createTool({
+    required String name,
+    required String groupId,
+    required String canvasJson,
+    required List<String> tagIds,
+  }) async {
+    try {
+      final payload = {
+        "name": name,
+        "custom_tool_group_id": groupId,
+        "json_data": jsonDecode(canvasJson),
+        "tag_ids": tagIds,
+      };
+      final response = await _api.post('/customTool/new', payload);
+      
+      // Parse the JSON response
+      final responseData = jsonDecode(response.body);
+
+      // Check if the response contains the newly created tool data
+      if (responseData['data'] != null && responseData['data']['id'] != null) {
+        return true;
+      } else {
+        error = responseData['message'] ?? "Failed to create tool.";
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      error = "Network error while creating tool.";
       notifyListeners();
       return false;
     }
