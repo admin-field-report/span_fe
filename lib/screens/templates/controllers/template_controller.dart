@@ -172,28 +172,30 @@ class TemplateController extends ChangeNotifier {
   }
 
   // 🚀 Save the assigned Tag Groups
-  Future<bool> assignTagGroupsToTemplate(String templateId, List<String> tagGroupIds) async {
-    _error = null;
-    notifyListeners();
-
+  Future<bool> assignTagsToTemplate({
+    required String templateId,
+    required List<String> tagGroupIds,
+  }) async {
     try {
-      final response = await _apiService.post(
-        '/template/assignTagGroups', 
-         {
-          'template_id': templateId,
-          'tag_group_ids': tagGroupIds,
-        },
-      );
+      final payload = {
+        "template_id": templateId,
+        "tag_group_id_list": tagGroupIds,
+      };
+
+      final response = await apiService.post('/tagGroup/assign-to-template', payload);
       
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      if (data['success'] == true) {
+      // Parse the JSON response
+      final responseData = jsonDecode(response.body);
+
+      // Assuming 200/201 indicates success.
+      if (responseData['success'] == true) {
         return true;
       } else {
-        _error = data['message'] ?? "Failed to assign tag groups";
+        notifyListeners();
         return false;
       }
     } catch (e) {
-      _error = "Network error while assigning";
+      notifyListeners();
       return false;
     }
   }
@@ -212,6 +214,33 @@ class TemplateController extends ChangeNotifier {
       return [];
     } catch (e) {
       return [];
+    }
+  }
+
+  // 🚀 ASSIGN TOOL GROUPS TO TEMPLATE
+  Future<bool> assignToolGroupsToTemplate({
+    required String templateId,
+    required List<String> toolGroupIds,
+  }) async {
+    try {
+      final payload = {
+        "template_id": templateId,
+        "custom_tool_group_id_list": toolGroupIds,
+      };
+
+      final response = await apiService.post('/templateCustomToolGroup/assign-custom-tool-group', payload);
+      
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true) {
+        return true;
+      } else {
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      notifyListeners();
+      return false;
     }
   }
 

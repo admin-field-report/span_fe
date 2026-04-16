@@ -30,15 +30,6 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
   }
 
-  void _handleDelete(Template template) {
-    if (_selectedTemplate?.id == template.id) {
-      setState(() {
-        _selectedTemplate = null;
-      });
-    }
-    templateController.removeTemplate(template.id);
-  }
-
   void _handleTemplateSelected(Template template, bool isMobile) {
     if (isMobile) {
       Navigator.push(

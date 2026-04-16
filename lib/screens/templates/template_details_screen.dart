@@ -379,15 +379,13 @@ final Set<int> _fetchedTabs = {};
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              
-              OutlinedButton.icon(
-                icon: Icon(buttonIcon, size: 18), // 🚀 Dynamic Icon
-                label: Text(buttonLabel, style: const TextStyle(fontWeight: FontWeight.bold)), // 🚀 Dynamic Label
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: onActionButtonPressed, 
+
+              Button(
+                label: buttonLabel,
+                onPressed: onActionButtonPressed,
+                variant: ButtonVariant.outline,
+                icon: buttonIcon,
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               )
             ],
           ),
@@ -595,26 +593,22 @@ class _ManageTagGroupsContentState extends State<ManageTagGroupsContent> {
   }
 
   Future<void> _save() async {
-    // setState(() => _isSaving = true);
+    setState(() => _isSaving = true);
 
-    // final success = await templateController.assignTagGroupsToTemplate(
-    //   widget.templateId,
-    //   _selectedIds.toList(),
-    // );
+    bool success = await templateController.assignTagsToTemplate(
+      templateId: widget.templateId, 
+      tagGroupIds: _selectedIds.toList(),
+    );
 
-    // if (!mounted) return;
+    if (!mounted) return;
 
-    // if (success) {
-    //   Navigator.pop(context, true);
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     const SnackBar(content: Text("Tag Groups updated!"), backgroundColor: Colors.green),
-    //   );
-    // } else {
-    //   setState(() => _isSaving = false);
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(content: Text(templateController.error ?? "Update failed"), backgroundColor: Colors.red),
-    //   );
-    // }
+    if (success) {
+      Navigator.pop(context, true);
+      ToastService.show(context, message: "Tag Groups updated!", type: ToastType.success);
+    } else {
+      setState(() => _isSaving = false);
+      ToastService.show(context, message: "Failed to update Tag Groups.", type: ToastType.error);
+    }
   }
 
   @override
@@ -633,113 +627,120 @@ class _ManageTagGroupsContentState extends State<ManageTagGroupsContent> {
       filteredList = filteredList.where((g) => !_selectedIds.contains(g.id)).toList();
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // HEADER
-        Padding(
-          padding: EdgeInsets.only(
-            left: 24.0, right: 16.0, 
-            top: widget.isMobile ? 16.0 : 24.0, 
-            bottom: 16.0
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return PopScope(
+      canPop: !_isSaving, 
+      
+      child: AbsorbPointer(
+          absorbing: _isSaving, 
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Manage Tag Groups", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              )
-            ],
-          ),
-        ),
-        
-        // SEARCH BAR
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: SearchField(
-            width: 350,
-            onChanged: (val) => setState(() => _searchQuery = val),
-          ),
-        ),
-        const SizedBox(height: 16),
+              // HEADER
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 16.0, 
+                  top: widget.isMobile ? 16.0 : 24.0, 
+                  bottom: 16.0
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Manage Tag Groups", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  ],
+                ),
+              ),
+              
+              // SEARCH BAR
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: SearchField(
+                  width: 350,
+                  onChanged: (val) => setState(() => _searchQuery = val),
+                ),
+              ),
+              const SizedBox(height: 16),
 
-        // FILTER CHIPS (All | Selected | Unselected)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              _buildFilterChip("All", TagFilter.all, theme),
-              _buildFilterChip("Selected (${_selectedIds.length})", TagFilter.selected, theme),
-              _buildFilterChip("Unselected", TagFilter.unselected, theme),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+              // FILTER CHIPS (All | Selected | Unselected)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    _buildFilterChip("All", TagFilter.all, theme),
+                    _buildFilterChip("Selected (${_selectedIds.length})", TagFilter.selected, theme),
+                    _buildFilterChip("Unselected", TagFilter.unselected, theme),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
 
-        // THE LIST
-        Expanded(
-          child: _isLoading
-              ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
-              : filteredList.isEmpty
-                  ? Center(child: Text("No groups match your filters.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
-                  : ListView.builder(
-                      itemCount: filteredList.length,
-                      itemBuilder: (context, index) {
-                        final group = filteredList[index];
-                        final isSelected = _selectedIds.contains(group.id);
+              // THE LIST
+              Expanded(
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+                    : filteredList.isEmpty
+                        ? Center(child: Text("No groups match your filters.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                        : ListView.builder(
+                            itemCount: filteredList.length,
+                            itemBuilder: (context, index) {
+                              final group = filteredList[index];
+                              final isSelected = _selectedIds.contains(group.id);
 
-                        return CheckboxListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-                          title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                          value: isSelected,
-                          activeColor: theme.colorScheme.primary,
-                          controlAffinity: ListTileControlAffinity.trailing,
-                          onChanged: (bool? checked) {
-                            setState(() {
-                              if (checked == true) {
-                                _selectedIds.add(group.id);
-                              } else {
-                                _selectedIds.remove(group.id);
-                              }
-                            });
-                          },
-                        );
-                      },
+                              return CheckboxListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                                value: isSelected,
+                                activeColor: theme.colorScheme.primary,
+                                controlAffinity: ListTileControlAffinity.trailing,
+                                onChanged: (bool? checked) {
+                                  setState(() {
+                                    if (checked == true) {
+                                      _selectedIds.add(group.id);
+                                    } else {
+                                      _selectedIds.remove(group.id);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+              ),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+              // ACTIONS
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 24.0, 
+                  top: 16.0, 
+                  bottom: widget.isMobile ? 32.0 : 24.0 // Extra padding on mobile for home bars
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Button(
+                      label: "Cancel",
+                      variant: ButtonVariant.outline,
+                      onPressed: _isSaving ? null : () => Navigator.pop(context),
                     ),
-        ),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-
-        // ACTIONS
-        Padding(
-          padding: EdgeInsets.only(
-            left: 24.0, right: 24.0, 
-            top: 16.0, 
-            bottom: widget.isMobile ? 32.0 : 24.0 // Extra padding on mobile for home bars
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button(
-                label: "Cancel",
-                variant: ButtonVariant.outline,
-                onPressed: _isSaving ? null : () => Navigator.pop(context),
-              ),
-              const SizedBox(width: 12),
-              Button(
-                label: "Save Changes",
-                variant: ButtonVariant.filled,
-                isLoading: _isSaving,
-                onPressed: _isSaving ? null : _save,
+                    const SizedBox(width: 12),
+                    Button(
+                      label: "Save Changes",
+                      variant: ButtonVariant.filled,
+                      isLoading: _isSaving,
+                      onPressed: _isSaving ? null : _save,
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
+          )
         ),
-      ],
     );
   }
 
@@ -792,7 +793,6 @@ class _ManageToolSetsContentState extends State<ManageToolSetsContent> {
   @override
   void initState() {
     super.initState();
-    // 🚀 CRUCIAL: Map the customToolGroupId from the assigned list to pre-select them!
     _selectedIds = widget.currentlyAssigned.map((g) => g.customToolGroupId).toSet();
     _fetchMasterList();
   }
@@ -807,17 +807,24 @@ class _ManageToolSetsContentState extends State<ManageToolSetsContent> {
     }
   }
 
+
   Future<void> _save() async {
-    // TODO: Wire up your POST API when ready!
-    // setState(() => _isSaving = true);
-    // final success = await templateController.assignToolGroupsToTemplate(
-    //   widget.templateId,
-    //   _selectedIds.toList(),
-    // );
-    // ...
-    
-    // For now, we just close the modal
-    Navigator.pop(context, true);
+    setState(() => _isSaving = true);
+
+    bool success = await templateController.assignToolGroupsToTemplate(
+      templateId: widget.templateId, 
+      toolGroupIds: _selectedIds.toList(),
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pop(context, true);
+      ToastService.show(context, message: "Tool Groups updated!", type: ToastType.success);
+    } else {
+      setState(() => _isSaving = false);
+      ToastService.show(context, message: "Failed to update Tool Groups.", type: ToastType.error);
+    }
   }
 
   @override
@@ -836,107 +843,113 @@ class _ManageToolSetsContentState extends State<ManageToolSetsContent> {
       filteredList = filteredList.where((g) => !_selectedIds.contains(g.id)).toList();
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // HEADER
-        Padding(
-          padding: EdgeInsets.only(
-            left: 24.0, right: 16.0, 
-            top: widget.isMobile ? 16.0 : 24.0, 
-            bottom: 16.0
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return PopScope(
+      canPop: !_isSaving,
+      child: AbsorbPointer(
+          absorbing: _isSaving, 
+          child:Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Manage Tool Sets", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context))
-            ],
-          ),
-        ),
-        
-        // SEARCH BAR
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: SearchField(
-            width: 350,
-            hintText: "Search tool sets...",
-            onChanged: (val) => setState(() => _searchQuery = val),
-          ),
-        ),
-        const SizedBox(height: 16),
+              // HEADER
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 16.0, 
+                  top: widget.isMobile ? 16.0 : 24.0, 
+                  bottom: 16.0
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Manage Tool Sets", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context))
+                  ],
+                ),
+              ),
+              
+              // SEARCH BAR
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: SearchField(
+                  width: 350,
+                  hintText: "Search tool sets...",
+                  onChanged: (val) => setState(() => _searchQuery = val),
+                ),
+              ),
+              const SizedBox(height: 16),
 
-        // FILTER CHIPS
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              _buildFilterChip("All", ToolSetFilter.all, theme),
-              _buildFilterChip("Selected (${_selectedIds.length})", ToolSetFilter.selected, theme),
-              _buildFilterChip("Unselected", ToolSetFilter.unselected, theme),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+              // FILTER CHIPS
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    _buildFilterChip("All", ToolSetFilter.all, theme),
+                    _buildFilterChip("Selected (${_selectedIds.length})", ToolSetFilter.selected, theme),
+                    _buildFilterChip("Unselected", ToolSetFilter.unselected, theme),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
 
-        // THE LIST
-        Expanded(
-          child: _isLoading
-              ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
-              : filteredList.isEmpty
-                  ? Center(child: Text("No tool sets match your filters.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
-                  : ListView.builder(
-                      itemCount: filteredList.length,
-                      itemBuilder: (context, index) {
-                        final group = filteredList[index];
-                        final isSelected = _selectedIds.contains(group.id);
+              // THE LIST
+              Expanded(
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+                    : filteredList.isEmpty
+                        ? Center(child: Text("No tool sets match your filters.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                        : ListView.builder(
+                            itemCount: filteredList.length,
+                            itemBuilder: (context, index) {
+                              final group = filteredList[index];
+                              final isSelected = _selectedIds.contains(group.id);
 
-                        return CheckboxListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-                          title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w500)),
-                          value: isSelected,
-                          activeColor: theme.colorScheme.primary,
-                          controlAffinity: ListTileControlAffinity.trailing,
-                          onChanged: (bool? checked) {
-                            setState(() {
-                              checked == true ? _selectedIds.add(group.id) : _selectedIds.remove(group.id);
-                            });
-                          },
-                        );
-                      },
+                              return CheckboxListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                                value: isSelected,
+                                activeColor: theme.colorScheme.primary,
+                                controlAffinity: ListTileControlAffinity.trailing,
+                                onChanged: (bool? checked) {
+                                  setState(() {
+                                    checked == true ? _selectedIds.add(group.id) : _selectedIds.remove(group.id);
+                                  });
+                                },
+                              );
+                            },
+                          ),
+              ),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+              // ACTIONS
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 24.0, 
+                  top: 16.0, 
+                  bottom: widget.isMobile ? 32.0 : 24.0
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Button(
+                      label: "Cancel",
+                      variant: ButtonVariant.outline,
+                      onPressed: _isSaving ? null : () => Navigator.pop(context),
                     ),
-        ),
-        Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-
-        // ACTIONS
-        Padding(
-          padding: EdgeInsets.only(
-            left: 24.0, right: 24.0, 
-            top: 16.0, 
-            bottom: widget.isMobile ? 32.0 : 24.0
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Button(
-                label: "Cancel",
-                variant: ButtonVariant.outline,
-                onPressed: _isSaving ? null : () => Navigator.pop(context),
-              ),
-              const SizedBox(width: 12),
-              Button(
-                label: "Save Changes",
-                variant: ButtonVariant.filled,
-                isLoading: _isSaving,
-                onPressed: _isSaving ? null : _save,
+                    const SizedBox(width: 12),
+                    Button(
+                      label: "Save Changes",
+                      variant: ButtonVariant.filled,
+                      isLoading: _isSaving,
+                      onPressed: _isSaving ? null : _save,
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
-        ),
-      ],
+          )
+      )
     );
   }
 
