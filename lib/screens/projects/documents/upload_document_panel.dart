@@ -39,7 +39,6 @@ class _UploadDocumentPanelState extends State<UploadDocumentPanel> {
         });
       }
     } catch (e) {
-      debugPrint("Error picking file: $e");
       if (mounted) {
         ToastService.show(context, message: "Failed to pick file", type: ToastType.error);
       }
@@ -124,7 +123,6 @@ class _UploadDocumentPanelState extends State<UploadDocumentPanel> {
       if (!mounted) return;
 
       if (linkData['success'] == true) {
-          debugPrint("✅ Document completely uploaded and linked to project!");
           ToastService.show(context, message: "Document uploaded successfully!", type: ToastType.success);
           
           // Close the panel and pass 'true' to trigger the table refresh
@@ -134,7 +132,6 @@ class _UploadDocumentPanelState extends State<UploadDocumentPanel> {
         }
 
     } catch (e) {
-      debugPrint("🚨 Error uploading document: $e");
       if (mounted) {
         ToastService.show(context, message: "Upload failed: $e", type: ToastType.error);
       }

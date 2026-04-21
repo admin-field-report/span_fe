@@ -119,6 +119,7 @@ class AuthController extends ChangeNotifier {
     required String email,
     required String firstName,
     required String lastName,
+    required String companyName,
   }) async {
     _isCreatingUser = true;
     _errorMessageCreatingUser = null;
@@ -129,6 +130,7 @@ class AuthController extends ChangeNotifier {
         'email': email,
         'first_name': firstName,
         'last_name': lastName,
+        'company_name': companyName,
       });
 
       if (response.statusCode == 200 || response.statusCode == 201) {

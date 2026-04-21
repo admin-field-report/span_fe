@@ -20,6 +20,7 @@ class _SignupFormState extends State<SignupForm> {
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _companyNameController = TextEditingController();
   
   bool _agreedToDataProcessing = false;
 
@@ -32,6 +33,7 @@ class _SignupFormState extends State<SignupForm> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
+    _companyNameController.dispose();
     super.dispose();
   }
 
@@ -68,6 +70,7 @@ class _SignupFormState extends State<SignupForm> {
       email: _emailController.text.trim(),
       firstName: _firstNameController.text.trim(),
       lastName: _lastNameController.text.trim(),
+      companyName: _companyNameController.text.trim(),
       );
 
       if (success && mounted) {
@@ -127,6 +130,17 @@ class _SignupFormState extends State<SignupForm> {
               if (!RegExp(r'^[\w\+\-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) {
                 return 'Please enter a valid email';
               }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+
+          EmeraldTextField(
+            controller: _companyNameController,
+            hintText: "Company Name",
+            prefixIcon: Icons.business,
+            validator: (val) {
+              if (val == null || val.isEmpty) return 'Company name is required';
               return null;
             },
           ),
