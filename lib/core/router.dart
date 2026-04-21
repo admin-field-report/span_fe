@@ -7,7 +7,7 @@ import '../screens/settings/settings_screen.dart';
 import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
-import '../screens/projects/widgets/inspection_details.dart';
+import '../screens/projects/inspections/inspection_details.dart';
 
 import '../screens/canvas/canvas_screen.dart';
 

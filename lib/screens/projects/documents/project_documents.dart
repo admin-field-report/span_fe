@@ -6,6 +6,7 @@ import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
+import './upload_document_panel.dart';
 
 class ProjectDocuments extends StatefulWidget {
     final String projectId;
@@ -74,6 +75,38 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
           ),
         ),
       );
+  }
+
+  void _showUploadPanel() async {
+    final isMobile = AppResponsive.isMobileScreen(context);
+
+    // Capture the result so we know if the upload succeeded!
+    final didUpload = await (isMobile 
+        ? showModalBottomSheet<bool>(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (context) => ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: UploadDocumentPanel(projectId: widget.projectId),
+            ),
+          )
+        : showDialog<bool>(
+            context: context,
+            builder: (context) => Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                width: 500, // Slightly narrower than inspections since it's just a file picker
+                child: UploadDocumentPanel(projectId: widget.projectId),
+              ),
+            ),
+          ));
+
+    // 🚀 If the panel returned true, automatically refresh the table!
+    if (didUpload == true && mounted) {
+      projectController.getAllDocuments(widget.projectId);
+    }
   }
 
   @override
@@ -155,7 +188,7 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
     );
   }
 
-Widget _buildTopToolbar(ThemeData theme) {
+  Widget _buildTopToolbar(ThemeData theme) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final colorScheme = theme.colorScheme;
 
@@ -163,17 +196,20 @@ Widget _buildTopToolbar(ThemeData theme) {
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
         children: [
+          // Search Field
           Expanded(
             child: SearchField(
-              width: 350,
+              width: isDesktop ? 350 : double.infinity,
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
           ),
 
+          if (isDesktop) const Spacer(),
+          if (!isDesktop) const SizedBox(width: 12), // Spacing for mobile
+
           if (isDesktop) ...[
-            const Spacer(),
             Tooltip(
-              message: 'Refresh Document',
+              message: 'Refresh Documents',
               child: InkWell(
                 onTap: projectController.isDocumentsLoading ? null : () {
                   projectController.getAllDocuments(widget.projectId);
@@ -193,7 +229,17 @@ Widget _buildTopToolbar(ThemeData theme) {
                 ),
               ),
             ),
+            const SizedBox(width: 16),
           ],
+
+          // 🚀 THE NEW UPLOAD BUTTON
+          Button(
+            label: isDesktop ? "Upload Document" : "Upload", 
+            variant: ButtonVariant.filled,
+            icon: Icons.upload_file, // A nice distinct icon for document uploads!
+            onPressed: () => _showUploadPanel(),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
         ],
       )
     );

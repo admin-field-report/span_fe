@@ -8,6 +8,7 @@ import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
+import './create_inspection_panel.dart';
 
 class ProjectInspectionsTab extends StatefulWidget {
   final String projectId;
@@ -76,6 +77,38 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
         ),
       ),
     );
+  }
+
+  void _showCreateInspectionPanel() {
+    final isMobile = AppResponsive.isMobileScreen(context);
+
+    if (isMobile) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => SizedBox(
+          height: MediaQuery.of(context).size.height * 0.85, 
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: CreateInspectionPanel(projectId: widget.projectId),
+          ),
+        ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: 600, 
+            height: 700, 
+            child: CreateInspectionPanel(projectId: widget.projectId),
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -185,15 +218,20 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
         children: [
+          // Search Field
           Expanded(
             child: SearchField(
-              width: 350,
+              // On desktop we restrict the width, on mobile we let it fill the remaining space flexibly
+              width: isDesktop ? 350 : double.infinity, 
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
           ),
 
+          if (isDesktop) const Spacer(),
+          if (!isDesktop) const SizedBox(width: 12), // Adds spacing on mobile so the button doesn't hug the search bar
+
+          // Refresh Button (Desktop Only)
           if (isDesktop) ...[
-            const Spacer(),
             Tooltip(
               message: 'Refresh Inspections',
               child: InkWell(
@@ -215,7 +253,17 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
                 ),
               ),
             ),
+            const SizedBox(width: 16),
           ],
+
+          // 🚀 THE NEW CREATE BUTTON
+          Button(
+            label: isDesktop ? "Create Inspection" : "Create",
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), 
+            variant: ButtonVariant.filled,
+            icon: Icons.add,
+            onPressed: _showCreateInspectionPanel,
+          ),
         ],
       )
     );
