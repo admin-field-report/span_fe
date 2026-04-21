@@ -210,7 +210,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                                     label: "Create Blank Inspection",
                                     variant: ButtonVariant.filled,
                                     icon: Icons.add,
-                                    onPressed: () => _createNewInspection(), // No IDs passed = Blank Inspection
+                                    onPressed: _documents.isEmpty ? null : () => _createNewInspection(),
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                   ),
                                 ],
@@ -218,7 +218,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                               const SizedBox(height: 16),
                               
                               if (_documents.isEmpty)
-                                Text("No template documents available.", style: TextStyle(color: colorScheme.outline))
+                                Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
                               else
                                 ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme)),
 
@@ -229,7 +229,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                               const SizedBox(height: 16),
 
                               if (_inspections.isEmpty)
-                                Text("No previous inspections found.", style: TextStyle(color: colorScheme.outline))
+                                Text("No previous inspections found.", style: TextStyle(color: colorScheme.secondary))
                               else
                                 ..._inspections.map((insp) => _buildInspectionCard(insp, colorScheme)),
                             ],
