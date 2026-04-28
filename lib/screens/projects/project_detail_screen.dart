@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'inspections/project_inspections.dart';
 import 'documents/project_documents.dart';
-import './widgets/project_reports.dart';
+import 'reports/project_reports.dart';
 import './widgets/project_medias.dart';
 import '../../widgets/tab/tab.dart';
 

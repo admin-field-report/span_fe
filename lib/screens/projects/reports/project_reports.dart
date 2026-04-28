@@ -6,6 +6,7 @@ import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
+import './create_report_screen.dart';
 
 class ProjectReports extends StatefulWidget {
     final String projectId;
@@ -155,7 +156,7 @@ class _ProjectReportsState extends State<ProjectReports> {
     );
   }
 
-  Widget _buildTopToolbar(ThemeData theme) {
+Widget _buildTopToolbar(ThemeData theme) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final colorScheme = theme.colorScheme;
 
@@ -163,17 +164,22 @@ class _ProjectReportsState extends State<ProjectReports> {
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
         children: [
+          // Search Field
           Expanded(
             child: SearchField(
-              width: 350,
+              // Let it fill space on mobile, constrain to 350 on desktop
+              width: isDesktop ? 350 : double.infinity, 
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
           ),
 
+          if (isDesktop) const Spacer(),
+          if (!isDesktop) const SizedBox(width: 12), // Add breathing room on mobile
+
+          // Refresh Button (Desktop Only)
           if (isDesktop) ...[
-            const Spacer(),
             Tooltip(
-              message: 'Refresh Report',
+              message: 'Refresh Reports',
               child: InkWell(
                 onTap: projectController.isReportLoading ? null : () {
                   projectController.getAllReports(widget.projectId);
@@ -193,7 +199,28 @@ class _ProjectReportsState extends State<ProjectReports> {
                 ),
               ),
             ),
+            const SizedBox(width: 16),
           ],
+
+          // 🚀 THE NEW CREATE REPORT BUTTON
+          // 🚀 THE NEW CREATE REPORT BUTTON
+          Button(
+            label: isDesktop ? "Create Report" : "Create", 
+            variant: ButtonVariant.filled,
+            icon: Icons.add,
+            onPressed: () async {
+              // Push the new screen and wait for it to return true
+              final didCreate = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
+              );
+
+              // If report was created successfully, refresh the table!
+              if (didCreate == true && mounted) {
+                projectController.getAllReports(widget.projectId);
+              }
+            },
+          ),
         ],
       )
     );
