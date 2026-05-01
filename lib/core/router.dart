@@ -8,19 +8,12 @@ import '../screens/layout/main_scaffold.dart';
 import '../screens/projects/project_screen.dart';
 import '../screens/projects/project_detail_screen.dart';
 import '../screens/projects/inspections/inspection_details.dart';
-
 import '../screens/canvas/canvas_screen.dart';
-
 import '../screens/templates/templates_screen.dart';
-
 import '../screens/tools/tools_manager_screen.dart';
-
 import '../screens/tags/tag_management_screen.dart';
-
 import '../screens/ai_data/ai_data_screen.dart';
-
 import '../widgets/canvas/canvas.dart';
-
 import '../screens/layout/not_found_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -102,66 +95,90 @@ final router = GoRouter(
               ],
             ),
           ],
-          ),
-          GoRoute(
-            path: '/templates/projects',
-            builder: (context, state) => const TemplateManagementScreen(),
-          ),
-          GoRoute(
-            path: '/templates/tags',
-            builder: (context, state) => const TagManagementScreen(),
-          ),
-          GoRoute(
-            path: '/templates/tools',
-            builder: (context, state) => const ToolsManagerScreen(),
-          ),
-          GoRoute(
-            path: '/ai',
-            builder: (context, state) => const AIDataScreen(),
-          ),
-          GoRoute(
-            path: '/canvas',
-            builder: (context, state) => const Canvas(),
-          ),
+        ),
+        GoRoute(
+          path: '/templates/projects',
+          builder: (context, state) => const TemplateManagementScreen(),
+        ),
+        GoRoute(
+          path: '/templates/tags',
+          builder: (context, state) => const TagManagementScreen(),
+        ),
+        GoRoute(
+          path: '/templates/tools',
+          builder: (context, state) => const ToolsManagerScreen(),
+        ),
+        GoRoute(
+          path: '/ai',
+          builder: (context, state) => const AIDataScreen(),
+        ),
+        GoRoute(
+          path: '/canvas',
+          builder: (context, state) => const Canvas(),
+        ),
       ],
     ),
   ],
 
+  // 🚀 BULLETPROOF WEB REDIRECT LOGIC
   redirect: (context, state) {
     final bool isAuthenticated = authController.isAuthenticated;
     final bool isInitialized = authController.isInitialized;
-    final String location = state.matchedLocation;
+    
+    final String path = state.uri.path;
+    final String fullUri = state.uri.toString();
 
-    // 1. Still Booting? Stay on /loading (if you use it as a route)
-    if (!isInitialized) return '/loading';
+    // 1. Extract the intended destination from the URL if it exists
+    final String? continueTo = state.uri.queryParameters['continue'];
 
-    // 2. Not logged in? Force to /login unless they are already there
+    // Helper function: Safely attach the intended path to the redirect URL
+    String createRedirect(String targetPath) {
+      // Don't save default routes as "intended destinations"
+      final targetUri = continueTo ?? (path != '/' && path != '/login' && path != '/loading' && path != '/signup' ? fullUri : null);
+      
+      if (targetUri != null) {
+        // This safely encodes the URL. Example: /loading?continue=%2Fcanvas%3Fdoc%3D123
+        return Uri(path: targetPath, queryParameters: {'continue': targetUri}).toString();
+      }
+      return targetPath;
+    }
+
+    // 2. Still Booting? Force to /loading and save the deep link in the URL
+    if (!isInitialized) {
+      if (path == '/loading') return null; 
+      return createRedirect('/loading');
+    }
+
+    // 3. Not logged in? Force to /login and save the deep link in the URL
     if (!isAuthenticated) {
-      return (location == '/login') ? null : '/login';
+      if (path == '/login' || path == '/signup') return null; 
+      return createRedirect('/login');
     }
 
-    // 3. Logged in but User Data is missing? Fetch it on /loading
+    // 4. Logged in but User Data is missing? Fetch it on /loading
     if (isAuthenticated && authController.user == null) {
-      return (location == '/loading') ? null : '/loading';
+      if (path == '/loading') return null;
+      return createRedirect('/loading');
     }
 
-    // 4. Logged in and trying to hit Login or Loading? Send to Dashboard
-    if (isAuthenticated && (location == '/login' || location == '/loading')) {
-      return '/';
+    // 5. Fully Authenticated and Booted!
+    // If they are sitting on a public screen, release them to their intended path
+    if (path == '/login' || path == '/loading' || path == '/signup') {
+      if (continueTo != null && continueTo.isNotEmpty) {
+        return continueTo; // Send them back to the deep link!
+      }
+      return '/'; // Default fallback if no deep link existed
     }
 
-    // 5. IMPORTANT: Allow all other paths! 
-    // If we return null, GoRouter stays on the path the user clicked (e.g., /settings)
+    // 6. Allow all normal navigation to proceed
     return null;
   },
 );
 
-
-// Private Page 1
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
   @override
   Widget build(BuildContext context) {
-    return Text("Dashboard (Private)");
+    return const Text("Dashboard (Private)");
   }
 }
