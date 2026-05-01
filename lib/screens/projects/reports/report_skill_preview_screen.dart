@@ -163,7 +163,8 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
     try {
       final payload = {
         "inspection_ids": widget.inspectionIds,
-        "skill_id": widget.skillId
+        "skill_id": widget.skillId,
+        "project_id": widget.projectId,
       };
 
       final startRes = await _apiService.post('/inspection/report/generate', payload);

@@ -7,9 +7,10 @@ import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
+import './edit_report_screen.dart';
 
 class ProjectReports extends StatefulWidget {
-    final String projectId;
+  final String projectId;
 
   const ProjectReports({super.key, required this.projectId});
 
@@ -59,22 +60,22 @@ class _ProjectReportsState extends State<ProjectReports> {
     }
   }
 
-  void _confirmDelete(BuildContext context,  ProjectReport report) {
+  void _confirmDelete(BuildContext context, ProjectReport report) {
     showDialog(
-        context: context,
-        barrierColor: Colors.black.withOpacity(0.5),
-        builder: (context) => Center(
-          child: Material(
-            color: Colors.transparent,
-            child: ConfirmationDialog(
-              title: "Remove Report",
-              description: "Are you sure you want to remove this for '${report.name}'?",
-              confirmLabel: "Remove",
-              onConfirm: () async => await removeReport(context, report.id),
-            ),
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: ConfirmationDialog(
+            title: "Remove Report",
+            description: "Are you sure you want to remove this for '${report.name}'?",
+            confirmLabel: "Remove",
+            onConfirm: () async => await removeReport(context, report.id),
           ),
         ),
-      );
+      ),
+    );
   }
 
   @override
@@ -97,9 +98,9 @@ class _ProjectReportsState extends State<ProjectReports> {
                 children: [
                   _buildTopToolbar(theme),
                   const SizedBox(height: 10),
-                    ListenableBuilder(
-                      listenable: projectController,
-                      builder: (context, child) {
+                  ListenableBuilder(
+                    listenable: projectController,
+                    builder: (context, child) {
                       final displayData = _getFilteredReports();
                       return CommonTable<ProjectReport>(
                         isLoading: projectController.isReportLoading,
@@ -133,14 +134,38 @@ class _ProjectReportsState extends State<ProjectReports> {
                               DateFormat('dd MMM yyyy').format(item.createDate),
                             ),
                           ),
+                          // 🚀 UPDATED ACTIONS COLUMN
                           TableColumn(
                             title: "Actions",
                             flex: 0,
-                            minWidth: 100,
-                            builder: (report) => IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20),
-                              color: colorScheme.error,
-                              onPressed: () => _confirmDelete(context, report),
+                            minWidth: 120, // Increased slightly to fit two icons comfortably
+                            builder: (report) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 20),
+                                  color: colorScheme.primary,
+                                  tooltip: "Edit Report",
+                                  onPressed: () async {
+                                    final didUpdate = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => EditReportScreen(reportId: report.id),
+                                      ),
+                                    );
+
+                                    if (didUpdate == true && mounted) {
+                                      projectController.getAllReports(widget.projectId);
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: colorScheme.error,
+                                  tooltip: "Delete Report",
+                                  onPressed: () => _confirmDelete(context, report),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -156,7 +181,7 @@ class _ProjectReportsState extends State<ProjectReports> {
     );
   }
 
-Widget _buildTopToolbar(ThemeData theme) {
+  Widget _buildTopToolbar(ThemeData theme) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final colorScheme = theme.colorScheme;
 
@@ -202,8 +227,7 @@ Widget _buildTopToolbar(ThemeData theme) {
             const SizedBox(width: 16),
           ],
 
-          // 🚀 THE NEW CREATE REPORT BUTTON
-          // 🚀 THE NEW CREATE REPORT BUTTON
+          // Create Report Button
           Button(
             label: isDesktop ? "Create Report" : "Create", 
             variant: ButtonVariant.filled,
