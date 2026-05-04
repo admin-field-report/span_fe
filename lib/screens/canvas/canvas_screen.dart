@@ -194,7 +194,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     
     await _fetchAvailableTags(); 
     await _fetchCustomTools(); 
-    await _fetchInspectionAnnotation(); // 🚀 FETCH INSPECTION DATA
+    await _fetchInspectionAnnotation(); 
     
     if (widget.annotateImageKey != null) {
       _pages = ['Attached Image'];
@@ -227,15 +227,15 @@ class _CanvasScreenState extends State<CanvasScreen> {
              for (var item in items) {
                 DrawingType parsedType = _parseDrawingType(item['type']);
                 String? savedToolId = item['toolId'];
-                ui.Image? decodedToolImg;
-                String? toolBase64;
+                
+                // 🚀 NEW: We extract the JSON shapes instead of the image
+                List<DrawingObject>? matchedInternalShapes;
 
                 if (parsedType == DrawingType.customTool && savedToolId != null) {
                   for (var group in _customToolGroups) {
                     try {
                       final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
-                      decodedToolImg = matchedTool.decodedImage;
-                      toolBase64 = matchedTool.base64ImageUrl;
+                      matchedInternalShapes = matchedTool.toolObjects;
                       break;
                     } catch(e) {} 
                   }
@@ -244,8 +244,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 loadedObjects.add(DrawingObject(
                   type: parsedType,
                   toolId: savedToolId,
-                  customImage: decodedToolImg,
-                  base64Image: toolBase64,
+                  internalShapes: matchedInternalShapes, // 🚀 Inject the JSON objects here!
                   start: Offset(item['start']['dx'] * 816.0, item['start']['dy'] * 1056.0),
                   end: Offset(item['end']['dx'] * 816.0, item['end']['dy'] * 1056.0),
                   text: item['text'],
@@ -286,7 +285,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
     setState(() => _isLoadingDocument = false);
   }
-
+  
   Future<void> _fetchPageList() async {
     try {
       final response = await _apiService.get('/templateDocumentPage/template-document/${widget.documentId}');
@@ -348,8 +347,25 @@ class _CanvasScreenState extends State<CanvasScreen> {
           List<DrawingObject> loadedObjects = [];
           for (var item in pageJson['items']) {
             DrawingType parsedType = _parseDrawingType(item['type']);
+            String? savedToolId = item['toolId'];
+            
+            // 🚀 NEW: Extract JSON shapes for multi-page documents
+            List<DrawingObject>? matchedInternalShapes;
+            
+            if (parsedType == DrawingType.customTool && savedToolId != null) {
+              for (var group in _customToolGroups) {
+                try {
+                  final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
+                  matchedInternalShapes = matchedTool.toolObjects;
+                  break;
+                } catch(e) {} 
+              }
+            }
+
             loadedObjects.add(DrawingObject(
               type: parsedType,
+              toolId: savedToolId,
+              internalShapes: matchedInternalShapes, // 🚀 Inject shapes here!
               start: Offset((item['start']['dx'] ?? 0.0) * 816.0, (item['start']['dy'] ?? 0.0) * 1056.0),
               end: Offset((item['end']['dx'] ?? 0.0) * 816.0, (item['end']['dy'] ?? 0.0) * 1056.0),
               strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
@@ -530,28 +546,45 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Future<void> _fetchCustomTools() async {
     try {
-      final response = await _apiService.get('/customTool/project/${widget.projectId}');
+      final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
         List<CustomToolGroup> loadedGroups = [];
+        
         for (var groupJson in responseData['data']) {
           List<CustomTool> tools = [];
+          
+          // Using the exact key 'toolds' from your API response
           if (groupJson['toolds'] != null) {
             for (var toolJson in groupJson['toolds']) {
-              ui.Image decodedImg = await _decodeBase64Image(toolJson['base64ImageUrl']);
+              List<DrawingObject> parsedObjects = [];
+              
+              // 🚀 Using 'imageJsonData' from the API to parse the vector shapes
+              if (toolJson['imageJsonData'] != null) {
+                for (var item in toolJson['imageJsonData']) {
+                  parsedObjects.add(DrawingObject.fromJson(item));
+                }
+              }
+
               tools.add(CustomTool(
-                toolId: toolJson['toolId'], toolName: toolJson['toolName'],
-                base64ImageUrl: toolJson['base64ImageUrl'], tagIds: List<String>.from(toolJson['tagIds'] ?? []),
-                decodedImage: decodedImg,
+                toolId: toolJson['toolId'] ?? '', 
+                toolName: toolJson['toolName'] ?? 'Unknown Tool',
+                tagIds: List<String>.from(toolJson['tagIds'] ?? []),
+                toolObjects: parsedObjects, // The parsed JSON shapes!
               ));
             }
           }
-          loadedGroups.add(CustomToolGroup(toolGroup: groupJson['toolGroup'], tools: tools));
+          loadedGroups.add(CustomToolGroup(
+            toolGroup: groupJson['toolGroup'] ?? 'General', 
+            tools: tools
+          ));
         }
         setState(() => _customToolGroups = loadedGroups);
       }
-    } catch (e) { debugPrint("Error fetching custom tools: $e"); }
+    } catch (e) { 
+      debugPrint("Error fetching custom tools: $e"); 
+    }
   }
 
   DrawingType _parseDrawingType(String? typeStr) {
@@ -665,15 +698,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
         key: _getCurrentCanvasKey(),
         initialBackgroundImage: _pageDataMap[_currentPage]?.backgroundImageBytes,
         initialObjects: _pageDataMap[_currentPage]?.objects ?? [],
-        
-        customTabLabel: "Custom Tags",
+        onToolChanged: (toolName) {
+          if (toolName != 'CustomTool' && _selectedCustomTool != null) {
+            setState(() => _selectedCustomTool = null);
+          }
+        },
+        customTabLabel: "Custom Tools",
         customTabContent: CustomToolsPanel(
           groups: _customToolGroups,
           selectedTool: _selectedCustomTool,
           onToolSelected: (tool) {
             setState(() {
               _selectedCustomTool = tool;
-              _getCurrentCanvasKey().currentState?.applyExternalToolConfig('CustomTool', 2, Colors.black, Colors.transparent, 1);
+              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                'CustomTool', 2, Colors.black, Colors.transparent, 1,
+                customToolId: tool.toolId,
+                customToolShapes: tool.toolObjects, 
+              );
             });
           },
           onClose: () {

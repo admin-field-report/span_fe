@@ -20,6 +20,7 @@ class Canvas extends StatefulWidget {
   final Uint8List? initialBackgroundImage;
   final List<DrawingObject> initialObjects;
   final ValueChanged<DrawingObject?>? onSelectionChanged;
+  final ValueChanged<String>? onToolChanged;
 
   final List<Widget>? leftActions;
   final List<Widget>? rightActions;
@@ -35,6 +36,7 @@ class Canvas extends StatefulWidget {
     this.initialBackgroundImage,
     this.initialObjects = const [],
     this.onSelectionChanged,
+    this.onToolChanged,
     this.leftActions,
     this.rightActions,
     this.customTabLabel,
@@ -55,6 +57,9 @@ class CanvasState extends State<Canvas> {
   bool _showPropertiesPanel = false; // strictly manual toggle now!
 
   String _selectedTool = 'Select';
+
+  String? _selectedCustomToolId;
+  List<DrawingObject>? _selectedCustomToolShapes;
 
   double _pencilStrokeWidth = 2.0;
   double _shapeStrokeWidth = 2.0;
@@ -117,15 +122,17 @@ class CanvasState extends State<Canvas> {
     super.dispose();
   }
 
-  void applyExternalToolConfig(String tool, double stroke, Color color, Color fill, double opacity) {
+  void applyExternalToolConfig(String tool, double stroke, Color color, Color fill, double opacity, {String? customToolId, List<DrawingObject>? customToolShapes}) {
     setState(() {
       _selectedTool = tool;
+      _selectedCustomToolId = customToolId;          // Store the ID
+      _selectedCustomToolShapes = customToolShapes;  // Store the JSON shapes!
       
       for (var obj in _drawingObjects) {
         obj.isSelected = false;
       }
       _activeObject = null;
-      widget.onSelectionChanged?.call(null); // SYNC
+      widget.onSelectionChanged?.call(null); 
       
       _pencilStrokeWidth = stroke;
       _pencilColor = color;
@@ -415,7 +422,8 @@ class CanvasState extends State<Canvas> {
                            (_selectedTool == 'Shingles') ? DrawingType.shingles :
                            (_selectedTool == 'Insulation') ? DrawingType.insulation :
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
-                           (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
+                           (_selectedTool == 'Pin') ? DrawingType.pin : 
+                           (_selectedTool == 'CustomTool') ? DrawingType.customTool : DrawingType.line;
         
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
         Color objColor = Colors.black; Color objFill = Colors.transparent; double objOpacity = 1.0; double objStroke = 2.0; 
@@ -435,6 +443,9 @@ class CanvasState extends State<Canvas> {
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts, strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
+          // 🚀 NEW: INJECT THE CUSTOM TOOL DATA INTO THE OBJECT!
+          toolId: type == DrawingType.customTool ? _selectedCustomToolId : null,
+          internalShapes: type == DrawingType.customTool ? _selectedCustomToolShapes : null,
         );
       } else {
         _activeHandle = ResizeHandle.none;
@@ -1000,6 +1011,7 @@ class CanvasState extends State<Canvas> {
                     _activeObject = null;
                     widget.onSelectionChanged?.call(null); // SYNC
                   });
+                  widget.onToolChanged?.call(tool.name);
                 },
                 child: Container(
                   decoration: BoxDecoration(
@@ -1143,12 +1155,21 @@ class CanvasState extends State<Canvas> {
               padding: EdgeInsets.all(isMobile ? 4 : 8),
               constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
               icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-              onPressed: () => setState(() {
-                _selectedTool = 'Select';
-                for (var obj in _drawingObjects) obj.isSelected = false;
-                _activeObject = null;
-                widget.onSelectionChanged?.call(null); // SYNC
-              }),
+              // onPressed: () => setState(() {
+              //   _selectedTool = 'Select';
+              //   for (var obj in _drawingObjects) obj.isSelected = false;
+              //   _activeObject = null;
+              //   widget.onSelectionChanged?.call(null); // SYNC
+              // }),
+              onPressed: () {
+                setState(() {
+                  _selectedTool = 'Select';
+                  for (var obj in _drawingObjects) obj.isSelected = false;
+                  _activeObject = null;
+                  widget.onSelectionChanged?.call(null); 
+                });
+                widget.onToolChanged?.call('Select'); 
+              },
             ),
           ),
           _vDiv(theme),

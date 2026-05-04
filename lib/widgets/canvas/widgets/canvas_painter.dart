@@ -38,6 +38,37 @@ class MainPainter extends CustomPainter {
   
   MainPainter(this.context, this.objects, this.preview);
 
+  // 🚀 THE FIX: Helper method to find the true original size of the JSON shapes!
+  Rect _calculateInternalBounds(List<DrawingObject> shapes) {
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = double.negativeInfinity;
+    double maxY = double.negativeInfinity;
+
+    void checkOffset(Offset p) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+
+    void process(DrawingObject o) {
+      checkOffset(o.start);
+      checkOffset(o.end);
+      if (o.points != null) {
+        for (var p in o.points!) checkOffset(p);
+      }
+      if (o.internalShapes != null) {
+        for (var child in o.internalShapes!) process(child);
+      }
+    }
+
+    for (var o in shapes) process(o);
+
+    if (minX == double.infinity) return Rect.zero;
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
   @override
   void paint(ui.Canvas canvas, Size size) {
     final theme = Theme.of(context);
@@ -45,11 +76,9 @@ class MainPainter extends CustomPainter {
     for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
     for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
 
-    // 🚀 CHANGE 1: Added {bool isInternal = false}
     void drawShape(DrawingObject obj, {bool isInternal = false}) {
       canvas.save();
       
-      // The canvas handles Rotation here!
       canvas.translate(obj.center.dx, obj.center.dy);
       canvas.rotate(obj.rotation);
       canvas.translate(-obj.center.dx, -obj.center.dy);
@@ -125,7 +154,6 @@ class MainPainter extends CustomPainter {
         
         textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
 
-        // 🚀 CHANGE 2: Added !isInternal to prevent inner text from showing selection handles
         if (!isInternal && obj.isSelected && obj.isCallout && obj.points != null) {
           Paint hP = Paint()..color = Colors.blue; 
           Paint wP = Paint()..color = Colors.white; 
@@ -160,20 +188,29 @@ class MainPainter extends CustomPainter {
       
       } else if (obj.type == DrawingType.customTool) {
           
-          // 🚀 CHANGE 3: The customTool now draws JSON shapes dynamically, scaling to fit the box
           if (obj.internalShapes != null && obj.internalShapes!.isNotEmpty) {
-             Rect originalBounds = obj.originalBounds ?? rect;
+             // 🚀 THE FIX: Calculate the exact original bounds of the JSON shapes
+             Rect originalBounds = _calculateInternalBounds(obj.internalShapes!);
+             
+             // Failsafe in case it's a single pixel dot
+             if (originalBounds.width == 0 || originalBounds.height == 0) {
+               originalBounds = originalBounds.inflate(50);
+             }
 
              canvas.save();
              
-             double scaleX = originalBounds.width != 0 ? rect.width / originalBounds.width : 1.0;
-             double scaleY = originalBounds.height != 0 ? rect.height / originalBounds.height : 1.0;
+             // 🚀 THE FIX: Calculate scale multipliers so it fits your mouse drag exactly
+             double scaleX = rect.width / originalBounds.width;
+             double scaleY = rect.height / originalBounds.height;
 
+             // Move canvas origin to the top-left of the user's dragged box
              canvas.translate(rect.left, rect.top);
+             // Apply the squish/stretch
              canvas.scale(scaleX, scaleY);
+             // Pull the shapes backwards by their S3 coordinates so they align to (0,0)
              canvas.translate(-originalBounds.left, -originalBounds.top);
 
-             // Draw all the hidden JSON shapes!
+             // Now draw the shapes. They will perfectly fill the 'rect' bounding box!
              for (var child in obj.internalShapes!) {
                drawShape(child, isInternal: true); 
              }
@@ -204,7 +241,6 @@ class MainPainter extends CustomPainter {
 
       } else {
         
-        // 1. DRAW FILLS (Rect, Circle, Polygon)
         if (obj.type != DrawingType.line && obj.type != DrawingType.pencil && obj.fillColor != Colors.transparent) {
           final fillPaint = Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill;
           if (obj.type == DrawingType.rect) canvas.drawRect(rect, fillPaint);
@@ -220,7 +256,6 @@ class MainPainter extends CustomPainter {
           }
         }
 
-        // 2. SETUP SHARED STROKE PAINT
         final strokePaint = Paint()
           ..color = obj.color 
           ..strokeWidth = obj.strokeWidth
@@ -228,7 +263,6 @@ class MainPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round;
 
-        // 3. MASTER PATTERN ENGINE (Architectural Hatches)
         if ([DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(obj.type)) {
           canvas.save();
           canvas.clipRect(rect); 
@@ -375,7 +409,6 @@ class MainPainter extends CustomPainter {
           canvas.restore();
         }
 
-        // 4. DRAW STROKES FOR EVERYTHING ELSE
         else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null && obj.points!.isNotEmpty) {
           Path path = Path();
           path.moveTo(obj.points![0].dx, obj.points![0].dy);
@@ -395,7 +428,6 @@ class MainPainter extends CustomPainter {
           
           canvas.drawPath(path, strokePaint);
 
-          // 🚀 CHANGE 4: Added !isInternal to prevent inner pencil drawing handles
           if (!isInternal && obj == preview && obj.type == DrawingType.pen) {
             canvas.drawCircle(obj.points![0], 6, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2);
           }
@@ -439,7 +471,6 @@ class MainPainter extends CustomPainter {
         }
       }
 
-      // 🚀 CHANGE 5: Added !isInternal to prevent inner shapes from drawing the main 8-point resize handles
       if (!isInternal && obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;

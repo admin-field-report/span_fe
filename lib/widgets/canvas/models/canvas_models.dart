@@ -267,11 +267,16 @@ class ProjectTag {
 class CustomTool {
   final String toolId;
   final String toolName;
-  final String base64ImageUrl;
   final List<String> tagIds;
-  ui.Image? decodedImage;
+  
+  final List<DrawingObject> toolObjects; 
 
-  CustomTool({required this.toolId, required this.toolName, required this.base64ImageUrl, required this.tagIds, this.decodedImage});
+  CustomTool({
+    required this.toolId, 
+    required this.toolName, 
+    required this.tagIds, 
+    this.toolObjects = const []
+  });
 }
 
 class CustomToolGroup {
