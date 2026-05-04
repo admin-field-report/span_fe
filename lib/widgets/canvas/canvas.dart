@@ -21,6 +21,9 @@ class Canvas extends StatefulWidget {
 
   final String? customTabLabel;
   final Widget? customTabContent;
+  
+  // 🚀 NEW: A slot for your permanent, custom right-side property panel
+  final Widget? customRightPanel;
 
   const Canvas({
     super.key,
@@ -29,6 +32,7 @@ class Canvas extends StatefulWidget {
     this.rightActions,
     this.customTabLabel,
     this.customTabContent,
+    this.customRightPanel,
   });
 
   @override
@@ -41,7 +45,7 @@ class CanvasState extends State<Canvas> {
   bool _isFullScreen = false;
   
   bool _showLeftPanel = true; 
-  bool _showPropertiesPanel = true; 
+  bool _showPropertiesPanel = false; 
 
   String _selectedTool = 'Select';
 
@@ -714,9 +718,9 @@ class CanvasState extends State<Canvas> {
     return IconButton(
       tooltip: msg,
       onPressed: isEnabled ? onTap : null, 
-      iconSize: isMobile ? 16 : 18,
-      padding: EdgeInsets.all(isMobile ? 4 : 6),
-      constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 36, minHeight: 36),
+      iconSize: isMobile ? 16 : 20,
+      padding: EdgeInsets.all(isMobile ? 4 : 8),
+      constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
       icon: Icon(icon, color: isEnabled ? (isDestructive ? Colors.red : theme.colorScheme.onSurface) : theme.disabledColor)
     );
   }
@@ -750,7 +754,6 @@ class CanvasState extends State<Canvas> {
     );
   }
 
-  // 🚀 COMPACT SLIDERS 🚀
   Widget _buildCompactSlider({
     required String label, 
     required String valueLabel, 
@@ -762,14 +765,14 @@ class CanvasState extends State<Canvas> {
   }) {
     return SizedBox(
       width: double.infinity, 
-      height: 32, // Tighter height constraint
+      height: 32,
       child: Row(children: [
         SizedBox(width: 32, child: Text(valueLabel, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              trackHeight: 2.0, // Sleeker track
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0), // Smaller thumb
+              trackHeight: 2.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
             ),
             child: Slider(
@@ -837,11 +840,11 @@ class CanvasState extends State<Canvas> {
         const SizedBox(height: 4), 
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 🚀 Tighter padding
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(6), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
           child: content,
         ),
-        const SizedBox(height: 8), // 🚀 Tighter gaps
+        const SizedBox(height: 8), 
       ],
     );
   }
@@ -1035,7 +1038,7 @@ class CanvasState extends State<Canvas> {
                     _formatToggle(Icons.format_strikethrough, _activeObject?.isStrikethrough ?? _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject != null) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
                   ],
                 ),
-                const SizedBox(height: 8), // 🚀 Tighter gap
+                const SizedBox(height: 8), 
                 _buildTextSizeSlider(theme),
               ],
             ),
@@ -1088,10 +1091,10 @@ class CanvasState extends State<Canvas> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // LEFT PANEL TOGGLE (Kept as menu because it represents navigation/tools)
+          // 🚀 LEFT PANEL TOGGLE: Updated to a specific "Tools" icon
           IconButton(
             tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
-            icon: Icon(_showLeftPanel ? Icons.menu_open : Icons.menu),
+            icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined), // Or use Icons.build / Icons.category
             color: theme.colorScheme.primary,
             iconSize: isMobile ? 16 : 20, 
             padding: EdgeInsets.all(isMobile ? 4 : 8),
@@ -1139,10 +1142,9 @@ class CanvasState extends State<Canvas> {
             
           _vDiv(theme),
           
-          // 🚀 RIGHT PANEL TOGGLE (Updated to Styling/Tune Icon)
+          // RIGHT PANEL TOGGLE (Using the Tune/Settings icon)
           IconButton(
             tooltip: _showPropertiesPanel ? "Hide Properties" : "Show Properties",
-            // You can also use Icons.palette / Icons.palette_outlined if you prefer a paint vibe!
             icon: Icon(_showPropertiesPanel ? Icons.tune : Icons.tune_outlined),
             color: theme.colorScheme.primary,
             iconSize: isMobile ? 16 : 20, 
@@ -1160,7 +1162,6 @@ class CanvasState extends State<Canvas> {
     final theme = Theme.of(context);
     final screenWidth = MediaQuery.of(context).size.width;
     
-    // 🚀 REDUCED WIDTH: Now 240px instead of 300px
     final double rightPanelWidth = math.min(240.0, screenWidth * 0.75);
 
     return Scaffold(
@@ -1187,127 +1188,135 @@ class CanvasState extends State<Canvas> {
             children: [
               _buildTopToolbar(theme),
               
+              // 🚀 NEW: Replaced outer Stack with Row to support Custom Right Panel
               Expanded(
-                child: Stack(
-                  clipBehavior: Clip.none,
+                child: Row(
                   children: [
-                    // ==========================================
-                    // 1. THE CANVAS AREA
-                    // ==========================================
-                    Positioned.fill(
-                      child: Container(
-                        color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                        child: InteractiveViewer(
-                          panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
-                          scaleEnabled: true, 
-                          minScale: 0.4,     
-                          maxScale: 3.5,     
-                          boundaryMargin: const EdgeInsets.all(double.infinity), 
-                          child: Center(
-                            child: MouseRegion(
-                              cursor: _getCursor(_hoveredHandle),
-                              onHover: (d) {
-                                if (_selectedTool == 'Pen' && _currentPreview != null) {
-                                  setState(() => _currentPreview!.points!.last = d.localPosition);
-                                  return;
-                                }
-                                if (_selectedTool != 'Select') return;
-                                ResizeHandle hit = ResizeHandle.none;
-                                for (var obj in _drawingObjects.reversed) {
-                                  hit = _getHitHandle(d.localPosition, obj);
-                                  if (hit != ResizeHandle.none) break;
-                                }
-                                if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
-                              },
-                              child: Listener(
-                                onPointerDown: _handlePointerDown,
-                                onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
-                                onPointerUp: _handlePointerUp,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Container(
-                                      width: 816,  
-                                      height: 1056, 
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        boxShadow: [
-                                          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
-                                        ],
-                                      ),
-                                      child: CanvasPaper(
-                                        objects: _drawingObjects, 
-                                        preview: _currentPreview,
-                                        backgroundImageBytes: widget.initialBackgroundImage,                                         
+                    Expanded(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned.fill(
+                            child: Container(
+                              color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                              child: InteractiveViewer(
+                                panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
+                                scaleEnabled: true, 
+                                minScale: 0.4,     
+                                maxScale: 3.5,     
+                                boundaryMargin: const EdgeInsets.all(double.infinity), 
+                                child: Center(
+                                  child: MouseRegion(
+                                    cursor: _getCursor(_hoveredHandle),
+                                    onHover: (d) {
+                                      if (_selectedTool == 'Pen' && _currentPreview != null) {
+                                        setState(() => _currentPreview!.points!.last = d.localPosition);
+                                        return;
+                                      }
+                                      if (_selectedTool != 'Select') return;
+                                      ResizeHandle hit = ResizeHandle.none;
+                                      for (var obj in _drawingObjects.reversed) {
+                                        hit = _getHitHandle(d.localPosition, obj);
+                                        if (hit != ResizeHandle.none) break;
+                                      }
+                                      if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+                                    },
+                                    child: Listener(
+                                      onPointerDown: _handlePointerDown,
+                                      onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
+                                      onPointerUp: _handlePointerUp,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          Container(
+                                            width: 816,  
+                                            height: 1056, 
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              boxShadow: [
+                                                BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+                                              ],
+                                            ),
+                                            child: CanvasPaper(
+                                              objects: _drawingObjects, 
+                                              preview: _currentPreview,
+                                              backgroundImageBytes: widget.initialBackgroundImage,                                         
+                                            ),
+                                          ),
+                                        ]
                                       ),
                                     ),
-                                  ]
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+
+                          Positioned(
+                            bottom: 24,
+                            right: 24,
+                            child: FloatingActionButton.small(
+                              heroTag: 'fullscreen_fab',
+                              backgroundColor: theme.colorScheme.surface,
+                              foregroundColor: theme.colorScheme.primary,
+                              elevation: 4,
+                              onPressed: _toggleNativeFullscreen,
+                              child: Icon(
+                                _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                              ),
+                            ),
+                          ),
+
+                          if (_showLeftPanel && !_isFullScreen)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              bottom: 0,
+                              child: _buildLeftToolsPanel(theme),
+                            ),
+
+                          if (_showPropertiesPanel && !_isFullScreen)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: rightPanelWidth,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))
+                                  ]
+                                ),
+                                child: PropertiesPanel(
+                                  title: _activeObject != null 
+                                      ? "EDIT ANNOTATION" 
+                                      : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
+                                          ? "${_selectedTool.toUpperCase()} SETTINGS" 
+                                          : "PROPERTIES"),
+                                  content: _buildPanelContent(theme),
+                                  onClose: () {
+                                    setState(() {
+                                      _showPropertiesPanel = false;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
 
-                    // NATIVE FULLSCREEN TOGGLE BUTTON
-                    Positioned(
-                      bottom: 24,
-                      right: 24,
-                      child: FloatingActionButton.small(
-                        heroTag: 'fullscreen_fab',
-                        backgroundColor: theme.colorScheme.surface,
-                        foregroundColor: theme.colorScheme.primary,
-                        elevation: 4,
-                        onPressed: _toggleNativeFullscreen,
-                        child: Icon(
-                          _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                    // 🚀 NEW: ALWAYS VISIBLE CUSTOM RIGHT PANEL
+                    if (widget.customRightPanel != null && !_isFullScreen)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))]
                         ),
-                      ),
-                    ),
-
-                    // ==========================================
-                    // 🌟 2. LEFT SIDEBAR: TOOLS OVERLAY 🌟
-                    // ==========================================
-                    if (_showLeftPanel && !_isFullScreen)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        child: _buildLeftToolsPanel(theme),
-                      ),
-
-                    // ==========================================
-                    // 🌟 3. RIGHT SIDEBAR: PROPERTIES OVERLAY 🌟
-                    // ==========================================
-                    if (_showPropertiesPanel && !_isFullScreen)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: rightPanelWidth,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))
-                            ]
-                          ),
-                          child: PropertiesPanel(
-                            title: _activeObject != null 
-                                ? "EDIT ANNOTATION" 
-                                : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
-                                    ? "${_selectedTool.toUpperCase()} SETTINGS" 
-                                    : "PROPERTIES"),
-                            content: _buildPanelContent(theme),
-                            onClose: () {
-                              setState(() {
-                                _showPropertiesPanel = false;
-                              });
-                            },
-                          ),
-                        ),
+                        child: widget.customRightPanel!,
                       ),
                   ],
                 ),
