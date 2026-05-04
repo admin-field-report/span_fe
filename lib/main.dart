@@ -54,7 +54,7 @@ class _FieldReportAppState extends State<FieldReportApp> with WidgetsBindingObse
       listenable: themeController,
       builder: (context, _) {
         return MaterialApp.router(
-          title: 'Field Report',
+          title: 'Span Inspect',
           debugShowCheckedModeBanner: false,
           routerConfig: router,
           themeMode: themeController.themeMode,

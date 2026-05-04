@@ -248,7 +248,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             const SizedBox(width: 12),
             const Flexible(
               child: Text(
-                "Field Report", 
+                "Span Inspect", 
                 style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1.2),
                 overflow: TextOverflow.ellipsis,
               ),

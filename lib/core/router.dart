@@ -27,11 +27,17 @@ final router = GoRouter(
     // --- PUBLIC ROUTES ---
     GoRoute(
       path: '/login',
-      builder: (context, state) => const LoginScreen(),
+      builder: (context, state) {
+        final isBeta = state.uri.queryParameters['beta'] == 'true';
+        return LoginScreen(showBetaLogin: isBeta, isLoginMode: true);
+      },
     ),
     GoRoute(
       path: '/signup',
-      builder: (context, state) => const LoginScreen(),
+      builder: (context, state) {
+        final isBeta = state.uri.queryParameters['beta'] == 'true';
+        return LoginScreen(showBetaLogin: isBeta, isLoginMode: false);
+      },
     ),
     GoRoute(
       path: '/loading',
