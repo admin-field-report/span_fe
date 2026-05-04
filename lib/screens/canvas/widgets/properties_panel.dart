@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:typed_data'; 
-import '../models/canvas_models.dart';
+import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
 
 class PropertiesPanel extends StatefulWidget {
@@ -130,10 +130,10 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant))),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Properties", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)), IconButton(icon: const Icon(Icons.close, size: 20), onPressed: widget.onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints())]),
-          ),
+          // Container(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant))),
+          //   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Properties", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)), IconButton(icon: const Icon(Icons.close, size: 20), onPressed: widget.onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints())]),
+          // ),
 
           Expanded(
             child: SingleChildScrollView(

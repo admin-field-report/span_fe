@@ -5,7 +5,7 @@ import 'package:universal_html/html.dart' as html;
 
 import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
-import 'widgets/property_panel.dart';
+import 'widgets/property_panel.dart'; 
 
 // Helper class for the left sidebar tools
 class _ToolItem {
@@ -15,19 +15,26 @@ class _ToolItem {
 }
 
 class Canvas extends StatefulWidget {
+  // 🚀 STATE & SYNC PROPS
+  final GlobalKey<CanvasState>? canvasKey;
   final Uint8List? initialBackgroundImage;
+  final List<DrawingObject> initialObjects;
+  final ValueChanged<DrawingObject?>? onSelectionChanged;
+
   final List<Widget>? leftActions;
   final List<Widget>? rightActions;
 
+  // 🚀 INJECTION SLOTS
   final String? customTabLabel;
   final Widget? customTabContent;
-  
-  // 🚀 NEW: A slot for your permanent, custom right-side property panel
   final Widget? customRightPanel;
 
   const Canvas({
     super.key,
+    this.canvasKey,
     this.initialBackgroundImage,
+    this.initialObjects = const [],
+    this.onSelectionChanged,
     this.leftActions,
     this.rightActions,
     this.customTabLabel,
@@ -45,7 +52,7 @@ class CanvasState extends State<Canvas> {
   bool _isFullScreen = false;
   
   bool _showLeftPanel = true; 
-  bool _showPropertiesPanel = false; 
+  bool _showPropertiesPanel = false; // strictly manual toggle now!
 
   String _selectedTool = 'Select';
 
@@ -85,12 +92,23 @@ class CanvasState extends State<Canvas> {
   
   double _patternDensity = 20.0; 
 
-  // Local Data Stores
-  List<DrawingObject> _drawingObjects = [];
+  late List<DrawingObject> _drawingObjects;
   final List<List<DrawingObject>> _undoStack = [];
   final List<List<DrawingObject>> _redoStack = [];
 
   List<DrawingObject> get objects => _drawingObjects;
+
+  @override
+  void initState() {
+    super.initState();
+    // Load the objects passed from CanvasScreen
+    _drawingObjects = List.from(widget.initialObjects);
+  }
+
+  // Helper to let CanvasScreen force redraws
+  void refreshCanvas() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
@@ -107,7 +125,7 @@ class CanvasState extends State<Canvas> {
         obj.isSelected = false;
       }
       _activeObject = null;
-      _showPropertiesPanel = true; 
+      widget.onSelectionChanged?.call(null); // SYNC
       
       _pencilStrokeWidth = stroke;
       _pencilColor = color;
@@ -192,6 +210,7 @@ class CanvasState extends State<Canvas> {
                   if (existingObject != null) {
                     existingObject.text = controller.text;
                     existingObject.end = existingObject.start + calculatedSize;
+                    widget.onSelectionChanged?.call(existingObject); // SYNC
                   } else {
                     final textObj = DrawingObject(
                       start: position, end: position + calculatedSize, type: DrawingType.text, text: controller.text,
@@ -205,6 +224,7 @@ class CanvasState extends State<Canvas> {
                     _drawingObjects.add(textObj);
                     _activeObject = textObj;
                     _selectedTool = 'Select';
+                    widget.onSelectionChanged?.call(textObj); // SYNC
                   }
                 });
               }
@@ -229,6 +249,7 @@ class CanvasState extends State<Canvas> {
         _redoStack.add(_drawingObjects.map((e) => e.copy()).toList());
         _drawingObjects = _undoStack.removeLast();
         _activeObject = null;
+        widget.onSelectionChanged?.call(null); // SYNC
       });
     }
   }
@@ -239,6 +260,7 @@ class CanvasState extends State<Canvas> {
         _undoStack.add(_drawingObjects.map((e) => e.copy()).toList());
         _drawingObjects = _redoStack.removeLast();
         _activeObject = null;
+        widget.onSelectionChanged?.call(null); // SYNC
       });
     }
   }
@@ -249,6 +271,7 @@ class CanvasState extends State<Canvas> {
       setState(() {
         _drawingObjects.removeWhere((o) => o.isSelected);
         _activeObject = null;
+        widget.onSelectionChanged?.call(null); // SYNC
       });
     }
   }
@@ -274,6 +297,7 @@ class CanvasState extends State<Canvas> {
         _drawingObjects.add(pastedObj);
         _activeObject = pastedObj;
         _selectedTool = 'Select'; 
+        widget.onSelectionChanged?.call(pastedObj); // SYNC
       });
     }
   }
@@ -430,12 +454,15 @@ class CanvasState extends State<Canvas> {
           for (var obj in _drawingObjects) obj.isSelected = false;
           hitObj.isSelected = true;
           _activeObject = hitObj; _activeHandle = hitHandle;
+          
+          widget.onSelectionChanged?.call(_activeObject); // SYNC
 
           if (hitHandle == ResizeHandle.rotation) _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
           else if (hitHandle == ResizeHandle.body) _dragOffset = pos - hitObj.start;
         } else {
           for (var obj in _drawingObjects) obj.isSelected = false;
           _activeObject = null;
+          widget.onSelectionChanged?.call(null); // SYNC
         }
       }
     });
@@ -502,6 +529,7 @@ class CanvasState extends State<Canvas> {
         _activeObject = _currentPreview;
         _selectedTool = 'Select'; 
         _currentPreview = null;
+        widget.onSelectionChanged?.call(_activeObject); // SYNC
       }
       _activeHandle = ResizeHandle.none;
     });
@@ -538,6 +566,7 @@ class CanvasState extends State<Canvas> {
       _activeObject = _currentPreview;
       _selectedTool = 'Select';
       _currentPreview = null;
+      widget.onSelectionChanged?.call(_activeObject); // SYNC
     }
   }
 
@@ -707,7 +736,7 @@ class CanvasState extends State<Canvas> {
   }
 
   // ==========================================
-  // UI BUILDING HELPERS
+  // UI BUILDING HELPERS (STYLING PANEL)
   // ==========================================
 
   bool _isShapeSelected(String tool) => ['Rect', 'Circle', 'Line', 'Arrow', 'Polygon'].contains(tool);
@@ -849,6 +878,98 @@ class CanvasState extends State<Canvas> {
     );
   }
 
+  Widget _buildPanelContent(ThemeData theme) {
+    DrawingType? type = _activeObject?.type;
+    
+    if (_selectedTool == 'Pencil' || _selectedTool == 'Pen' || type == DrawingType.pencil || type == DrawingType.pen) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPropSection(theme, "STROKE THICKNESS", Icons.line_weight, _buildStrokeSlider(theme, 0)),
+          _buildPropSection(theme, "APPEARANCE", Icons.color_lens_outlined, Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_colorButton("Line", _activeObject?.color ?? _pencilColor, 0), _colorButton("Fill", _activeObject?.fillColor ?? _penFillColor, 7)])),
+        ],
+      );
+    }
+
+    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  
+      bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPropSection(theme, "THICKNESS", Icons.border_style, _buildStrokeSlider(theme, 1)),
+          if (_selectedTool == 'Dots' || _activeObject?.type == DrawingType.dots)
+            _buildPropSection(theme, "DENSITY", Icons.blur_on, _buildDensitySlider()),
+          _buildPropSection(
+            theme, "APPEARANCE", Icons.palette_outlined,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: isLineOrArrow 
+                  ? [_colorButton("Line", _activeObject?.color ?? _shapeLineColor, 1)]
+                  : [_colorButton("Border", _activeObject?.color ?? _shapeBorderColor, 2), _colorButton("Fill", _activeObject?.fillColor ?? _shapeFillColor, 3)],
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note' || type == DrawingType.text) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPropSection(
+            theme, "TYPOGRAPHY", Icons.text_fields,
+            Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _formatToggle(Icons.format_bold, _activeObject?.isBold ?? _textIsBold, () => setState(() { _textIsBold = !_textIsBold; if (_activeObject != null) _activeObject!.isBold = _textIsBold; }), theme),
+                    _formatToggle(Icons.format_italic, _activeObject?.isItalic ?? _textIsItalic, () => setState(() { _textIsItalic = !_textIsItalic; if (_activeObject != null) _activeObject!.isItalic = _textIsItalic; }), theme),
+                    _formatToggle(Icons.format_underlined, _activeObject?.isUnderline ?? _textIsUnderline, () => setState(() { _textIsUnderline = !_textIsUnderline; if (_activeObject != null) _activeObject!.isUnderline = _textIsUnderline; }), theme),
+                    _formatToggle(Icons.format_strikethrough, _activeObject?.isStrikethrough ?? _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject != null) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
+                  ],
+                ),
+                const SizedBox(height: 8), 
+                _buildTextSizeSlider(theme),
+              ],
+            ),
+          ),
+          _buildPropSection(theme, "OUTLINE WIDTH", Icons.border_outer, _buildStrokeSlider(theme, 2)),
+          _buildPropSection(
+            theme, "COLORS", Icons.format_color_fill,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _colorButton("Text", _activeObject?.color ?? _textColor, 4),
+                _colorButton("Border", _activeObject?.borderColor ?? _textBorderColor, 5),
+                _colorButton("Fill", _activeObject?.fillColor ?? _textFillColor, 6),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 40.0, left: 16, right: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.tune, size: 48, color: theme.colorScheme.onSurface.withOpacity(0.2)),
+            const SizedBox(height: 16),
+            Text(
+              "Select an annotation or tool to view and edit its properties.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), height: 1.5, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
     final isMobile = MediaQuery.of(context).size.width < 600;
     
@@ -877,6 +998,7 @@ class CanvasState extends State<Canvas> {
                     _selectedTool = tool.name;
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _activeObject = null;
+                    widget.onSelectionChanged?.call(null); // SYNC
                   });
                 },
                 child: Container(
@@ -986,98 +1108,6 @@ class CanvasState extends State<Canvas> {
     );
   }
 
-  Widget _buildPanelContent(ThemeData theme) {
-    DrawingType? type = _activeObject?.type;
-    
-    if (_selectedTool == 'Pencil' || _selectedTool == 'Pen' || type == DrawingType.pencil || type == DrawingType.pen) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(theme, "STROKE THICKNESS", Icons.line_weight, _buildStrokeSlider(theme, 0)),
-          _buildPropSection(theme, "APPEARANCE", Icons.color_lens_outlined, Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_colorButton("Line", _activeObject?.color ?? _pencilColor, 0), _colorButton("Fill", _activeObject?.fillColor ?? _penFillColor, 7)])),
-        ],
-      );
-    }
-
-    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  
-      bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(theme, "THICKNESS", Icons.border_style, _buildStrokeSlider(theme, 1)),
-          if (_selectedTool == 'Dots' || _activeObject?.type == DrawingType.dots)
-            _buildPropSection(theme, "DENSITY", Icons.blur_on, _buildDensitySlider()),
-          _buildPropSection(
-            theme, "APPEARANCE", Icons.palette_outlined,
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: isLineOrArrow 
-                  ? [_colorButton("Line", _activeObject?.color ?? _shapeLineColor, 1)]
-                  : [_colorButton("Border", _activeObject?.color ?? _shapeBorderColor, 2), _colorButton("Fill", _activeObject?.fillColor ?? _shapeFillColor, 3)],
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note' || type == DrawingType.text) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(
-            theme, "TYPOGRAPHY", Icons.text_fields,
-            Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _formatToggle(Icons.format_bold, _activeObject?.isBold ?? _textIsBold, () => setState(() { _textIsBold = !_textIsBold; if (_activeObject != null) _activeObject!.isBold = _textIsBold; }), theme),
-                    _formatToggle(Icons.format_italic, _activeObject?.isItalic ?? _textIsItalic, () => setState(() { _textIsItalic = !_textIsItalic; if (_activeObject != null) _activeObject!.isItalic = _textIsItalic; }), theme),
-                    _formatToggle(Icons.format_underlined, _activeObject?.isUnderline ?? _textIsUnderline, () => setState(() { _textIsUnderline = !_textIsUnderline; if (_activeObject != null) _activeObject!.isUnderline = _textIsUnderline; }), theme),
-                    _formatToggle(Icons.format_strikethrough, _activeObject?.isStrikethrough ?? _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject != null) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
-                  ],
-                ),
-                const SizedBox(height: 8), 
-                _buildTextSizeSlider(theme),
-              ],
-            ),
-          ),
-          _buildPropSection(theme, "OUTLINE WIDTH", Icons.border_outer, _buildStrokeSlider(theme, 2)),
-          _buildPropSection(
-            theme, "COLORS", Icons.format_color_fill,
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _colorButton("Text", _activeObject?.color ?? _textColor, 4),
-                _colorButton("Border", _activeObject?.borderColor ?? _textBorderColor, 5),
-                _colorButton("Fill", _activeObject?.fillColor ?? _textFillColor, 6),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 40.0, left: 16, right: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.tune, size: 48, color: theme.colorScheme.onSurface.withOpacity(0.2)),
-            const SizedBox(height: 16),
-            Text(
-              "Select an annotation or tool to view and edit its properties.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), height: 1.5, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildTopToolbar(ThemeData theme) {
     final isMobile = MediaQuery.of(context).size.width < 600;
     
@@ -1091,10 +1121,9 @@ class CanvasState extends State<Canvas> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 🚀 LEFT PANEL TOGGLE: Updated to a specific "Tools" icon
           IconButton(
             tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
-            icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined), // Or use Icons.build / Icons.category
+            icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined),
             color: theme.colorScheme.primary,
             iconSize: isMobile ? 16 : 20, 
             padding: EdgeInsets.all(isMobile ? 4 : 8),
@@ -1103,7 +1132,6 @@ class CanvasState extends State<Canvas> {
           ),
           _vDiv(theme),
 
-          // SELECT TOOL
           Container(
             decoration: BoxDecoration(
               color: _selectedTool == 'Select' ? theme.colorScheme.primary.withOpacity(0.15) : Colors.transparent,
@@ -1114,12 +1142,12 @@ class CanvasState extends State<Canvas> {
               iconSize: isMobile ? 16 : 20, 
               padding: EdgeInsets.all(isMobile ? 4 : 8),
               constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-              icon: Icon(
-                Icons.near_me, 
-                color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface, 
-              ),
+              icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
               onPressed: () => setState(() {
                 _selectedTool = 'Select';
+                for (var obj in _drawingObjects) obj.isSelected = false;
+                _activeObject = null;
+                widget.onSelectionChanged?.call(null); // SYNC
               }),
             ),
           ),
@@ -1142,10 +1170,9 @@ class CanvasState extends State<Canvas> {
             
           _vDiv(theme),
           
-          // RIGHT PANEL TOGGLE (Using the Tune/Settings icon)
           IconButton(
-            tooltip: _showPropertiesPanel ? "Hide Properties" : "Show Properties",
-            icon: Icon(_showPropertiesPanel ? Icons.tune : Icons.tune_outlined),
+            tooltip: _showPropertiesPanel ? "Hide Styling" : "Show Styling",
+            icon: Icon(_showPropertiesPanel ? Icons.palette : Icons.palette_outlined),
             color: theme.colorScheme.primary,
             iconSize: isMobile ? 16 : 20, 
             padding: EdgeInsets.all(isMobile ? 4 : 8),
@@ -1161,8 +1188,7 @@ class CanvasState extends State<Canvas> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final screenWidth = MediaQuery.of(context).size.width;
-    
-    final double rightPanelWidth = math.min(240.0, screenWidth * 0.75);
+    final double stylingPanelWidth = math.min(240.0, screenWidth * 0.75);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1188,135 +1214,142 @@ class CanvasState extends State<Canvas> {
             children: [
               _buildTopToolbar(theme),
               
-              // 🚀 NEW: Replaced outer Stack with Row to support Custom Right Panel
+              // 🚀 MASTER STACK: Allows overlays on top of the entire layout
               Expanded(
-                child: Row(
+                child: Stack(
                   children: [
-                    Expanded(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Positioned.fill(
-                            child: Container(
-                              color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                              child: InteractiveViewer(
-                                panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
-                                scaleEnabled: true, 
-                                minScale: 0.4,     
-                                maxScale: 3.5,     
-                                boundaryMargin: const EdgeInsets.all(double.infinity), 
-                                child: Center(
-                                  child: MouseRegion(
-                                    cursor: _getCursor(_hoveredHandle),
-                                    onHover: (d) {
-                                      if (_selectedTool == 'Pen' && _currentPreview != null) {
-                                        setState(() => _currentPreview!.points!.last = d.localPosition);
-                                        return;
-                                      }
-                                      if (_selectedTool != 'Select') return;
-                                      ResizeHandle hit = ResizeHandle.none;
-                                      for (var obj in _drawingObjects.reversed) {
-                                        hit = _getHitHandle(d.localPosition, obj);
-                                        if (hit != ResizeHandle.none) break;
-                                      }
-                                      if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
-                                    },
-                                    child: Listener(
-                                      onPointerDown: _handlePointerDown,
-                                      onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
-                                      onPointerUp: _handlePointerUp,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Container(
-                                            width: 816,  
-                                            height: 1056, 
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              boxShadow: [
-                                                BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
-                                              ],
-                                            ),
-                                            child: CanvasPaper(
-                                              objects: _drawingObjects, 
-                                              preview: _currentPreview,
-                                              backgroundImageBytes: widget.initialBackgroundImage,                                         
-                                            ),
+                    // ==========================================
+                    // 1. BASE LAYER: Canvas + Custom Right Panel
+                    // ==========================================
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                                  child: InteractiveViewer(
+                                    panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
+                                    scaleEnabled: true, 
+                                    minScale: 0.4,     
+                                    maxScale: 3.5,     
+                                    boundaryMargin: const EdgeInsets.all(double.infinity), 
+                                    child: Center(
+                                      child: MouseRegion(
+                                        cursor: _getCursor(_hoveredHandle),
+                                        onHover: (d) {
+                                          if (_selectedTool == 'Pen' && _currentPreview != null) {
+                                            setState(() => _currentPreview!.points!.last = d.localPosition);
+                                            return;
+                                          }
+                                          if (_selectedTool != 'Select') return;
+                                          ResizeHandle hit = ResizeHandle.none;
+                                          for (var obj in _drawingObjects.reversed) {
+                                            hit = _getHitHandle(d.localPosition, obj);
+                                            if (hit != ResizeHandle.none) break;
+                                          }
+                                          if (_hoveredHandle != hit) setState(() => _hoveredHandle = hit);
+                                        },
+                                        child: Listener(
+                                          onPointerDown: _handlePointerDown,
+                                          onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
+                                          onPointerUp: _handlePointerUp,
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              Container(
+                                                width: 816,  
+                                                height: 1056, 
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  boxShadow: [
+                                                    BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+                                                  ],
+                                                ),
+                                                child: CanvasPaper(
+                                                  objects: _drawingObjects, 
+                                                  preview: _currentPreview,
+                                                  backgroundImageBytes: widget.initialBackgroundImage,                                         
+                                                ),
+                                              ),
+                                            ]
                                           ),
-                                        ]
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
 
-                          Positioned(
-                            bottom: 24,
-                            right: 24,
-                            child: FloatingActionButton.small(
-                              heroTag: 'fullscreen_fab',
-                              backgroundColor: theme.colorScheme.surface,
-                              foregroundColor: theme.colorScheme.primary,
-                              elevation: 4,
-                              onPressed: _toggleNativeFullscreen,
-                              child: Icon(
-                                _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
-                              ),
-                            ),
-                          ),
-
-                          if (_showLeftPanel && !_isFullScreen)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              bottom: 0,
-                              child: _buildLeftToolsPanel(theme),
-                            ),
-
-                          if (_showPropertiesPanel && !_isFullScreen)
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: rightPanelWidth,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surface,
-                                  border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
-                                  boxShadow: [
-                                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))
-                                  ]
-                                ),
-                                child: PropertiesPanel(
-                                  title: _activeObject != null 
-                                      ? "EDIT ANNOTATION" 
-                                      : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
-                                          ? "${_selectedTool.toUpperCase()} SETTINGS" 
-                                          : "PROPERTIES"),
-                                  content: _buildPanelContent(theme),
-                                  onClose: () {
-                                    setState(() {
-                                      _showPropertiesPanel = false;
-                                    });
-                                  },
+                              Positioned(
+                                bottom: 24,
+                                right: 24,
+                                child: FloatingActionButton.small(
+                                  heroTag: 'fullscreen_fab',
+                                  backgroundColor: theme.colorScheme.surface,
+                                  foregroundColor: theme.colorScheme.primary,
+                                  elevation: 4,
+                                  onPressed: _toggleNativeFullscreen,
+                                  child: Icon(
+                                    _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                                  ),
                                 ),
                               ),
+
+                              if (_showLeftPanel && !_isFullScreen)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  bottom: 0,
+                                  child: _buildLeftToolsPanel(theme),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                        // CUSTOM DATA PANEL (Sits permanently on the right, under overlays)
+                        if (widget.customRightPanel != null && !_isFullScreen)
+                          Container(
+                            width: 320, // Keep your custom panel size consistent
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))]
                             ),
-                        ],
-                      ),
+                            child: widget.customRightPanel!,
+                          ),
+                      ],
                     ),
 
-                    // 🚀 NEW: ALWAYS VISIBLE CUSTOM RIGHT PANEL
-                    if (widget.customRightPanel != null && !_isFullScreen)
-                      Container(
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface,
-                          border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))]
+                    // ==========================================
+                    // 🌟 2. FLOATING OVERLAY: Styling Panel 🌟
+                    // ==========================================
+                    if (_showPropertiesPanel && !_isFullScreen)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: stylingPanelWidth,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(-5, 0))
+                            ]
+                          ),
+                          child: PropertiesPanel(
+                            title: _activeObject != null 
+                                ? "EDIT ANNOTATION" 
+                                : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
+                                    ? "${_selectedTool.toUpperCase()} SETTINGS" 
+                                    : "STYLING"),
+                            content: _buildPanelContent(theme),
+                            onClose: () => setState(() => _showPropertiesPanel = false),
+                          ),
                         ),
-                        child: widget.customRightPanel!,
                       ),
                   ],
                 ),

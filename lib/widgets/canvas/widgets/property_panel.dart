@@ -46,12 +46,12 @@ class PropertiesPanel extends StatelessWidget {
                     )
                   )
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: onClose,
-                ),
+                // IconButton(
+                //   icon: const Icon(Icons.close, size: 18),
+                //   padding: EdgeInsets.zero,
+                //   constraints: const BoxConstraints(),
+                //   onPressed: onClose,
+                // ),
               ],
             ),
           ),

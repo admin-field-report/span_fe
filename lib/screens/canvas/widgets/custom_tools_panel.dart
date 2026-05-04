@@ -1,6 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../models/canvas_models.dart';
+import '../../../widgets/canvas/models/canvas_models.dart';
 
 class CustomToolsPanel extends StatelessWidget {
   final List<CustomToolGroup> groups;
