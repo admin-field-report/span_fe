@@ -13,6 +13,22 @@ class AppMenuContent extends StatelessWidget {
     super.key,
   });
 
+  PopupMenuItem<String> _buildPopupItem(BuildContext context, IconData icon, String label, String path) {
+    final isSelected = _isPathActive(context, path);
+    final color = isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).textTheme.bodyMedium?.color;
+
+    return PopupMenuItem<String>(
+      value: path,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -49,7 +65,13 @@ class AppMenuContent extends StatelessWidget {
                     onTap: () => _navigate(context, '/canvas'),
                   ),
                   _NavTile(icon: Icons.groups_outlined, label: "Team", isCollapsed: isCollapsed),
-                  _NavTile(icon: Icons.analytics_outlined, label: "AI & Data", isCollapsed: isCollapsed),
+                  _NavTile(
+                    icon: Icons.auto_awesome,
+                    label: "AI",
+                    isCollapsed: isCollapsed,
+                    isSelected: _isPathActive(context, '/ai'),
+                    onTap: () => _navigate(context, '/ai'),
+                  ),
                 ],
               ),
             ),
@@ -64,28 +86,82 @@ class AppMenuContent extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final mutedColor = theme.textTheme.bodyMedium?.color?.withOpacity(0.5);
 
+    // Check if we are currently anywhere inside the templates section
+    final isTemplateGroupActive = _isPathActive(context, '/templates');
+
     if (isCollapsed) {
-      return _NavTile(
-        icon: Icons.description_outlined,
-        label: "Templates",
-        isCollapsed: true,
-        onTap: () => _navigate(context, '/templates'),
+      // 🚀 FLYOUT MENU FOR COLLAPSED STATE
+      return Theme(
+        // Wraps the popup in your theme colors to match the app
+        data: theme.copyWith(
+          popupMenuTheme: PopupMenuThemeData(
+            color: theme.scaffoldBackgroundColor, // Background color of the popup
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        child: PopupMenuButton<String>(
+          offset: const Offset(70, 0), // 🚀 Pushes the menu directly to the right of the sidebar
+          tooltip: "Templates",
+          onSelected: (String path) => _navigate(context, path),
+          itemBuilder: (BuildContext context) => [
+            _buildPopupItem(context, Icons.assignment_outlined, "Project Templates", '/templates/projects'),
+            _buildPopupItem(context, Icons.build_outlined, "Tools", '/templates/tools'),
+            _buildPopupItem(context, Icons.label_outlined, "Tags", '/templates/tags'),
+            _buildPopupItem(context, Icons.assessment_outlined, "Reports", '/templates/reports'),
+          ],
+          // The child is your standard tile. PopupMenuButton automatically intercepts the tap!
+          child: _NavTile(
+            icon: Icons.description_outlined,
+            label: "Templates", 
+            isCollapsed: true,
+            isSelected: isTemplateGroupActive, 
+          ),
+        ),
       );
     }
 
     return Theme(
       data: theme.copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        initiallyExpanded: isTemplateGroupActive, // 🚀 Keeps menu open if a sub-item is selected!
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         iconColor: colorScheme.primary,
         collapsedIconColor: mutedColor,
-        leading: Icon(Icons.description_outlined, color: mutedColor, size: 22),
-        title: Text("Templates", style: TextStyle(color: mutedColor, fontSize: 13, fontWeight: FontWeight.w600)),
+        leading: Icon(Icons.description_outlined, color: isTemplateGroupActive ? colorScheme.primary : mutedColor, size: 22),
+        title: Text("Templates", style: TextStyle(color: isTemplateGroupActive ? colorScheme.primary : mutedColor, fontSize: 13, fontWeight: FontWeight.w600)),
         children: [
-          _NavTile(icon: Icons.assignment_outlined, label: "Project Templates", isCollapsed: false, isSubItem: true, onTap: () => _navigate(context, '/templates/projects')),
-          _NavTile(icon: Icons.build_outlined, label: "Tools", isCollapsed: false, isSubItem: true, onTap: () => _navigate(context, '/templates/tools')),
-          _NavTile(icon: Icons.label_outlined, label: "Tags", isCollapsed: false, isSubItem: true, onTap: () => _navigate(context, '/templates/tags')),
-          _NavTile(icon: Icons.assessment_outlined, label: "Reports", isCollapsed: false, isSubItem: true, onTap: () => _navigate(context, '/templates/reports')),
+          _NavTile(
+            icon: Icons.assignment_outlined, 
+            label: "Project Templates", 
+            isCollapsed: false, 
+            isSubItem: true, 
+            isSelected: _isPathActive(context, '/templates/projects'), // 🚀 Now gets highlighted!
+            onTap: () => _navigate(context, '/templates/projects')
+          ),
+          _NavTile(
+            icon: Icons.build_outlined, 
+            label: "Tools", 
+            isCollapsed: false, 
+            isSubItem: true, 
+            isSelected: _isPathActive(context, '/templates/tools'), // 🚀 Now gets highlighted!
+            onTap: () => _navigate(context, '/templates/tools')
+          ),
+          _NavTile(
+            icon: Icons.label_outlined, 
+            label: "Tags", 
+            isCollapsed: false, 
+            isSubItem: true, 
+            isSelected: _isPathActive(context, '/templates/tags'), // 🚀 Now gets highlighted!
+            onTap: () => _navigate(context, '/templates/tags')
+          ),
+          _NavTile(
+            icon: Icons.assessment_outlined, 
+            label: "Reports", 
+            isCollapsed: false, 
+            isSubItem: true, 
+            isSelected: _isPathActive(context, '/templates/reports'), // 🚀 Now gets highlighted!
+            onTap: () => _navigate(context, '/templates/reports')
+          ),
         ],
       ),
     );
@@ -130,7 +206,14 @@ class _NavTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: EdgeInsets.symmetric(vertical: 12, horizontal: isCollapsed ? 0 : 12),
+          // 🚀 MAGIC HERE: Pushes the content inward if it's a sub-item, 
+          // but keeps the background color spanning the full width of the tile.
+          padding: EdgeInsets.only(
+            top: 12,
+            bottom: 12,
+            left: isCollapsed ? 0 : (isSubItem ? 42 : 12), 
+            right: isCollapsed ? 0 : 12,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: isSelected ? activeBg : Colors.transparent,

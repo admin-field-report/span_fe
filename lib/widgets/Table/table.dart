@@ -66,7 +66,10 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     }
 
     int start = _currentPage * widget.rowsPerPage;
-    if (start >= list.length) start = 0;
+    if (start >= list.length) {
+      start = 0;
+      _currentPage = 0; // Reset to page 0 if data shrinks
+    }
     int end = start + widget.rowsPerPage;
     return list.sublist(start, end > list.length ? list.length : end);
   }
@@ -113,7 +116,7 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
                       _buildHeader(theme, colorScheme),
                       ListView.separated(
                         shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
+                        physics: const NeverScrollableScrollPhysics(), // Handled by outer scroll view if needed
                         itemCount: displayData.length,
                         separatorBuilder: (_, __) => Divider(
                           height: 1,
@@ -318,52 +321,52 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     );
   }
 
+  // 🚀 COMPLETELY REWRITTEN EMPTY STATE
   Widget _buildEmptyState(ThemeData theme, ColorScheme colorScheme) {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildHeader(theme, colorScheme),
-          
-          Container(
-            height: MediaQuery.of(context).size.height * 0.6,
-            alignment: Alignment.center,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.05),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.inventory_2_outlined, 
-                    size: 64, 
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.2)
-                  ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(theme, colorScheme),
+        
+        // Use padding instead of a hardcoded MediaQuery height
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 80.0, horizontal: 24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.05),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  "No Records Found", 
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant, 
-                    fontWeight: FontWeight.w600
-                  )
+                child: Icon(
+                  Icons.inventory_2_outlined, 
+                  size: 64, 
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.2)
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  "Try adjusting your filters or check back later.",
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.6)
-                  ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                "No Records Found", 
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant, 
+                  fontWeight: FontWeight.w600
+                )
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Try adjusting your filters or check back later.",
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.6)
                 ),
-              ],
-            ),
+                textAlign: TextAlign.center, // Keeps it neat on mobile
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

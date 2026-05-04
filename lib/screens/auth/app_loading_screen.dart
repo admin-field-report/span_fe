@@ -44,7 +44,7 @@ class _AppLoadingScreenState extends State<AppLoadingScreen> {
             
             // 2. COMPANY NAME (Using Theme TextStyles)
             Text(
-              "FIELD REPORT",
+              "SPAN INSPECT",
               style: theme.textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w900,
                 letterSpacing: 2.0,

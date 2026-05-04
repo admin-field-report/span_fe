@@ -1,24 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter/foundation.dart';
 import 'widgets/login_form.dart';
 import 'widgets/signup_form.dart';
+import 'widgets/early_access_form.dart';
 import 'widgets/branding_panel.dart';
 import '../../utils/app_responsive.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool showBetaLogin;
+  final bool isLoginMode; 
+
+  const LoginScreen({
+    super.key, 
+    this.showBetaLogin = false,
+    this.isLoginMode = true, 
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
   
 class _LoginScreenState extends State<LoginScreen> {
+  late bool _showLoginForm; 
 
-  bool _showLoginForm = true;
+  @override
+  void initState() {
+    super.initState();
+    _showLoginForm = widget.isLoginMode; 
+  }
+
+  @override
+  void didUpdateWidget(LoginScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isLoginMode != widget.isLoginMode) {
+      setState(() {
+        _showLoginForm = widget.isLoginMode;
+      });
+    }
+  }
 
   void _toggleFormMode() {
-    setState(() {
-      _showLoginForm = !_showLoginForm;
-    });
+    final currentUri = GoRouterState.of(context).uri;
+    final queryParams = Map<String, String>.from(currentUri.queryParameters);
+
+    final targetPath = _showLoginForm ? '/signup' : '/login';
+
+    final newUri = Uri(
+      path: targetPath, 
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    );
+    
+    context.go(newUri.toString());
   }
 
   @override
@@ -28,6 +61,24 @@ class _LoginScreenState extends State<LoginScreen> {
     const Color obsidianBg = Color(0xFF151A21);
     const Color emeraldAccent = Color(0xFF00AB55);
     const Color slateSurface = Color(0xFF1C252E);
+
+    // 🚀 2. Safely check if this is a Native Android or iOS app
+    final bool isNativeMobileApp = !kIsWeb && 
+        (defaultTargetPlatform == TargetPlatform.android || 
+         defaultTargetPlatform == TargetPlatform.iOS);
+
+    // 🚀 3. Determine if we should show the standard login flow
+    // It shows if the URL has ?beta=true OR if it's a compiled mobile app
+    final bool bypassEarlyAccess = widget.showBetaLogin || isNativeMobileApp;
+
+    Widget activeForm;
+    if (!bypassEarlyAccess) {
+      activeForm = const EarlyAccessForm(key: ValueKey('early_access'));
+    } else {
+      activeForm = _showLoginForm 
+          ? LoginForm(key: const ValueKey('login'), onSwitch: _toggleFormMode) 
+          : SignupForm(key: const ValueKey('signup'), onSwitch: _toggleFormMode);
+    }
 
     return Scaffold(
       backgroundColor: obsidianBg,
@@ -67,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     const SizedBox(height: 8),
                                     const Text(
-                                      "Field Report",
+                                      "Span Inspect",
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w900,
@@ -93,22 +144,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                             child: child,
                                           );
                                         },
-                                        child: _showLoginForm 
-                                          ? LoginForm(
-                                              key: const ValueKey('login'),
-                                              onSwitch: _toggleFormMode,
-                                            ) 
-                                          : SignupForm(
-                                              key: const ValueKey('signup'),
-                                              onSwitch: _toggleFormMode,
-                                            ),
+                                        child: activeForm,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
                               const Spacer(),
-                              // Footer
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [

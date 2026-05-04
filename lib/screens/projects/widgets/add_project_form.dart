@@ -43,7 +43,7 @@ class _AddProjectFormState extends State<AddProjectForm> {
       final response = await _apiService.post('/project/createProject', {
         "name": _nameController.text.trim(),
         "description": _descController.text.trim(),
-        "templateId": _selectedTemplateId,
+        "template_id": _selectedTemplateId,
       });
       final Map<String, dynamic> responseData = jsonDecode(response.body); 
 

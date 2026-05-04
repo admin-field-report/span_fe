@@ -6,9 +6,11 @@ import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
+import './create_report_screen.dart';
+import './edit_report_screen.dart';
 
 class ProjectReports extends StatefulWidget {
-    final String projectId;
+  final String projectId;
 
   const ProjectReports({super.key, required this.projectId});
 
@@ -58,22 +60,22 @@ class _ProjectReportsState extends State<ProjectReports> {
     }
   }
 
-  void _confirmDelete(BuildContext context,  ProjectReport report) {
+  void _confirmDelete(BuildContext context, ProjectReport report) {
     showDialog(
-        context: context,
-        barrierColor: Colors.black.withOpacity(0.5),
-        builder: (context) => Center(
-          child: Material(
-            color: Colors.transparent,
-            child: ConfirmationDialog(
-              title: "Remove Report",
-              description: "Are you sure you want to remove this for '${report.name}'?",
-              confirmLabel: "Remove",
-              onConfirm: () async => await removeReport(context, report.id),
-            ),
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: ConfirmationDialog(
+            title: "Remove Report",
+            description: "Are you sure you want to remove this for '${report.name}'?",
+            confirmLabel: "Remove",
+            onConfirm: () async => await removeReport(context, report.id),
           ),
         ),
-      );
+      ),
+    );
   }
 
   @override
@@ -96,9 +98,9 @@ class _ProjectReportsState extends State<ProjectReports> {
                 children: [
                   _buildTopToolbar(theme),
                   const SizedBox(height: 10),
-                    ListenableBuilder(
-                      listenable: projectController,
-                      builder: (context, child) {
+                  ListenableBuilder(
+                    listenable: projectController,
+                    builder: (context, child) {
                       final displayData = _getFilteredReports();
                       return CommonTable<ProjectReport>(
                         isLoading: projectController.isReportLoading,
@@ -132,14 +134,38 @@ class _ProjectReportsState extends State<ProjectReports> {
                               DateFormat('dd MMM yyyy').format(item.createDate),
                             ),
                           ),
+                          // 🚀 UPDATED ACTIONS COLUMN
                           TableColumn(
                             title: "Actions",
                             flex: 0,
-                            minWidth: 100,
-                            builder: (report) => IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20),
-                              color: colorScheme.error,
-                              onPressed: () => _confirmDelete(context, report),
+                            minWidth: 120, // Increased slightly to fit two icons comfortably
+                            builder: (report) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 20),
+                                  color: colorScheme.primary,
+                                  tooltip: "Edit Report",
+                                  onPressed: () async {
+                                    final didUpdate = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => EditReportScreen(reportId: report.id),
+                                      ),
+                                    );
+
+                                    if (didUpdate == true && mounted) {
+                                      projectController.getAllReports(widget.projectId);
+                                    }
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: colorScheme.error,
+                                  tooltip: "Delete Report",
+                                  onPressed: () => _confirmDelete(context, report),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -163,17 +189,22 @@ class _ProjectReportsState extends State<ProjectReports> {
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
         children: [
+          // Search Field
           Expanded(
             child: SearchField(
-              width: 350,
+              // Let it fill space on mobile, constrain to 350 on desktop
+              width: isDesktop ? 350 : double.infinity, 
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
           ),
 
+          if (isDesktop) const Spacer(),
+          if (!isDesktop) const SizedBox(width: 12), // Add breathing room on mobile
+
+          // Refresh Button (Desktop Only)
           if (isDesktop) ...[
-            const Spacer(),
             Tooltip(
-              message: 'Refresh Report',
+              message: 'Refresh Reports',
               child: InkWell(
                 onTap: projectController.isReportLoading ? null : () {
                   projectController.getAllReports(widget.projectId);
@@ -193,7 +224,27 @@ class _ProjectReportsState extends State<ProjectReports> {
                 ),
               ),
             ),
+            const SizedBox(width: 16),
           ],
+
+          // Create Report Button
+          Button(
+            label: isDesktop ? "Create Report" : "Create", 
+            variant: ButtonVariant.filled,
+            icon: Icons.add,
+            onPressed: () async {
+              // Push the new screen and wait for it to return true
+              final didCreate = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
+              );
+
+              // If report was created successfully, refresh the table!
+              if (didCreate == true && mounted) {
+                projectController.getAllReports(widget.projectId);
+              }
+            },
+          ),
         ],
       )
     );
