@@ -38,8 +38,6 @@ class CanvasScreen extends StatefulWidget {
 
 class _CanvasScreenState extends State<CanvasScreen> {
   final ApiService _apiService = ApiService();
-  
-  // 🚀 THE FIX: A map of GlobalKeys, one for every page!
   final Map<String, GlobalKey<custom_canvas.CanvasState>> _canvasKeys = {};
 
   bool _isPageLoading = false;
@@ -55,20 +53,23 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Map<String, PageData> _pageDataMap = {};
   List<ProjectTag> _availableTags = [];
 
+  // 🌟 NEW: INSPECTION LEVEL STATE 🌟
+  String _inspectionDescription = "";
+  List<String> _inspectionTagIds = [];
+  List<String> _inspectionImageUrls = [];
+
   @override
   void initState() {
     super.initState();
     _initializeCanvas();
   }
 
-  // 🚀 HELPER: Safely retrieves or generates the GlobalKey for the active page
   GlobalKey<custom_canvas.CanvasState> _getCurrentCanvasKey() {
     if (_currentPage.isEmpty) return GlobalKey<custom_canvas.CanvasState>();
     _canvasKeys.putIfAbsent(_currentPage, () => GlobalKey<custom_canvas.CanvasState>());
     return _canvasKeys[_currentPage]!;
   }
 
-  // 🚀 SYNC: Securely reaches into the live Canvas widget and saves objects to memory
   void _syncCurrentPageObjects() {
     if (_currentPage.isEmpty) return;
     final key = _getCurrentCanvasKey();
@@ -78,7 +79,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _switchPage(String newPage) async {
-    _syncCurrentPageObjects(); // Save current page's drawings before moving!
+    _syncCurrentPageObjects(); 
     setState(() {
       _currentPage = newPage;
       _selectedCanvasObject = null;
@@ -95,6 +96,84 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return frame.image;
   }
 
+  // ==========================================
+  // 🌟 NEW: INSPECTION LEVEL API METHODS 🌟
+  // ==========================================
+  
+  Future<void> _fetchInspectionAnnotation() async {
+    try {
+      final response = await _apiService.get('/inspection/annotation/${widget.inspectionId}');
+      final resData = jsonDecode(response.body);
+
+      if (resData['success'] == true && resData['data'] != null) {
+        final List? jsonData = resData['data']['json_data'];
+        if (jsonData != null && jsonData.isNotEmpty) {
+          final data = jsonData[0];
+          setState(() {
+            _inspectionDescription = data['description'] ?? "";
+            _inspectionTagIds = List<String>.from(data['tag_id_list'] ?? []);
+            _inspectionImageUrls = List<String>.from(data['image_url_list'] ?? []);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching inspection data: $e");
+    }
+  }
+
+  Future<void> _saveInspectionLevelAnnotation() async {
+    try {
+      final payload = {
+        "json_data": [
+          {
+            "description": _inspectionDescription,
+            "tag_id_list": _inspectionTagIds,
+            "image_url_list": _inspectionImageUrls
+          }
+        ]
+      };
+      await _apiService.post('/inspection/add-annotation/${widget.inspectionId}', payload);
+    } catch (e) {
+      if (mounted) ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
+    }
+  }
+
+  Future<void> _uploadInspectionImage(String fileName, Uint8List bytes) async {
+    try {
+      final payload = {
+        "file": fileName,
+        "content_type": "image/jpeg", 
+        "project_id": widget.projectId,
+        "inspection_id": widget.inspectionId
+      };
+      
+      final response = await _apiService.post('/inspection/project-inspection-images/presigned-url', payload);
+      final responseData = jsonDecode(response.body);
+      
+      if (responseData['signedUrl'] != null && responseData['key'] != null) {
+        final String signedUrl = responseData['signedUrl'];
+        final String s3Key = responseData['key'];
+        
+        final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
+        
+        if (uploadResponse.statusCode == 200) {
+           setState(() {
+              _inspectionImageUrls.add(s3Key);
+           });
+           await _saveInspectionLevelAnnotation(); // Sync with API immediately
+        } else {
+           throw Exception("Inspection image S3 upload failed");
+        }
+      }
+    } catch(e) {
+      if (mounted) ToastService.show(context, message: "Failed to upload inspection image.", type: ToastType.error);
+    }
+  }
+
+  // ==========================================
+  // EXISTING API METHODS
+  // ==========================================
+
   Future<void> _fetchAvailableTags() async {
     try {
       final response = await _apiService.get('/project/tags/${widget.projectId}');
@@ -107,9 +186,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               .toList();
         });
       }
-    } catch (e) {
-      debugPrint("Error fetching tags: $e");
-    }
+    } catch (e) { debugPrint("Error fetching tags: $e"); }
   }
 
   Future<void> _initializeCanvas() async {
@@ -117,6 +194,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     
     await _fetchAvailableTags(); 
     await _fetchCustomTools(); 
+    await _fetchInspectionAnnotation(); // 🚀 FETCH INSPECTION DATA
     
     if (widget.annotateImageKey != null) {
       _pages = ['Attached Image'];
@@ -132,10 +210,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             if (b64.contains(',')) b64 = b64.split(',').last;
             
             _pageDataMap = {
-              'Attached Image': PageData(
-                 pageId: widget.annotateImageKey!,
-                 backgroundImageBytes: base64Decode(b64), 
-              )
+              'Attached Image': PageData(pageId: widget.annotateImageKey!, backgroundImageBytes: base64Decode(b64))
             };
           }
         }
@@ -195,9 +270,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
              setState(() { _pageDataMap['Attached Image']?.objects = loadedObjects; });
            }
         }
-      } catch (e) {
-        debugPrint("Failed to load secure image: $e");
-      }
+      } catch (e) { debugPrint("Failed to load secure image: $e"); }
     } 
     else {
       await _fetchPageList();
@@ -305,7 +378,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) { debugPrint("Error loading saved annotations: $e"); }
   }
 
-  // 🚀 HELPER: Converts a list of DrawingObjects into the JSON array your API expects
   List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects) {
     List<Map<String, dynamic>> itemsList = [];
     
@@ -343,17 +415,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
   
   Future<void> _saveAnnotations() async {
     setState(() => _isSaving = true);
-    _syncCurrentPageObjects(); // 🚀 Grab latest objects right before saving!
+    _syncCurrentPageObjects(); 
     
+    // Also explicitly save the inspection level metadata just in case
+    await _saveInspectionLevelAnnotation();
+
     try {
       if (widget.annotateImageKey != null) {
         final pageData = _pageDataMap['Attached Image'];
         if (pageData == null) return;
 
         final itemsList = _serializeObjects(pageData.objects);
-        
         List<Map<String, dynamic>> wrapperArray = [{"page_name": "Image Preview", "sort_order": 0, "items": itemsList}];
         Map<String, dynamic> payload = {"imageS3": widget.annotateImageKey, "imageJsonData": jsonEncode(wrapperArray)};
+        
         final response = await _apiService.post('/canvas/image/jsonData', payload);
         final resData = jsonDecode(response.body);
 
@@ -364,15 +439,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
       } 
       else {
-        // 🚀 LOOP THROUGH ALL PAGES FOR DOCUMENT SAVING
         List<Future<http.Response>> saveTasks = [];
 
         for (String pageName in _pages) {
           final pageData = _pageDataMap[pageName];
-          
           if (pageData != null && pageData.hasLoadedAnnotations) {
             final itemsList = _serializeObjects(pageData.objects);
-            
             List<Map<String, dynamic>> canvasDataObj = [
               {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
             ];
@@ -403,7 +475,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         if (mounted) ToastService.show(context, message: "All Annotations saved successfully!", type: ToastType.success);
       }
     } catch (e) {
-      debugPrint("Error saving annotations: $e");
       if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -427,15 +498,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
               if (_selectedCanvasObject != null) {
                 _selectedCanvasObject!.imageUrls ??= [];
                 _selectedCanvasObject!.imageUrls!.add(s3Key);
-                _getCurrentCanvasKey().currentState?.refreshCanvas(); // 🚀 Reaches into specific page to redraw
+                _getCurrentCanvasKey().currentState?.refreshCanvas(); 
               }
            });
         } else {
-           throw Exception("S3 upload failed with status: ${uploadResponse.statusCode}");
+           throw Exception("Object S3 upload failed with status: ${uploadResponse.statusCode}");
         }
       }
     } catch(e) {
-      debugPrint("Image upload failed: $e");
       if (mounted) ToastService.show(context, message: "Failed to upload image.", type: ToastType.error);
     }
   }
@@ -447,14 +517,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
         setState(() {
           if (_selectedCanvasObject != null && _selectedCanvasObject!.imageUrls != null) {
             _selectedCanvasObject!.imageUrls!.remove(s3Key);
-            _getCurrentCanvasKey().currentState?.refreshCanvas(); // 🚀 Reaches into specific page to redraw
+            _getCurrentCanvasKey().currentState?.refreshCanvas(); 
           }
         });
       } else {
-        throw Exception("Delete failed with status: ${response.statusCode}");
+        throw Exception("Object Delete failed with status: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("Image deletion failed: $e");
       if (mounted) ToastService.show(context, message: "Failed to delete image.", type: ToastType.error);
     }
   }
@@ -485,8 +554,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) { debugPrint("Error fetching custom tools: $e"); }
   }
 
-DrawingType _parseDrawingType(String? typeStr) {
-    // We remove .toLowerCase() here because we have camelCase strings like 'forwardDiag' and 'customTool'
+  DrawingType _parseDrawingType(String? typeStr) {
     switch (typeStr) {
       case 'rectangle': return DrawingType.rect;
       case 'circle': return DrawingType.circle;
@@ -498,8 +566,6 @@ DrawingType _parseDrawingType(String? typeStr) {
       case 'pen': return DrawingType.pen;
       case 'pin': return DrawingType.pin;
       case 'customTool': return DrawingType.customTool;
-      
-      // 🚀 NEW: Added all the Pattern Types for loading from API!
       case 'brick': return DrawingType.brick;
       case 'grid': return DrawingType.grid;
       case 'horizontal': return DrawingType.horizontal;
@@ -513,11 +579,8 @@ DrawingType _parseDrawingType(String? typeStr) {
       case 'concrete': return DrawingType.concrete;
       case 'shingles': return DrawingType.shingles;
       case 'insulation': return DrawingType.insulation;
-      
-      // Fallbacks just in case the API sends something weird
       case 'rect': return DrawingType.rect; 
       case 'customtool': return DrawingType.customTool;
-      
       default: return DrawingType.rect;
     }
   }
@@ -598,9 +661,8 @@ DrawingType _parseDrawingType(String? typeStr) {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      // 🌟 MAGIC: The Key securely links the Screen state to the correct Canvas state!
       body: custom_canvas.Canvas(
-        key: _getCurrentCanvasKey(), // 🚀 This acts as the ValueKey and the GlobalKey!
+        key: _getCurrentCanvasKey(),
         initialBackgroundImage: _pageDataMap[_currentPage]?.backgroundImageBytes,
         initialObjects: _pageDataMap[_currentPage]?.objects ?? [],
         
@@ -620,13 +682,51 @@ DrawingType _parseDrawingType(String? typeStr) {
           },
         ),
 
+        // 🌟 CONDITIONAL PROPERTIES PANEL 🌟
         customRightPanel: PropertiesPanel(
           activeObject: _selectedCanvasObject, 
           availableTags: _availableTags,
+          
+          // 🚀 SEND DOWN THE INSPECTION STATE
+          inspectionDescription: _inspectionDescription,
+          inspectionTagIds: _inspectionTagIds,
+          inspectionImageUrls: _inspectionImageUrls,
+          
+          // 🚀 FIX: Removed the API calls here! Now it just updates local state.
+          onInspectionDescriptionChanged: (val) {
+            setState(() => _inspectionDescription = val);
+          },
+          onInspectionTagsChanged: (val) {
+            setState(() => _inspectionTagIds = val);
+          },
+
           onUpdate: () => _getCurrentCanvasKey().currentState?.refreshCanvas(),
-          onImageUpload: _uploadImageForObject,
-          onImageDelete: _deleteImageForObject,
+          
+          // 🚀 ROUTE UPLOAD LOGIC
+          onImageUpload: (fileName, bytes) async {
+            if (_selectedCanvasObject != null) {
+              await _uploadImageForObject(fileName, bytes);
+            } else {
+              await _uploadInspectionImage(fileName, bytes);
+            }
+          },
+          
+          // 🚀 ROUTE DELETE LOGIC
+          onImageDelete: (s3Key) async {
+            if (_selectedCanvasObject != null) {
+              await _deleteImageForObject(s3Key);
+            } else {
+              setState(() {
+                _inspectionImageUrls.remove(s3Key);
+              });
+              await _saveInspectionLevelAnnotation(); // Auto-save DB removal
+            }
+          },
+          
           allowImageUpload: widget.annotateImageKey == null,
+          
+          // 🚀 (Optional) If you want the API to fetch the image view, you can do it here, 
+          // but if your S3 links are public, the direct URL routing below works perfectly!
           onImageTap: (s3Key, url) {
             Navigator.push(context, MaterialPageRoute(
                 builder: (context) => CanvasScreen(
@@ -662,10 +762,10 @@ DrawingType _parseDrawingType(String? typeStr) {
           //   offset: const Offset(0, 45),
           //   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           //   onSelected: (val) {
-          //     _syncCurrentPageObjects(); // Save before exporting!
+          //     _syncCurrentPageObjects(); 
           //     exportCanvasToPdf(
           //       context: context, exportAll: val == 'all', pages: _pages, 
-          //       currentPage: _currentPage, pageDataMap: _pageDataMap 
+          //       currentPage: _currentPage, pageDataMap: _pageDataMap
           //     );
           //   },
           //   itemBuilder: (context) => [

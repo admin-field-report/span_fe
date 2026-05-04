@@ -7,20 +7,36 @@ import '../../../widgets/form_components/text_area_field.dart';
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
   final List<ProjectTag> availableTags;
+  
+  // 🔽 NEW: Inspection Level Data
+  final String? inspectionDescription;
+  final List<String>? inspectionTagIds;
+  final List<String>? inspectionImageUrls;
+  
+  // 🔽 NEW: Inspection Level Callbacks
+  final ValueChanged<String>? onInspectionDescriptionChanged;
+  final ValueChanged<List<String>>? onInspectionTagsChanged;
+
   final VoidCallback onUpdate;
   final VoidCallback onClose;
   final Future<void> Function(String fileName, Uint8List bytes) onImageUpload; 
-  // 🔽 NEW: Delete Callback
   final Future<void> Function(String s3Key) onImageDelete;
   final Function(String s3Key, String imageUrl) onImageTap;
 
   final bool allowImageUpload;
    
-
   const PropertiesPanel({
     super.key,
     required this.activeObject,
     required this.availableTags,
+    
+    // Inspection props
+    this.inspectionDescription,
+    this.inspectionTagIds,
+    this.inspectionImageUrls,
+    this.onInspectionDescriptionChanged,
+    this.onInspectionTagsChanged,
+
     required this.onUpdate,
     required this.onClose,
     required this.onImageUpload,
@@ -40,10 +56,23 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   bool _isUploading = false; 
   final Set<String> _deletingKeys = {};
 
+  // 🚀 DYNAMIC GETTERS: These decide which data pool to read from automatically
+  String get _currentDescription => widget.activeObject != null 
+      ? (widget.activeObject!.description ?? "") 
+      : (widget.inspectionDescription ?? "");
+
+  List<String> get _currentTagIds => widget.activeObject != null 
+      ? (widget.activeObject!.tagIds ?? []) 
+      : (widget.inspectionTagIds ?? []);
+
+  List<String> get _currentImageUrls => widget.activeObject != null 
+      ? (widget.activeObject!.imageUrls ?? []) 
+      : (widget.inspectionImageUrls ?? []);
+
   @override
   void initState() {
     super.initState();
-    _descController = TextEditingController(text: widget.activeObject?.description ?? "");
+    _descController = TextEditingController(text: _currentDescription);
     _descController.addListener(_onTextChanged);
     _trackedObject = widget.activeObject;
   }
@@ -52,7 +81,12 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     if (widget.activeObject != null) {
       if (widget.activeObject!.description != _descController.text) {
         widget.activeObject!.description = _descController.text;
-        widget.onUpdate();
+        widget.onUpdate(); // Trigger canvas update
+      }
+    } else {
+      // 🚀 Inspection Level Update
+      if (widget.inspectionDescription != _descController.text) {
+        widget.onInspectionDescriptionChanged?.call(_descController.text);
       }
     }
   }
@@ -60,10 +94,14 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   @override
   void didUpdateWidget(covariant PropertiesPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.activeObject != _trackedObject) {
+    
+    // Re-bind the controller text if the active object changes OR if the inspection data changes while no object is selected
+    if (widget.activeObject != oldWidget.activeObject || 
+       (widget.activeObject == null && widget.inspectionDescription != oldWidget.inspectionDescription)) {
+      
       _trackedObject = widget.activeObject;
       _descController.removeListener(_onTextChanged);
-      _descController.text = widget.activeObject?.description ?? "";
+      _descController.text = _currentDescription;
       _descController.addListener(_onTextChanged);
     }
   }
@@ -76,16 +114,26 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   }
 
   void _toggleTag(String tagId) {
-    if (widget.activeObject == null) return;
-    widget.activeObject!.tagIds ??= [];
-    setState(() {
-      if (widget.activeObject!.tagIds!.contains(tagId)) {
-        widget.activeObject!.tagIds!.remove(tagId);
+    if (widget.activeObject != null) {
+      widget.activeObject!.tagIds ??= [];
+      setState(() {
+        if (widget.activeObject!.tagIds!.contains(tagId)) {
+          widget.activeObject!.tagIds!.remove(tagId);
+        } else {
+          widget.activeObject!.tagIds!.add(tagId);
+        }
+      });
+      widget.onUpdate();
+    } else {
+      // 🚀 Inspection Level Update
+      List<String> updatedTags = List.from(_currentTagIds);
+      if (updatedTags.contains(tagId)) {
+        updatedTags.remove(tagId);
       } else {
-        widget.activeObject!.tagIds!.add(tagId);
+        updatedTags.add(tagId);
       }
-    });
-    widget.onUpdate();
+      widget.onInspectionTagsChanged?.call(updatedTags);
+    }
   }
 
   Future<void> _pickAndUploadImage() async {
@@ -98,6 +146,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       if (result != null && result.files.single.bytes != null) {
         setState(() => _isUploading = true);
         await widget.onImageUpload(result.files.single.name, result.files.single.bytes!);
+        // The parent handles where the image URL gets saved based on its own state!
         widget.onUpdate();
       }
     } catch (e) {
@@ -107,7 +156,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
-  // 🔽 NEW: Handle the individual image deletion 🔽
   Future<void> _handleDeleteImage(String s3Key) async {
     setState(() => _deletingKeys.add(s3Key));
     await widget.onImageDelete(s3Key);
@@ -118,10 +166,8 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    if (widget.activeObject == null) {
-      return Container(width: 300, color: theme.colorScheme.surfaceContainer, child: Center(child: Text("Select an object to edit properties", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))));
-    }
+    final imageUrls = _currentImageUrls; // Read from dynamic getter
+    final tagIds = _currentTagIds;       // Read from dynamic getter
 
     return Container(
       width: 300,
@@ -129,18 +175,23 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          // Container(
-          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: theme.colorScheme.surfaceContainer, border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant))),
-          //   child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Properties", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)), IconButton(icon: const Icon(Icons.close, size: 20), onPressed: widget.onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints())]),
-          // ),
-
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  
+                  // 🌟 DYNAMIC CONTEXT HEADER 🌟
+                  Text(
+                    widget.activeObject != null ? "Object Details" : "Inspection Details",
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold, 
+                      color: widget.activeObject != null ? theme.colorScheme.primary : theme.colorScheme.secondary
+                    ),
+                  ),
+                  const Divider(height: 24),
+
                   Text("Description", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   FormControlTextArea(controller: _descController, hintText: "Enter description here...", minLines: 4),
@@ -153,17 +204,23 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   Wrap(
                     spacing: 8, runSpacing: 8,
                     children: widget.availableTags.map((tag) {
-                      final isSelected = widget.activeObject!.tagIds?.contains(tag.id) ?? false;
-                      return FilterChip(label: Text(tag.name, style: TextStyle(fontSize: 12, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface)), selected: isSelected, selectedColor: tag.color, checkmarkColor: theme.colorScheme.onPrimary, backgroundColor: tag.color.withOpacity(0.1), side: BorderSide(color: tag.color.withOpacity(isSelected ? 0.0 : 0.5)), onSelected: (_) => _toggleTag(tag.id));
+                      final isSelected = tagIds.contains(tag.id);
+                      return FilterChip(
+                        label: Text(tag.name, style: TextStyle(fontSize: 12, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface)), 
+                        selected: isSelected, 
+                        selectedColor: tag.color, 
+                        checkmarkColor: theme.colorScheme.onPrimary, 
+                        backgroundColor: tag.color.withOpacity(0.1), 
+                        side: BorderSide(color: tag.color.withOpacity(isSelected ? 0.0 : 0.5)), 
+                        onSelected: (_) => _toggleTag(tag.id)
+                      );
                     }).toList(),
                   ),
 
-                  
                   if (widget.allowImageUpload) ...[
                     const SizedBox(height: 32),
                     Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    // 🌟 UPLOAD BUTTON NOW AT THE TOP 🌟
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -178,27 +235,25 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                         ),
                       ),
                     ),
-                    
                     const SizedBox(height: 16),
                   ],
                   
-                  // 🌟 NEW GALLERY GRID VIEW 🌟
-                  if (widget.activeObject!.imageUrls != null && widget.activeObject!.imageUrls!.isNotEmpty)
+                  // 🌟 DYNAMIC GALLERY GRID VIEW 🌟
+                  if (imageUrls.isNotEmpty)
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2, // 2 images per row
+                        crossAxisCount: 2, 
                         mainAxisSpacing: 8,
                         crossAxisSpacing: 8,
-                        childAspectRatio: 1.0, // Square thumbnails
+                        childAspectRatio: 1.0, 
                       ),
-                      itemCount: widget.activeObject!.imageUrls!.length,
+                      itemCount: imageUrls.length,
                       itemBuilder: (context, index) {
-                        final String s3Key = widget.activeObject!.imageUrls![index];
+                        final String s3Key = imageUrls[index];
                         final bool isDeleting = _deletingKeys.contains(s3Key);
                         
-                        // We extract the base URL from your upload API response
                         final String imageUrl = "https://dev-field-report-canvas-tool-image.s3.us-east-1.amazonaws.com/$s3Key";
 
                         return Container(
@@ -209,9 +264,8 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              // The Thumbnail
                               GestureDetector(
-                                onTap: () => widget.onImageTap(s3Key, imageUrl), // 👈 NEW CLICK HANDLER
+                                onTap: () => widget.onImageTap(s3Key, imageUrl), 
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
                                   child: Image.network(
@@ -229,7 +283,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                                 ),
                               ),
                               
-                              // The Spinner OR Delete Icon
                               if (isDeleting)
                                 Container(
                                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(8)),
