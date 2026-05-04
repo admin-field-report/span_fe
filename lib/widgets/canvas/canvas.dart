@@ -7,16 +7,28 @@ import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
 import 'widgets/property_panel.dart';
 
+// Helper class for the left sidebar tools
+class _ToolItem {
+  final String name;
+  final IconData icon;
+  _ToolItem(this.name, this.icon);
+}
+
 class Canvas extends StatefulWidget {
   final Uint8List? initialBackgroundImage;
   final List<Widget>? leftActions;
   final List<Widget>? rightActions;
+
+  final String? customTabLabel;
+  final Widget? customTabContent;
 
   const Canvas({
     super.key,
     this.initialBackgroundImage,
     this.leftActions,
     this.rightActions,
+    this.customTabLabel,
+    this.customTabContent,
   });
 
   @override
@@ -27,6 +39,9 @@ class CanvasState extends State<Canvas> {
   final FocusNode _canvasFocusNode = FocusNode();
   
   bool _isFullScreen = false;
+  
+  bool _showLeftPanel = true; 
+  bool _showPropertiesPanel = true; 
 
   String _selectedTool = 'Select';
 
@@ -64,11 +79,6 @@ class CanvasState extends State<Canvas> {
   double _initialRotationAngle = 0.0;
   DateTime? _lastTapTime;
   
-  bool _showShapeToolbar = false;
-  bool _showTextToolbar = false; 
-  bool _showPencilToolbar = false;
-  bool _showBrickToolbar = false;
-
   double _patternDensity = 20.0; 
 
   // Local Data Stores
@@ -89,26 +99,23 @@ class CanvasState extends State<Canvas> {
     setState(() {
       _selectedTool = tool;
       
-      // 🚀 Deselect active object when changed externally
       for (var obj in _drawingObjects) {
         obj.isSelected = false;
       }
       _activeObject = null;
+      _showPropertiesPanel = true; 
       
-      // Apply to Pencil/Pen
       _pencilStrokeWidth = stroke;
       _pencilColor = color;
       _penFillColor = fill;
       _pencilOpacity = opacity;
 
-      // Apply to Shapes
       _shapeStrokeWidth = stroke;
       _shapeLineColor = color;
       _shapeBorderColor = color;
       _shapeFillColor = fill;
       _shapeOpacity = opacity;
 
-      // Apply to Text
       _textStrokeWidth = stroke;
       _textColor = color;
       _textFillColor = fill;
@@ -173,7 +180,7 @@ class CanvasState extends State<Canvas> {
                     if (initialBorder == Colors.transparent) initialBorder = Colors.redAccent;
                     if (initialText == Colors.black) initialText = Colors.white;
                   } else if (isNote) { 
-                    if (initialFill == Colors.transparent) initialFill = const Color(0xFFFFF59D); // Classic sticky note yellow
+                    if (initialFill == Colors.transparent) initialFill = const Color(0xFFFFF59D);
                     if (initialBorder == Colors.transparent) initialBorder = Colors.transparent;
                     if (initialText == Colors.black) initialText = Colors.black87;
                   }
@@ -350,11 +357,8 @@ class CanvasState extends State<Canvas> {
           );
         } else {
           if (_currentPreview!.points!.length > 2 && (pos - _currentPreview!.points!.first).distance < 20) {
-            
             _currentPreview!.points!.last = _currentPreview!.points!.first;
-            
             _currentPreview!.points!.add(_currentPreview!.points!.first); 
-            
             _finalizeCurrentPreview();
           } else {
             _currentPreview!.points!.last = pos;
@@ -382,12 +386,10 @@ class CanvasState extends State<Canvas> {
                            (_selectedTool == 'Concrete') ? DrawingType.concrete :
                            (_selectedTool == 'Shingles') ? DrawingType.shingles :
                            (_selectedTool == 'Insulation') ? DrawingType.insulation :
-                           (_selectedTool == 'Diamond') ? DrawingType.diamond :
                            (_selectedTool == 'Arrow') ? DrawingType.arrow : 
                            (_selectedTool == 'Pin') ? DrawingType.pin : DrawingType.line;
         
         List<Offset>? pts = (type == DrawingType.pencil) ? [pos] : null;
-        
         Color objColor = Colors.black; Color objFill = Colors.transparent; double objOpacity = 1.0; double objStroke = 2.0; 
 
         if (type == DrawingType.pencil) {
@@ -396,7 +398,8 @@ class CanvasState extends State<Canvas> {
           objColor = Colors.red[800]!; objFill = Colors.red; objOpacity = 1.0; objStroke = 2.0;
         } else if (type == DrawingType.line || type == DrawingType.arrow) {
           objColor = _shapeLineColor; objOpacity = _shapeOpacity; objStroke = _shapeStrokeWidth;  
-        } else if ([DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type)) {          objColor = _shapeBorderColor; 
+        } else if ([DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type)) {         
+          objColor = _shapeBorderColor; 
           objFill = _shapeFillColor; 
           objOpacity = _shapeOpacity; 
           objStroke = _shapeStrokeWidth;  
@@ -423,6 +426,7 @@ class CanvasState extends State<Canvas> {
           for (var obj in _drawingObjects) obj.isSelected = false;
           hitObj.isSelected = true;
           _activeObject = hitObj; _activeHandle = hitHandle;
+
           if (hitHandle == ResizeHandle.rotation) _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
           else if (hitHandle == ResizeHandle.body) _dragOffset = pos - hitObj.start;
         } else {
@@ -570,14 +574,12 @@ class CanvasState extends State<Canvas> {
               setState(() {
                 if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
                 else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
-                // 🚀 BORDER BUTTON
                 else if (mode == 2) { 
                   _shapeBorderColor = newColor; 
                   if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
                     _activeObject!.color = newColor; 
                   }
                 } 
-                // 🚀 FILL BUTTON
                 else if (mode == 3) { 
                   _shapeFillColor = newColor; 
                   if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
@@ -705,118 +707,85 @@ class CanvasState extends State<Canvas> {
   // ==========================================
 
   bool _isShapeSelected(String tool) => ['Rect', 'Circle', 'Line', 'Arrow', 'Polygon'].contains(tool);
-
-  IconData _getShapeIcon(String tool) {
-    switch (tool) {
-      case 'Rect': return Icons.crop_square;
-      case 'Circle': return Icons.panorama_fish_eye;
-      case 'Line': return Icons.show_chart;
-      case 'Arrow': return Icons.arrow_outward;
-      case 'Polygon': return Icons.change_history;
-      default: return Icons.crop_square; 
-    }
-  }
-
-  // 🚀 ADDED THIS FUNCTION TO CHECK FOR PATTERN TOOLS
   bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots', 'Herringbone', 'Concrete', 'Shingles', 'Insulation'].contains(tool);
 
-  // 🚀 ADDED BACK AS REQUESTED
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return IconButton(
       tooltip: msg,
       onPressed: isEnabled ? onTap : null, 
+      iconSize: isMobile ? 16 : 18,
+      padding: EdgeInsets.all(isMobile ? 4 : 6),
+      constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 36, minHeight: 36),
       icon: Icon(icon, color: isEnabled ? (isDestructive ? Colors.red : theme.colorScheme.onSurface) : theme.disabledColor)
     );
   }
 
-  Widget _mainMenuToggle({required IconData icon, required String label, required bool isActive, required bool hasDropdown, required VoidCallback onTap, required ThemeData theme}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: isActive ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer,
-                  child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16),
-                ),
-                if (hasDropdown) ...[
-                  const SizedBox(width: 2), Icon(Icons.arrow_drop_down, size: 16, color: theme.colorScheme.onSurface.withOpacity(0.6)),
-                ] else ...[
-                  const SizedBox(width: 5), 
-                ]
-              ],
-            ),
-            const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 9)),
-          ],
-        ),
-      ),
-    );
-  }
-
-Widget _toolIcon(IconData icon, String label, ThemeData theme) {
-    bool isActive = _selectedTool == label;
-    return GestureDetector(
-      onTap: () => setState(() {
-        _selectedTool = label;
-        
-        for (var obj in _drawingObjects) {
-          obj.isSelected = false;
-        }
-        _activeObject = null;
-      }),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12), 
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 18, 
-              backgroundColor: isActive ? theme.colorScheme.primary : theme.colorScheme.surfaceContainer, 
-              child: Icon(icon, color: isActive ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface, size: 16)
-            ),
-            const SizedBox(height: 4), 
-            Text(label, style: const TextStyle(fontSize: 9)),
-          ]
-        )
-      ),
-    );
-  }
-
   Widget _colorButton(String label, Color color, int mode) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return GestureDetector(
       onTap: () => _showColorPicker(mode),
       child: Column(children: [
-        CircleAvatar(radius: 16, backgroundColor: color == Colors.transparent ? Colors.grey[200] : color, child: color == Colors.transparent ? const Icon(Icons.block, size: 12, color: Colors.red) : null),
-        const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 8)),
+        CircleAvatar(
+          radius: isMobile ? 12 : 14, 
+          backgroundColor: color == Colors.transparent ? Colors.grey[200] : color, 
+          child: color == Colors.transparent ? Icon(Icons.block, size: isMobile ? 10 : 12, color: Colors.red) : null
+        ),
+        const SizedBox(height: 4), 
+        Text(label, style: TextStyle(fontSize: isMobile ? 8 : 9)),
       ]),
     );
   }
 
   Widget _formatToggle(IconData icon, bool isActive, VoidCallback onTap, ThemeData theme) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2), padding: const EdgeInsets.all(4),
+        margin: const EdgeInsets.symmetric(horizontal: 2), 
+        padding: EdgeInsets.all(isMobile ? 2 : 4),
         decoration: BoxDecoration(color: isActive ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent, borderRadius: BorderRadius.circular(4)),
-        child: Icon(icon, size: 18, color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface),
+        child: Icon(icon, size: isMobile ? 14 : 16, color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface),
       ),
     );
   }
 
-  Widget _buildTextSizeSlider(ThemeData theme) {
+  // 🚀 COMPACT SLIDERS 🚀
+  Widget _buildCompactSlider({
+    required String label, 
+    required String valueLabel, 
+    required double value, 
+    required double min, 
+    required double max, 
+    int? divisions,
+    required ValueChanged<double> onChanged
+  }) {
     return SizedBox(
-      width: 160,
+      width: double.infinity, 
+      height: 32, // Tighter height constraint
       child: Row(children: [
-        const Text("Size: ", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-        SizedBox(width: 28, child: Text("${_textSize.toInt()}", style: theme.textTheme.labelSmall)),
-        Expanded(child: Slider(value: _textSize, min: 10, max: 120, onChanged: (v) => setState(() { _textSize = v; if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v; }))),
+        SizedBox(width: 32, child: Text(valueLabel, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2.0, // Sleeker track
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0), // Smaller thumb
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+            ),
+            child: Slider(
+              value: value, min: min, max: max, divisions: divisions,
+              onChanged: onChanged
+            )
+          )
+        ),
       ]),
+    );
+  }
+
+  Widget _buildTextSizeSlider(ThemeData theme) {
+    return _buildCompactSlider(
+      label: "Size", valueLabel: "${_textSize.toInt()}px", value: _textSize, min: 10, max: 120, 
+      onChanged: (v) => setState(() { _textSize = v; if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v; })
     );
   }
 
@@ -832,63 +801,28 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
         default: currentWidth = 2.0; 
       }
     }
-
-    // Failsafe clamp to ensure the slider doesn't crash if a value gets weird
     currentWidth = currentWidth.clamp(1.0, 20.0);
 
-    return SizedBox(
-      width: double.infinity, 
-      child: Row(children: [
-        SizedBox(width: 32, child: Text("${currentWidth.toInt()}px", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-        Expanded(
-          child: Slider(
-            value: currentWidth, 
-            min: 1, 
-            max: 20, 
-            onChanged: (v) => setState(() {
-              if (mode == 0) { 
-                _pencilStrokeWidth = v; 
-                if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v; 
-              } 
-              else if (mode == 1) { 
-                _shapeStrokeWidth = v; 
-                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
-                  _activeObject!.strokeWidth = v; 
-                }
-              }
-              else if (mode == 2) { 
-                _textStrokeWidth = v; 
-                if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v; 
-              }
-            })
-          )
-        ),
-      ]),
+    return _buildCompactSlider(
+      label: "Width", valueLabel: "${currentWidth.toInt()}px", value: currentWidth, min: 1, max: 20, 
+      onChanged: (v) => setState(() {
+        if (mode == 0) { _pencilStrokeWidth = v; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v; } 
+        else if (mode == 1) { _shapeStrokeWidth = v; if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) { _activeObject!.strokeWidth = v; } }
+        else if (mode == 2) { _textStrokeWidth = v; if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v; }
+      })
     );
   }
 
   Widget _buildDensitySlider() {
     double currentDensity = (_activeObject?.type == DrawingType.dots) ? _activeObject!.patternDensity : _patternDensity;
-    return SizedBox(
-      width: double.infinity,
-      child: Row(children: [
-        SizedBox(width: 38, child: Text("${currentDensity.toInt()}%", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-        Expanded(
-          child: Slider(
-            value: currentDensity, min: 5, max: 100, divisions: 19,
-            onChanged: (v) => setState(() {
-              _patternDensity = v;
-              if (_activeObject?.type == DrawingType.dots) _activeObject!.patternDensity = v;
-            })
-          )
-        ),
-      ]),
+    return _buildCompactSlider(
+      label: "Density", valueLabel: "${currentDensity.toInt()}%", value: currentDensity, min: 5, max: 100, divisions: 19,
+      onChanged: (v) => setState(() { _patternDensity = v; if (_activeObject?.type == DrawingType.dots) _activeObject!.patternDensity = v; })
     );
   }
 
-  Widget _vDiv(ThemeData theme) => VerticalDivider(width: 32, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
+  Widget _vDiv(ThemeData theme) => VerticalDivider(width: 24, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
 
-  // Modern UI Helper for grouping properties
   Widget _buildPropSection(ThemeData theme, String title, IconData icon, Widget content) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,98 +830,194 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
         Row(
           children: [
             Icon(icon, size: 12, color: theme.colorScheme.primary),
-            const SizedBox(width: 6), 
-            Text(
-              title, 
-              style: TextStyle(
-                fontSize: 9, // 🚀 Tiny, clean typography for section headers
-                fontWeight: FontWeight.bold, 
-                color: theme.colorScheme.primary, 
-                letterSpacing: 0.5
-              )
+            const SizedBox(width: 4), 
+            Text(title, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: theme.colorScheme.primary, letterSpacing: 0.5)),
+          ],
+        ),
+        const SizedBox(height: 4), 
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 🚀 Tighter padding
+          decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(6), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+          child: content,
+        ),
+        const SizedBox(height: 8), // 🚀 Tighter gaps
+      ],
+    );
+  }
+
+  Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
+    return ExpansionTile(
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 13)),
+      initiallyExpanded: initiallyExpanded,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: isMobile ? 4 : 3,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+              childAspectRatio: 1.0,
+            ),
+            itemCount: tools.length,
+            itemBuilder: (context, index) {
+              final tool = tools[index];
+              final isSelected = _selectedTool == tool.name;
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedTool = tool.name;
+                    for (var obj in _drawingObjects) obj.isSelected = false;
+                    _activeObject = null;
+                  });
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant.withOpacity(0.5), width: isSelected ? 2 : 1),
+                    borderRadius: BorderRadius.circular(8),
+                    color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
+                  ),
+                  padding: const EdgeInsets.all(4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(tool.icon, size: isMobile ? 16 : 20, color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7)),
+                      const SizedBox(height: 4),
+                      Text(tool.name, style: TextStyle(fontSize: isMobile ? 8 : 9, color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        )
+      ],
+    );
+  }
+
+  Widget _buildLeftToolsPanel(ThemeData theme) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final double panelWidth = math.min(250.0, screenWidth * 0.75);
+    final bool hasCustomTab = widget.customTabContent != null;
+
+    return Container(
+      width: panelWidth,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(5, 0))
+        ]
+      ),
+      child: DefaultTabController(
+        length: hasCustomTab ? 2 : 1,
+        child: Column(
+          children: [
+            TabBar(
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: theme.colorScheme.onSurface.withOpacity(0.6),
+              indicatorSize: TabBarIndicatorSize.tab,
+              tabs: [
+                const Tab(text: "Tools"),
+                if (hasCustomTab) Tab(text: widget.customTabLabel ?? "Custom"),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  ListView(
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      _buildToolCategory(theme, "Draw", [
+                        _ToolItem("Pencil", Icons.edit),
+                        _ToolItem("Pen", Icons.polyline),
+                      ], initiallyExpanded: true),
+                      
+                      _buildToolCategory(theme, "Shapes", [
+                        _ToolItem("Rect", Icons.crop_square),
+                        _ToolItem("Circle", Icons.panorama_fish_eye),
+                        _ToolItem("Polygon", Icons.change_history),
+                        _ToolItem("Line", Icons.show_chart),
+                        _ToolItem("Arrow", Icons.arrow_outward),
+                      ]),
+                      
+                      _buildToolCategory(theme, "Text", [
+                        _ToolItem("Text", Icons.title),
+                        _ToolItem("Callout", Icons.chat_bubble_outline),
+                        _ToolItem("Note", Icons.sticky_note_2),
+                      ]),
+                      
+                      _buildToolCategory(theme, "Patterns", [
+                        _ToolItem("Brick", Icons.view_module),
+                        _ToolItem("Grid", Icons.grid_on),
+                        _ToolItem("Horizontal", Icons.notes),
+                        _ToolItem("Vertical", Icons.view_column),
+                        _ToolItem("Forward", Icons.trending_up),
+                        _ToolItem("Reverse", Icons.trending_down),
+                        _ToolItem("Weave", Icons.grid_goldenratio),
+                        _ToolItem("Diamond", Icons.grid_4x4),
+                        _ToolItem("Herringbone", Icons.view_quilt),
+                        _ToolItem("Concrete", Icons.grain),
+                        _ToolItem("Shingles", Icons.roofing),
+                        _ToolItem("Insulation", Icons.waves),
+                        _ToolItem("Dots", Icons.scatter_plot),
+                      ]),
+
+                      _buildToolCategory(theme, "Additional Tools", [
+                        _ToolItem("Pin", Icons.place),
+                      ]),
+                    ],
+                  ),
+                  if (hasCustomTab) widget.customTabContent!,
+                ],
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 6), // 🚀 Very tight gap above the card
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), // 🚀 Tightened inner content padding
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(8), 
-            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-          ),
-          child: content,
-        ),
-        const SizedBox(height: 12), // 🚀 Shorter spacing between the different sections
-      ],
+      ),
     );
   }
 
   Widget _buildPanelContent(ThemeData theme) {
     DrawingType? type = _activeObject?.type;
     
-    // 1. PENCIL & PEN
     if (_selectedTool == 'Pencil' || _selectedTool == 'Pen' || type == DrawingType.pencil || type == DrawingType.pen) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPropSection(
-            theme, "STROKE THICKNESS", Icons.line_weight,
-            _buildStrokeSlider(theme, 0),
-          ),
-          _buildPropSection(
-            theme, "APPEARANCE", Icons.color_lens_outlined,
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _colorButton("Line", _activeObject?.color ?? _pencilColor, 0),
-                _colorButton("Fill", _activeObject?.fillColor ?? _penFillColor, 7),
-              ],
-            ),
-          ),
+          _buildPropSection(theme, "STROKE THICKNESS", Icons.line_weight, _buildStrokeSlider(theme, 0)),
+          _buildPropSection(theme, "APPEARANCE", Icons.color_lens_outlined, Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_colorButton("Line", _activeObject?.color ?? _pencilColor, 0), _colorButton("Fill", _activeObject?.fillColor ?? _penFillColor, 7)])),
         ],
       );
     }
 
-    // 2. SHAPES & PATTERNS
-    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  // Determine if we are working with a Line/Arrow or a Rect/Circle
+    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  
       bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPropSection(
-            theme, "THICKNESS", Icons.border_style,
-            _buildStrokeSlider(theme, 1),
-          ),
+          _buildPropSection(theme, "THICKNESS", Icons.border_style, _buildStrokeSlider(theme, 1)),
           if (_selectedTool == 'Dots' || _activeObject?.type == DrawingType.dots)
-            _buildPropSection(
-              theme, "DENSITY", Icons.blur_on,
-              _buildDensitySlider(),
-            ),
+            _buildPropSection(theme, "DENSITY", Icons.blur_on, _buildDensitySlider()),
           _buildPropSection(
             theme, "APPEARANCE", Icons.palette_outlined,
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: isLineOrArrow 
-                  // 🚀 Only show Line Color for Lines and Arrows
-                  ? [
-                      _colorButton("Line", _activeObject?.color ?? _shapeLineColor, 1),
-                    ]
-                  // 🚀 Show Border and Fill for Rectangles and Circles
-                  : [
-                      // Fix: Rect/Circle border color is stored in the object's `.color` property
-                      _colorButton("Border", _activeObject?.color ?? _shapeBorderColor, 2),
-                      _colorButton("Fill", _activeObject?.fillColor ?? _shapeFillColor, 3),
-                    ],
+                  ? [_colorButton("Line", _activeObject?.color ?? _shapeLineColor, 1)]
+                  : [_colorButton("Border", _activeObject?.color ?? _shapeBorderColor, 2), _colorButton("Fill", _activeObject?.fillColor ?? _shapeFillColor, 3)],
             ),
           ),
         ],
       );
     }
 
-    // 3. TEXT
     if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note' || type == DrawingType.text) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1005,15 +1035,12 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
                     _formatToggle(Icons.format_strikethrough, _activeObject?.isStrikethrough ?? _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject != null) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8), // 🚀 Tighter gap
                 _buildTextSizeSlider(theme),
               ],
             ),
           ),
-          _buildPropSection(
-            theme, "OUTLINE WIDTH", Icons.border_outer,
-            _buildStrokeSlider(theme, 2),
-          ),
+          _buildPropSection(theme, "OUTLINE WIDTH", Icons.border_outer, _buildStrokeSlider(theme, 2)),
           _buildPropSection(
             theme, "COLORS", Icons.format_color_fill,
             Row(
@@ -1029,209 +1056,100 @@ Widget _toolIcon(IconData icon, String label, ThemeData theme) {
       );
     }
 
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildFloatingPencilMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 40.0, left: 16, right: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text("DRAW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
-            _toolIcon(Icons.edit, "Pencil", theme), _toolIcon(Icons.polyline, "Pen", theme),
+            Icon(Icons.tune, size: 48, color: theme.colorScheme.onSurface.withOpacity(0.2)),
+            const SizedBox(height: 16),
+            Text(
+              "Select an annotation or tool to view and edit its properties.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), height: 1.5, fontSize: 12),
+            ),
           ],
         ),
       ),
     );
   }
 
-Widget _buildFloatingTextMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("TOOLS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
-            _toolIcon(Icons.title, "Text", theme), 
-            _toolIcon(Icons.chat_bubble_outline, "Callout", theme),
-            _toolIcon(Icons.sticky_note_2, "Note", theme), 
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildFloatingShapeMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("SHAPES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
-            _toolIcon(Icons.crop_square, "Rect", theme), 
-            _toolIcon(Icons.panorama_fish_eye, "Circle", theme), 
-            _toolIcon(Icons.change_history, "Polygon", theme),
-            _toolIcon(Icons.show_chart, "Line", theme), 
-            _toolIcon(Icons.arrow_outward, "Arrow", theme),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFloatingBrickMenu(ThemeData theme) {
-    return Material(
-      elevation: 8, borderRadius: BorderRadius.circular(8), color: theme.colorScheme.surface,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("PATTERNS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)), const SizedBox(width: 8),
-            _toolIcon(Icons.view_module, "Brick", theme), 
-            _toolIcon(Icons.grid_on, "Grid", theme), 
-            _toolIcon(Icons.notes, "Horizontal", theme), 
-            _toolIcon(Icons.view_column, "Vertical", theme), 
-            _toolIcon(Icons.trending_up, "Forward", theme),
-            _toolIcon(Icons.trending_down, "Reverse", theme),
-            _toolIcon(Icons.grid_goldenratio, "Weave", theme),
-            _toolIcon(Icons.grid_4x4, "Diamond", theme),
-            _toolIcon(Icons.view_quilt, "Herringbone", theme), 
-            _toolIcon(Icons.grain, "Concrete", theme), 
-            _toolIcon(Icons.roofing, "Shingles", theme), 
-            _toolIcon(Icons.waves, "Insulation", theme), 
-            _toolIcon(Icons.scatter_plot, "Dots", theme),
-          ],
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildFullWidthToolbar(ThemeData theme) {
+  Widget _buildTopToolbar(ThemeData theme) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    
     return Container(
-      width: double.infinity, 
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), 
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 8.0 : 16.0, vertical: isMobile ? 4.0 : 8.0),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 1. LEFT SIDE: Drawing Tools
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _mainMenuToggle(icon: Icons.near_me, label: "Select", isActive: _selectedTool == 'Select' && !_showPencilToolbar && !_showShapeToolbar && !_showTextToolbar, hasDropdown: false, theme: theme, onTap: () => setState(() { _selectedTool = 'Select'; _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; })),
-                  
-                  _mainMenuToggle(icon: _selectedTool == 'Pen' ? Icons.polyline : Icons.edit, label: _selectedTool == 'Pen' ? "Pen" : "Pencil", isActive: _showPencilToolbar || _selectedTool == 'Pencil' || _selectedTool == 'Pen', hasDropdown: true, theme: theme, onTap: () => setState(() { 
-                    _showPencilToolbar = !_showPencilToolbar; 
-                    if (_showPencilToolbar) { 
-                      _showShapeToolbar = false; _showTextToolbar = false; 
-                      if (_selectedTool != 'Pencil' && _selectedTool != 'Pen') _selectedTool = 'Pencil'; 
-                      // 🚀 Clear selection
-                      for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
-                    } else { 
-                      _selectedTool = 'Select'; 
-                    } 
-                  })),
-                  
-                  _mainMenuToggle(icon: _getShapeIcon(_selectedTool), label: "Shapes", isActive: _showShapeToolbar || _isShapeSelected(_selectedTool), hasDropdown: true, theme: theme, onTap: () => setState(() { 
-                    _showShapeToolbar = !_showShapeToolbar; 
-                    if (_showShapeToolbar) { 
-                      _showPencilToolbar = false; _showTextToolbar = false; 
-                      if (!_isShapeSelected(_selectedTool)) _selectedTool = 'Rect'; 
-                      // 🚀 Clear selection
-                      for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
-                    } else { 
-                      _selectedTool = 'Select'; 
-                    } 
-                  })),
-                  
-                  _mainMenuToggle(
-                    icon: _selectedTool == 'Callout' ? Icons.chat_bubble_outline : (_selectedTool == 'Note' ? Icons.sticky_note_2 : Icons.title), 
-                    label: _selectedTool == 'Callout' ? "Callout" : (_selectedTool == 'Note' ? "Note" : "Text"), 
-                    isActive: _showTextToolbar || _selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note', 
-                    hasDropdown: true, 
-                    theme: theme, 
-                    onTap: () => setState(() { 
-                      _showTextToolbar = !_showTextToolbar; 
-                      if (_showTextToolbar) { 
-                        _showPencilToolbar = false; _showShapeToolbar = false; 
-                        if (_selectedTool != 'Text' && _selectedTool != 'Callout' && _selectedTool != 'Note') { _selectedTool = 'Text'; } 
-                        for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
-                      } else { 
-                        _selectedTool = 'Select'; 
-                      } 
-                    })
-                  ),
+          // LEFT PANEL TOGGLE (Kept as menu because it represents navigation/tools)
+          IconButton(
+            tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
+            icon: Icon(_showLeftPanel ? Icons.menu_open : Icons.menu),
+            color: theme.colorScheme.primary,
+            iconSize: isMobile ? 16 : 20, 
+            padding: EdgeInsets.all(isMobile ? 4 : 8),
+            constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+            onPressed: () => setState(() => _showLeftPanel = !_showLeftPanel),
+          ),
+          _vDiv(theme),
 
-                 // 🚀 Updated Main Menu Button
-                  _mainMenuToggle(
-                    icon: Icons.view_module, 
-                    label: "Pattern", 
-                    isActive: _showBrickToolbar || _isPatternSelected(_selectedTool),
-                    hasDropdown: true, 
-                    theme: theme,
-                    onTap: () => setState(() { 
-                      _showBrickToolbar = !_showBrickToolbar; 
-                      if (_showBrickToolbar) { 
-                        _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; 
-                        if (_selectedTool != 'Brick') _selectedTool = 'Brick'; 
-                        for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
-                      } else { 
-                        _selectedTool = 'Select'; 
-                      } 
-                    })
-                  ),
-                  
-                  _mainMenuToggle(icon: Icons.place, label: "Pin", isActive: _selectedTool == 'Pin', hasDropdown: false, theme: theme, onTap: () => setState(() { 
-                    _showPencilToolbar = false; _showShapeToolbar = false; _showTextToolbar = false; _selectedTool = 'Pin';
-                    for (var obj in _drawingObjects) obj.isSelected = false; _activeObject = null;
-                  })),
-
-                  // 🚀 Left Actions
-                  if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
-                    ...widget.leftActions!
-                  else
-                    const SizedBox(width: 48),
-                      
-                  _vDiv(theme),
-                  _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
-                  _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
-                  _vDiv(theme),
-                  _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-                  _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-                  _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-                ],
+          // SELECT TOOL
+          Container(
+            decoration: BoxDecoration(
+              color: _selectedTool == 'Select' ? theme.colorScheme.primary.withOpacity(0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              tooltip: "Select Tool",
+              iconSize: isMobile ? 16 : 20, 
+              padding: EdgeInsets.all(isMobile ? 4 : 8),
+              constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+              icon: Icon(
+                Icons.near_me, 
+                color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface, 
               ),
+              onPressed: () => setState(() {
+                _selectedTool = 'Select';
+              }),
             ),
           ),
-          
-            // 2. RIGHT SIDE: Document Controls
-            if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
-              Container(width: 1, height: 32, color: theme.colorScheme.outlineVariant, margin: const EdgeInsets.symmetric(horizontal: 16)),
+          _vDiv(theme),
 
-          // 🚀 2. RIGHT ACTIONS (Unpacks the list, or uses default spacing)
-            if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
-              ...widget.rightActions!
-            else
-              const SizedBox(width: 48),
+          if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
+            ...widget.leftActions!,
+
+          _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
+          _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
+          _vDiv(theme),
+          _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+          _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+          _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
           
-          // IconButton(
-          //   tooltip: "Close Canvas",
-          //   icon: const Icon(Icons.close),
-          //   onPressed: () => Navigator.of(context).pop(),
-          // ),
+          const Spacer(),
+          
+          if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
+            ...widget.rightActions!,
+            
+          _vDiv(theme),
+          
+          // 🚀 RIGHT PANEL TOGGLE (Updated to Styling/Tune Icon)
+          IconButton(
+            tooltip: _showPropertiesPanel ? "Hide Properties" : "Show Properties",
+            // You can also use Icons.palette / Icons.palette_outlined if you prefer a paint vibe!
+            icon: Icon(_showPropertiesPanel ? Icons.tune : Icons.tune_outlined),
+            color: theme.colorScheme.primary,
+            iconSize: isMobile ? 16 : 20, 
+            padding: EdgeInsets.all(isMobile ? 4 : 8),
+            constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+            onPressed: () => setState(() => _showPropertiesPanel = !_showPropertiesPanel),
+          ),
         ],
       ),
     );
@@ -1240,6 +1158,10 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    // 🚀 REDUCED WIDTH: Now 240px instead of 300px
+    final double rightPanelWidth = math.min(240.0, screenWidth * 0.75);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1263,13 +1185,15 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
           autofocus: true,
           child: Column(
             children: [
-                _buildFullWidthToolbar(theme),
+              _buildTopToolbar(theme),
               
               Expanded(
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // 🌟 2. THE CANVAS AREA 🌟
+                    // ==========================================
+                    // 1. THE CANVAS AREA
+                    // ==========================================
                     Positioned.fill(
                       child: Container(
                         color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
@@ -1314,7 +1238,7 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                                       child: CanvasPaper(
                                         objects: _drawingObjects, 
                                         preview: _currentPreview,
-                                        backgroundImageBytes: widget.initialBackgroundImage,                                          
+                                        backgroundImageBytes: widget.initialBackgroundImage,                                         
                                       ),
                                     ),
                                   ]
@@ -1325,40 +1249,8 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                         ),
                       ),
                     ),
-                    
-                    // Floating Menus
-                    if (_showPencilToolbar) Positioned(top: 8, left: 80, child: _buildFloatingPencilMenu(theme)),
-                    if (_showShapeToolbar) Positioned(top: 8, left: 140, child: _buildFloatingShapeMenu(theme)),
-                    if (_showTextToolbar) Positioned(top: 8, left: 210, child: _buildFloatingTextMenu(theme)),
-                    if (_showBrickToolbar) Positioned(top: 8, left: 280, child: _buildFloatingBrickMenu(theme)),
 
-                    // 🌟 FULL HEIGHT PROPERTIES PANEL 🌟
-                    if (_activeObject != null || ((_showPencilToolbar || _showShapeToolbar || _showTextToolbar) && _selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin'))
-                      Positioned(
-                        top: 0, right: 0, bottom: 0,
-                        child: Material(
-                          elevation: 16, 
-                          child: PropertiesPanel(
-                            title: _activeObject != null ? "EDIT ANNOTATION" : "${_selectedTool.toUpperCase()} SETTINGS",
-                            content: _buildPanelContent(theme),
-                            onClose: () {
-                              setState(() {
-                                if (_activeObject != null) {
-                                  for (var obj in _drawingObjects) { obj.isSelected = false; }
-                                  _activeObject = null;
-                                } else {
-                                  _selectedTool = 'Select';
-                                  _showPencilToolbar = false;
-                                  _showShapeToolbar = false;
-                                  _showTextToolbar = false;
-                                }
-                              });
-                            },
-                          ),
-                        ),
-                      ),
-
-                    // 🌟 3. NATIVE FULLSCREEN TOGGLE BUTTON 🌟
+                    // NATIVE FULLSCREEN TOGGLE BUTTON
                     Positioned(
                       bottom: 24,
                       right: 24,
@@ -1373,6 +1265,50 @@ Widget _buildFloatingTextMenu(ThemeData theme) {
                         ),
                       ),
                     ),
+
+                    // ==========================================
+                    // 🌟 2. LEFT SIDEBAR: TOOLS OVERLAY 🌟
+                    // ==========================================
+                    if (_showLeftPanel && !_isFullScreen)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        bottom: 0,
+                        child: _buildLeftToolsPanel(theme),
+                      ),
+
+                    // ==========================================
+                    // 🌟 3. RIGHT SIDEBAR: PROPERTIES OVERLAY 🌟
+                    // ==========================================
+                    if (_showPropertiesPanel && !_isFullScreen)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: rightPanelWidth,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))
+                            ]
+                          ),
+                          child: PropertiesPanel(
+                            title: _activeObject != null 
+                                ? "EDIT ANNOTATION" 
+                                : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
+                                    ? "${_selectedTool.toUpperCase()} SETTINGS" 
+                                    : "PROPERTIES"),
+                            content: _buildPanelContent(theme),
+                            onClose: () {
+                              setState(() {
+                                _showPropertiesPanel = false;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
