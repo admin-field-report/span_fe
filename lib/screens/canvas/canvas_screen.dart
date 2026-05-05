@@ -106,9 +106,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
       final resData = jsonDecode(response.body);
 
       if (resData['success'] == true && resData['data'] != null) {
-        final List? jsonData = resData['data']['json_data'];
-        if (jsonData != null && jsonData.isNotEmpty) {
-          final data = jsonData[0];
+        final List dataList = resData['data']; 
+        
+        if (dataList.isNotEmpty) {
+          final data = dataList[0];
           setState(() {
             _inspectionDescription = data['description'] ?? "";
             _inspectionTagIds = List<String>.from(data['tag_id_list'] ?? []);

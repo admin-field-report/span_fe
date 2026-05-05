@@ -166,8 +166,30 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final imageUrls = _currentImageUrls; // Read from dynamic getter
-    final tagIds = _currentTagIds;       // Read from dynamic getter
+    
+    // 🚀 NEW: If it's an image view AND no object is selected, hide the inspection details!
+    if (widget.activeObject == null && !widget.allowImageUpload) {
+      return Container(
+        width: 300,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface, 
+          border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant))
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              "Select an object to edit properties", 
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        )
+      );
+    }
+
+    final imageUrls = _currentImageUrls; 
+    final tagIds = _currentTagIds;       
 
     return Container(
       width: 300,
@@ -239,6 +261,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   ],
                   
                   // 🌟 DYNAMIC GALLERY GRID VIEW 🌟
+                  // 🌟 DYNAMIC GALLERY GRID VIEW 🌟
                   if (imageUrls.isNotEmpty)
                     GridView.builder(
                       shrinkWrap: true,
@@ -260,25 +283,28 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                           decoration: BoxDecoration(
                             border: Border.all(color: theme.colorScheme.outlineVariant),
                             borderRadius: BorderRadius.circular(8),
+                            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3), 
                           ),
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              GestureDetector(
-                                onTap: () => widget.onImageTap(s3Key, imageUrl), 
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    imageUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.image_not_supported_outlined, color: theme.colorScheme.onSurfaceVariant),
-                                        const SizedBox(height: 4),
-                                        Text("Preview\nUnavailable", textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: theme.colorScheme.onSurfaceVariant)),
-                                      ],
-                                    ),
+                              // 🚀 NEW: MouseRegion turns the cursor into a pointer hand on web/desktop!
+                              MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque, 
+                                  onTap: () => widget.onImageTap(s3Key, imageUrl), 
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.image, color: theme.colorScheme.primary.withOpacity(0.5), size: 36),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        "Image\nAttached", 
+                                        textAlign: TextAlign.center, 
+                                        style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500)
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -291,12 +317,15 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                               else
                                 Positioned(
                                   top: 4, right: 4,
-                                  child: GestureDetector(
-                                    onTap: () => _handleDeleteImage(s3Key),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                      child: const Icon(Icons.delete_outline, color: Colors.white, size: 14),
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click, // Also added to the delete button!
+                                    child: GestureDetector(
+                                      onTap: () => _handleDeleteImage(s3Key),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                        child: const Icon(Icons.delete_outline, color: Colors.white, size: 14),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -315,4 +344,5 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       ),
     );
   }
+  
 }
