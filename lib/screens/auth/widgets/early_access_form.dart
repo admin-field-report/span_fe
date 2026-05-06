@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'emerald_textfield.dart';
+import '../../../core/api_service.dart';
 
 class EarlyAccessForm extends StatefulWidget {
   const EarlyAccessForm({super.key});
@@ -9,11 +11,13 @@ class EarlyAccessForm extends StatefulWidget {
 }
 
 class _EarlyAccessFormState extends State<EarlyAccessForm> {
+  final ApiService _apiService = ApiService();
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   
   bool _isLoading = false;
   bool _isSubmitted = false;
+  String? _errorMessage; // 🚀 NEW: Added to catch API errors gracefully
 
   // Hardcoded colors matching your theme
   static const Color emerald = Color(0xFF00AB55);
@@ -25,17 +29,44 @@ class _EarlyAccessFormState extends State<EarlyAccessForm> {
     super.dispose();
   }
 
+  // 🚀 INTEGRATED ACTUAL API CALL
   Future<void> _handleRequestAccess() async {
     if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null; // Clear any previous errors
+      });
 
-      // TODO: Replace with your actual API call to save the email
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        // 1. Make the POST request
+        final response = await _apiService.post(
+          '/wait-list-user/create', 
+          { "email": _emailController.text.trim() }
+        );
 
-      if (mounted) {
+        final resData = jsonDecode(response.body);
+
+        // 2. Handle Success
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _isSubmitted = true; // Triggers the beautiful success UI!
+            });
+          }
+        } 
+        // 3. Handle API Rejection (e.g., email already exists)
+        else {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = resData['message'] ?? "Something went wrong. Please try again.";
+          });
+        }
+      } catch (e) {
+        // 4. Handle Network Errors
         setState(() {
           _isLoading = false;
-          _isSubmitted = true;
+          _errorMessage = "Network error. Please check your connection.";
         });
       }
     }
@@ -83,6 +114,17 @@ class _EarlyAccessFormState extends State<EarlyAccessForm> {
               return null;
             },
           ),
+          
+          // 🚀 NEW: Display API error message if it fails
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _errorMessage!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          
           const SizedBox(height: 32),
 
           // Submit Button
