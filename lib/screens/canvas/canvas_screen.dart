@@ -22,6 +22,8 @@ class CanvasScreen extends StatefulWidget {
   final String? annotateImageUrl; 
   final String? annotateImageKey;
 
+  final bool isInspectionImage;
+
   const CanvasScreen({
     super.key,
     required this.projectId,
@@ -30,6 +32,7 @@ class CanvasScreen extends StatefulWidget {
     this.page = '1',
     this.annotateImageUrl,
     this.annotateImageKey,
+    this.isInspectionImage = false,
   });
 
   @override
@@ -202,7 +205,27 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _currentPage = 'Attached Image';
       
       try {
-        final imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
+        // final imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
+        http.Response imageResponse;
+        http.Response annResponse;
+
+        // 🔀 BRANCH 1: FETCHING INSPECTION IMAGES
+        if (widget.isInspectionImage) {
+          // 1. Fetch the image using the new Inspection API
+          final String encodedKey = Uri.encodeComponent(widget.annotateImageKey!);
+          imageResponse = await _apiService.get('/inspection/annotation/image?key=$encodedKey');
+          
+          // 2. Fetch the JSON data (⚠️ REPLACE WITH YOUR ACTUAL INSPECTION GET-JSON API)
+          final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
+          annResponse = await _apiService.get('/inspection/annotationImage/image_json?InspectionImageJsonUrl=$jsonKey');
+        } 
+        // 🔀 BRANCH 2: FETCHING OBJECT IMAGES (Your existing code)
+        else {
+          imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
+          
+          final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
+          annResponse = await _apiService.get('/canvas/imageDataFromS3?imageJsonUrl=$jsonKey');
+        }
         
         if (imageResponse.statusCode == 200) {
           final jsonResp = jsonDecode(imageResponse.body);
@@ -216,8 +239,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         }
 
-        final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
-        final annResponse = await _apiService.get('/canvas/imageDataFromS3?imageJsonUrl=$jsonKey');
+        // final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
+        // final annResponse = await _apiService.get('/canvas/imageDataFromS3?imageJsonUrl=$jsonKey');
         
         if (annResponse.statusCode == 200) {
            final annData = jsonDecode(annResponse.body);
@@ -446,7 +469,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
         List<Map<String, dynamic>> wrapperArray = [{"page_name": "Image Preview", "sort_order": 0, "items": itemsList}];
         Map<String, dynamic> payload = {"imageS3": widget.annotateImageKey, "imageJsonData": jsonEncode(wrapperArray)};
         
-        final response = await _apiService.post('/canvas/image/jsonData', payload);
+        http.Response response;
+
+        // 🔀 BRANCH 1: SAVING INSPECTION IMAGES
+        if (widget.isInspectionImage) {
+           response = await _apiService.post('/inspection/annotationImage/image_json', payload);
+        } 
+        // 🔀 BRANCH 2: SAVING OBJECT IMAGES
+        else {
+           response = await _apiService.post('/canvas/image/jsonData', payload);
+        }
+
         final resData = jsonDecode(response.body);
 
         if (resData['success'] == true) {
@@ -772,8 +805,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
           onImageTap: (s3Key, url) {
             Navigator.push(context, MaterialPageRoute(
                 builder: (context) => CanvasScreen(
-                  documentId: widget.documentId, projectId: widget.projectId,
-                  inspectionId: widget.inspectionId, annotateImageUrl: url, annotateImageKey: s3Key,
+                  documentId: widget.documentId, 
+                  projectId: widget.projectId,
+                  inspectionId: widget.inspectionId, 
+                  annotateImageUrl: url, 
+                  annotateImageKey: s3Key,
+                  isInspectionImage: _selectedCanvasObject == null, 
                 ),
             ));
           },
