@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'inspections/project_inspections.dart';
@@ -5,6 +6,7 @@ import 'documents/project_documents.dart';
 import 'reports/project_reports.dart';
 import './widgets/project_medias.dart';
 import '../../widgets/tab/tab.dart';
+import '../../core/api_service.dart';
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;
@@ -22,8 +24,12 @@ class ProjectDetailsScreen extends StatefulWidget {
 
 class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     with SingleTickerProviderStateMixin {
+  final ApiService _apiService = ApiService();
   late TabController _tabController;
   final List<String> _sections = ['inspections', 'documents', 'media', 'reports'];
+  
+  String _projectName = "Loading...";
+  bool _isLoadingProjectName = true;
 
   @override
   void initState() {
@@ -40,6 +46,40 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         _updateUrl();
       }
     });
+
+    _fetchProjectDetails();
+  }
+
+  Future<void> _fetchProjectDetails() async {
+    try {
+      final response = await _apiService.get('/project/${widget.projectId}');
+      final resData = jsonDecode(response.body);
+
+      if (resData['success'] == true && resData['data'] != null) {
+        if (mounted) {
+          setState(() {
+            // Adjust the key ('name' or 'project_name') based on your exact API response structure
+            _projectName = resData['data']['name'] ?? 'Unnamed Project';
+            _isLoadingProjectName = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _projectName = 'Unknown Project';
+            _isLoadingProjectName = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching project details: $e");
+      if (mounted) {
+        setState(() {
+          _projectName = 'Error loading project';
+          _isLoadingProjectName = false;
+        });
+      }
+    }
   }
 
   void _updateUrl() {
@@ -53,7 +93,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     super.dispose();
   }
 
- @override
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -73,22 +113,34 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                 ),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: Text(
-                    'Project Name Here', 
-                    style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)
+                  child: Row(
+                    children: [
+                      // 🚀 NEW: Replaced static text with the dynamic state variable
+                      Text(
+                        _projectName, 
+                        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)
+                      ),
+                      // Optional: Show a tiny spinner next to the text while it loads
+                      if (_isLoadingProjectName) ...[
+                        const SizedBox(width: 12),
+                        const SizedBox(
+                          width: 12, 
+                          height: 12, 
+                          child: CircularProgressIndicator(strokeWidth: 2)
+                        )
+                      ]
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-
           AppTabBar(
             controller: _tabController,
             tabs: _sections.map((s) => s.toUpperCase()).toList(),
             horizontalPadding: 24.0,
           ),
-
 
           Padding(
             padding: const EdgeInsets.only(top: 0),
