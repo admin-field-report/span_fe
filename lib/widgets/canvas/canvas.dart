@@ -30,6 +30,9 @@ class Canvas extends StatefulWidget {
   final Widget? customTabContent;
   final Widget? customRightPanel;
 
+  final bool showCloseButton;
+  final VoidCallback? onClosePressed;
+
   const Canvas({
     super.key,
     this.canvasKey,
@@ -42,6 +45,8 @@ class Canvas extends StatefulWidget {
     this.customTabLabel,
     this.customTabContent,
     this.customRightPanel,
+    this.showCloseButton = false, 
+    this.onClosePressed,
   });
 
   @override
@@ -1155,12 +1160,6 @@ class CanvasState extends State<Canvas> {
               padding: EdgeInsets.all(isMobile ? 4 : 8),
               constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
               icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-              // onPressed: () => setState(() {
-              //   _selectedTool = 'Select';
-              //   for (var obj in _drawingObjects) obj.isSelected = false;
-              //   _activeObject = null;
-              //   widget.onSelectionChanged?.call(null); // SYNC
-              // }),
               onPressed: () {
                 setState(() {
                   _selectedTool = 'Select';
@@ -1189,7 +1188,7 @@ class CanvasState extends State<Canvas> {
           if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
             ...widget.rightActions!,
             
-          _vDiv(theme),
+          // _vDiv(theme),
           
           IconButton(
             tooltip: _showPropertiesPanel ? "Hide Styling" : "Show Styling",
@@ -1200,6 +1199,24 @@ class CanvasState extends State<Canvas> {
             constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () => setState(() => _showPropertiesPanel = !_showPropertiesPanel),
           ),
+          
+          // _vDiv(theme),
+
+          if (widget.showCloseButton) ...[
+            const SizedBox(width: 8), // Little spacing
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                color: theme.colorScheme.onSurface,
+                tooltip: "Close Canvas",
+                onPressed: widget.onClosePressed,
+              ),
+            ),
+          ],
         ],
       ),
     );

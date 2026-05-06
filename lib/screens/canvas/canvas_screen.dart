@@ -820,10 +820,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
           },
         ),
 
-        leftActions: [
-          IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).pop()), 
-          Text("Canvas", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-        ],
+        showCloseButton: true,
+        onClosePressed: () => Navigator.of(context).pop(),
+        leftActions: [],
         rightActions: [
           if (widget.annotateImageKey == null) _buildPageSelector(theme),
           const SizedBox(width: 12),
