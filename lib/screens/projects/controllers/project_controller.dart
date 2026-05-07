@@ -168,6 +168,9 @@ class ProjectController extends ChangeNotifier {
       final List dataList = responseData['data'] ?? [];
       _reports = dataList.map((item) => ProjectReport.fromJson(item)).toList();
 
+      // 🚀 NEW: Sort the list descending by createDate (newest first)
+      _reports.sort((a, b) => b.createDate.compareTo(a.createDate));
+
     } catch (e) {
       _error = e.toString();
     } finally {

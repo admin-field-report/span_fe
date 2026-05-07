@@ -37,7 +37,7 @@ class Button extends StatelessWidget {
 
     final style = ElevatedButton.styleFrom(
       elevation: 0,
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 17),
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       
       backgroundColor: variant == ButtonVariant.filled ? primaryColor : Colors.transparent,

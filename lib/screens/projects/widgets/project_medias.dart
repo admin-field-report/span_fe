@@ -65,52 +65,60 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Your toolbar stays sticky at the top!
             _buildTopToolbar(theme),
             const SizedBox(height: 10),
 
-            Builder(
-              builder: (context) {
-                if (isLoading) {
-                  return _buildSkeletonGrid(crossAxisCount);
-                }
+            // 🚀 THE FIX: Added Expanded & SingleChildScrollView
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(), // Ensures it scrolls smoothly
+                child: Builder(
+                  builder: (context) {
+                    if (isLoading) {
+                      return _buildSkeletonGrid(crossAxisCount);
+                    }
 
-                if (isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 80),
-                      child: _buildEmptyState(context),
-                    ),
-                  );
-                }
-
-                return Column(
-                  children: groups.map((group) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildGroupHeader(group),
-                      const SizedBox(height: 16),
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.75,
+                    if (isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 80),
+                          child: _buildEmptyState(context),
                         ),
-                        itemCount: group.items.length,
-                        itemBuilder: (context, itemIndex) {
-                          return MediaCard(
-                            imageUrl: group.items[itemIndex].imageUrl,
-                            tags: group.items[itemIndex].tags,
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 40),
-                    ],
-                  )).toList(),
-                );
-              },
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: groups.map((group) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildGroupHeader(group),
+                          const SizedBox(height: 16),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.75,
+                            ),
+                            itemCount: group.items.length,
+                            itemBuilder: (context, itemIndex) {
+                              return MediaCard(
+                                imageUrl: group.items[itemIndex].imageUrl,
+                                tags: group.items[itemIndex].tags,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 40),
+                        ],
+                      )).toList(),
+                    );
+                  },
+                ),
+              ),
             ),
           ],
         );

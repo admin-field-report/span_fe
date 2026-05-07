@@ -46,6 +46,9 @@ class InspectionController extends ChangeNotifier {
       if (responseData['success'] == true) {
         final List dataList = responseData['data'] ?? [];
         _inspections = dataList.map((item) => ProjectInspection.fromJson(item)).toList();
+        
+        // 🚀 NEW: Sort the list descending by createTime (newest first)
+        _inspections.sort((a, b) => b.createTime.compareTo(a.createTime));
       }
     } catch (e) {
       _error = e.toString();

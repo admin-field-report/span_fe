@@ -127,7 +127,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                         child: Padding(
                           padding: isMobile 
                               ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
-                              : const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                              : const EdgeInsets.fromLTRB(20, 0, 24, 20),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 300),
                             margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),

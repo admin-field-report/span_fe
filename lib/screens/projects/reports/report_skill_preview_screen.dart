@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ui';
+import 'package:field_report_fe/utils/app_responsive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../../core/api_service.dart';
@@ -220,6 +221,7 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isMobile = AppResponsive.isMobileScreen(context);
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
@@ -279,12 +281,23 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
                                   child: Row(
                                     children: [
                                       _buildToggleOption(
-                                        "Edit", Icons.edit_note, !_isPreviewMode, 
-                                        () => setState(() => _isPreviewMode = false), colorScheme,
+                                        "Edit", 
+                                        Icons.edit_note, 
+                                        !_isPreviewMode, 
+                                        () => setState(() => _isPreviewMode = false), 
+                                        colorScheme,
+                                        showText: !isMobile, // 🚀 NEW: Tell it whether to show text!
                                       ),
                                       _buildToggleOption(
-                                        "Preview", Icons.remove_red_eye_outlined, _isPreviewMode, 
-                                        () { FocusScope.of(context).unfocus(); setState(() => _isPreviewMode = true); }, colorScheme,
+                                        "Preview", 
+                                        Icons.remove_red_eye_outlined, 
+                                        _isPreviewMode, 
+                                        () { 
+                                          FocusScope.of(context).unfocus(); 
+                                          setState(() => _isPreviewMode = true); 
+                                        }, 
+                                        colorScheme,
+                                        showText: !isMobile, // 🚀 NEW: Tell it whether to show text!
                                       ),
                                     ],
                                   ),
@@ -425,21 +438,46 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
     );
   }
 
-  Widget _buildToggleOption(String label, IconData icon, bool isSelected, VoidCallback onTap, ColorScheme colorScheme) {
+  Widget _buildToggleOption(
+    String label, 
+    IconData icon, 
+    bool isSelected, 
+    VoidCallback onTap, 
+    ColorScheme colorScheme, {
+    bool showText = true, // 🚀 NEW: Defaults to true so it doesn't break other screens
+  }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(color: isSelected ? colorScheme.primaryContainer : Colors.transparent, borderRadius: BorderRadius.circular(7)),
+        padding: EdgeInsets.symmetric(
+          vertical: 8, 
+          horizontal: showText ? 16 : 12, // Slightly tighter padding if it's just an icon
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? colorScheme.primary.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurfaceVariant),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(fontSize: 13, fontWeight: isSelected ? FontWeight.bold : FontWeight.w500, color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurfaceVariant),
+            Icon(
+              icon, 
+              size: 20, 
+              color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant
             ),
+            
+            // 🚀 ONLY render the text and spacing if showText is true!
+            if (showText) ...[
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ]
           ],
         ),
       ),

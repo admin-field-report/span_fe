@@ -351,7 +351,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
           ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
           
-          Navigator.pushReplacement(
+          // 1. Await the Preview Screen
+          final didFinish = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ReportSkillPreviewScreen(
@@ -362,6 +363,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               ),
             ),
           );
+
+          // 2. If it finished successfully, close the Create screen and hand 'true' to the Table!
+          if (didFinish == true && mounted) {
+            Navigator.pop(context, true); 
+          }
           
         } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
           throw Exception("Finalization failed on server.");
@@ -554,7 +560,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                 child: Text("No existing documents found on server.", style: TextStyle(color: Colors.grey)),
                               )
                             : Container(
-                                height: 250, 
+                                height: 200, 
                                 decoration: BoxDecoration(
                                   border: Border.all(color: colorScheme.outlineVariant),
                                   borderRadius: BorderRadius.circular(8)

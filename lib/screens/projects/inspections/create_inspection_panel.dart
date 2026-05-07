@@ -43,8 +43,11 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       final docData = jsonDecode(responses[0].body);
       final inspData = jsonDecode(responses[1].body);
 
+      // 1. Extract both lists
+      List<dynamic> fetchedDocuments = docData['success'] == true ? (docData['data'] ?? []) : [];
       List<dynamic> fetchedInspections = inspData['success'] == true ? (inspData['data'] ?? []) : [];
 
+      // 2. Sort Inspections (Latest first)
       fetchedInspections.sort((a, b) {
         final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -52,8 +55,18 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         return dateB.compareTo(dateA);
       });
 
+      // 🚀 3. NEW: Sort Documents (Latest first)
+      fetchedDocuments.sort((a, b) {
+        // IMPORTANT: Ensure 'create_time' matches the exact key returned by your document API!
+        // If your API uses 'createdAt' or 'createDate' instead, change it here.
+        final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+        
+        return dateB.compareTo(dateA);
+      });
+
       setState(() {
-        _documents = docData['success'] == true ? (docData['data'] ?? []) : [];
+        _documents = fetchedDocuments; // 🚀 Assign the newly sorted list
         _inspections = fetchedInspections;
         _isLoading = false;
       });
@@ -80,14 +93,9 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (responseData['success'] == true && responseData['data'] != null) {
           
-          final newInspectionId = responseData['data']['id'];
+          final String newInspectionId = responseData['data']['id'];
           
-          // 1. Close the popup/bottom sheet
-          Navigator.pop(context);
-          
-          // 2. Redirect straight to the new inspection details screen!
-          final exactUrl = '/projects/details/${widget.projectId}/inspections/$newInspectionId';
-          context.go(exactUrl);
+          Navigator.pop(context, newInspectionId); 
           
         } else {
           ToastService.show(context, message: "Failed to parse inspection data.", type: ToastType.error);
@@ -96,7 +104,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         ToastService.show(context, message: responseData['message'] ?? "Failed to create inspection", type: ToastType.error);
       }
     } catch (e) {
-      debugPrint("🚨 Error creating inspection: $e");
       if (mounted) {
         ToastService.show(context, message: "Network error occurred.", type: ToastType.error);
       }
@@ -179,7 +186,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("Create New Inspection", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text("Create New Inspection", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => Navigator.pop(context),

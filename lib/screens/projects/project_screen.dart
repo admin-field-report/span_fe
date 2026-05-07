@@ -144,91 +144,99 @@ class _ProjectScreenState extends State<ProjectScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             _buildHeader(context, theme),
-            SizedBox(height: 20),
+            const SizedBox(height: 10),
 
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min, 
-                crossAxisAlignment: CrossAxisAlignment.stretch, 
-                children: [
-                  // 1. HEADER SECTION
-                  _buildTopToolbar(theme),
-                  
-                  // 2. TABLE SECTION
-                  ListenableBuilder(
-                    listenable: projectController,
-                    builder: (context, child) {
-                      final displayData = _getFilteredProjects();
-                      return CommonTable<Project>(
-                        isLoading: projectController.isLoading,
-                        data: displayData,
-                        showCheckboxes: false,
-                        rowsPerPage: 10,
-                        onRowTap: (project) {
-                          final id = project.id;
-                          context.go('/projects/details/$id/inspections');
+            // 🚀 THE FIX: Wrap AppCard in Expanded!
+            // This forces the card to take up the remaining screen height, 
+            // which tells the CommonTable exactly when it needs to start scrolling.
+            Expanded(
+              child: AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch, 
+                  children: [
+                    // 1. HEADER SECTION
+                    _buildTopToolbar(theme),
+                    
+                    // 2. TABLE SECTION
+                    // 🚀 SECOND FIX: Wrap the table in Expanded so it fills the rest of the AppCard
+                    Expanded(
+                      child: ListenableBuilder(
+                        listenable: projectController,
+                        builder: (context, child) {
+                          final displayData = _getFilteredProjects();
+                          return CommonTable<Project>(
+                            isLoading: projectController.isLoading,
+                            data: displayData,
+                            showCheckboxes: false,
+                            onRowTap: (project) {
+                              final id = project.id;
+                              context.go('/projects/details/$id/inspections');
+                            },
+                            columns: [
+                              TableColumn(
+                                title: "Name",
+                                flex: 3,
+                                minWidth: 250,
+                                sortable: true,
+                                sortValue: (p) => p.name,
+                                builder: (p) => _buildProductCell(p, theme),
+                              ),
+                              TableColumn(
+                                title: "Description",
+                                flex: 3,
+                                minWidth: 200,
+                                builder: (p) => Text(
+                                  p.description,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                              TableColumn(
+                                title: "Created at",
+                                flex: 2,
+                                minWidth: 150,
+                                sortable: true,
+                                sortValue: (p) => p.createDate,
+                                builder: (p) => _buildDateTimeCell(p, theme),
+                              ),
+                              TableColumn(
+                                title: "Actions",
+                                flex: 0,
+                                minWidth: 100, // Slightly widened to fit both icons
+                                isStickyRight: true, // Stick the actions column to the right
+                                builder: (p) => Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // 🚀 NEW: Edit Button
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, size: 20),
+                                      color: colorScheme.primary,
+                                      tooltip: "Edit Project",
+                                      onPressed: () => _showEditProject(context, p),
+                                    ),
+                                    // Existing Delete Button
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 20),
+                                      color: colorScheme.error,
+                                      tooltip: "Delete Project",
+                                      onPressed: () => _confirmDelete(context, p),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
                         },
-                        columns: [
-                          TableColumn(
-                            title: "Name",
-                            flex: 3,
-                            minWidth: 250,
-                            sortable: true,
-                            sortValue: (p) => p.name,
-                            builder: (p) => _buildProductCell(p, theme),
-                          ),
-                          TableColumn(
-                            title: "Description",
-                            flex: 3,
-                            minWidth: 200,
-                            builder: (p) => Text(
-                              p.description,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: colorScheme.onSurfaceVariant),
-                            ),
-                          ),
-                          TableColumn(
-                            title: "Created at",
-                            flex: 2,
-                            minWidth: 150,
-                            sortable: true,
-                            sortValue: (p) => p.createDate,
-                            builder: (p) => _buildDateTimeCell(p, theme),
-                          ),
-                          TableColumn(
-                            title: "Actions",
-                            flex: 0,
-                            minWidth: 120, // Slightly widened to fit both icons
-                            builder: (p) => Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // 🚀 NEW: Edit Button
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined, size: 20),
-                                  color: colorScheme.primary,
-                                  tooltip: "Edit Project",
-                                  onPressed: () => _showEditProject(context, p),
-                                ),
-                                // Existing Delete Button
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 20),
-                                  color: colorScheme.error,
-                                  tooltip: "Delete Project",
-                                  onPressed: () => _confirmDelete(context, p),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              ),
+                      )
+                     ),
+                  ],
+                ),
+              )
             )
           ],
         );
@@ -244,7 +252,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Projects", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w500)),
+            Text("Projects", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
             Button(
               label: "Add Project",
               icon: Icons.add_rounded,

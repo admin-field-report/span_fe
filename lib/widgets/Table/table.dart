@@ -9,6 +9,7 @@ class TableColumn<T> {
   final double minWidth;
   final bool sortable;
   final Comparable Function(T)? sortValue;
+  final bool isStickyRight; // 🚀 Keep this flag
 
   TableColumn({
     required this.title,
@@ -17,6 +18,7 @@ class TableColumn<T> {
     this.minWidth = 120,
     this.sortable = false,
     this.sortValue,
+    this.isStickyRight = false,
   });
 }
 
@@ -25,7 +27,6 @@ class CommonTable<T> extends StatefulWidget {
   final List<T> data;
   final List<TableColumn<T>> columns;
   final bool showCheckboxes;
-  final int rowsPerPage;
   final Function(T item)? onRowTap;
 
   const CommonTable({
@@ -34,7 +35,6 @@ class CommonTable<T> extends StatefulWidget {
     required this.data,
     required this.columns,
     this.showCheckboxes = true,
-    this.rowsPerPage = 10,
     this.onRowTap,
   });
 
@@ -44,9 +44,19 @@ class CommonTable<T> extends StatefulWidget {
 
 class _CommonTableState<T> extends State<CommonTable<T>> {
   final Set<T> _selectedItems = {};
-  int _currentPage = 0;
   int? _sortColumnIndex;
   SortOrder _sortOrder = SortOrder.original;
+
+  // 🚀 These controllers perfectly sync the horizontal scrolling!
+  final ScrollController _headerHorizontalController = ScrollController();
+  final ScrollController _bodyHorizontalController = ScrollController();
+
+  @override
+  void dispose() {
+    _headerHorizontalController.dispose();
+    _bodyHorizontalController.dispose();
+    super.dispose();
+  }
 
   List<T> get _processedData {
     if (widget.data.isEmpty) return [];
@@ -64,14 +74,7 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
         });
       }
     }
-
-    int start = _currentPage * widget.rowsPerPage;
-    if (start >= list.length) {
-      start = 0;
-      _currentPage = 0; // Reset to page 0 if data shrinks
-    }
-    int end = start + widget.rowsPerPage;
-    return list.sublist(start, end > list.length ? list.length : end);
+    return list;
   }
 
   void _handleSort(int index) {
@@ -96,60 +99,141 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     if (widget.isLoading) return _buildLoadingState(theme, colorScheme);
     if (widget.data.isEmpty) return _buildEmptyState(theme, colorScheme);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        double totalMinWidth = widget.columns.fold(0.0, (sum, col) => sum + col.minWidth);
-        if (widget.showCheckboxes) totalMinWidth += 60;
+    // Split columns into scrollable and sticky
+    final regularColumns = widget.columns.where((c) => !c.isStickyRight).toList();
+    final stickyColumns = widget.columns.where((c) => c.isStickyRight).toList();
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: SizedBox(
-                  width: constraints.maxWidth < totalMinWidth ? totalMinWidth : constraints.maxWidth,
-                  child: Column(
-                    children: [
-                      _buildHeader(theme, colorScheme),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(), // Handled by outer scroll view if needed
-                        itemCount: displayData.length,
-                        separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: colorScheme.outlineVariant.withOpacity(0.2),
+    return Flexible(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Calculate precise widths to ensure perfect layout
+          double stickyWidth = stickyColumns.isNotEmpty 
+              ? stickyColumns.fold(0.0, (sum, col) => sum + col.minWidth) + 32.0 
+              : 0.0;
+              
+          double remainingWidth = constraints.maxWidth - stickyWidth;
+          double mainMinWidth = regularColumns.fold(0.0, (sum, col) => sum + col.minWidth) + (widget.showCheckboxes ? 60 : 0);
+          double mainWidth = remainingWidth < mainMinWidth ? mainMinWidth : remainingWidth;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ------------------------------------------------------------------
+              // 1. THE HEADER (Fixed vertically, synced horizontally)
+              // ------------------------------------------------------------------
+              Row(
+                children: [
+                  Expanded(
+                    child: NotificationListener<ScrollUpdateNotification>(
+                      onNotification: (notification) {
+                        if (notification.depth == 0 && _bodyHorizontalController.hasClients) {
+                          if (_bodyHorizontalController.offset != notification.metrics.pixels) {
+                            _bodyHorizontalController.jumpTo(notification.metrics.pixels);
+                          }
+                        }
+                        return false;
+                      },
+                      child: SingleChildScrollView(
+                        controller: _headerHorizontalController,
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: mainWidth,
+                          child: _buildHeaderRow(regularColumns, theme, colorScheme),
                         ),
-                        itemBuilder: (context, index) {
-                          final item = displayData[index];
-                          final isSelected = _selectedItems.contains(item);
-                          return _buildRow(item, isSelected, theme, colorScheme);
-                        },
                       ),
+                    ),
+                  ),
+                  if (stickyColumns.isNotEmpty)
+                    SizedBox(
+                      width: stickyWidth,
+                      child: _buildHeaderRow(stickyColumns, theme, colorScheme, isSticky: true),
+                    ),
+                ],
+              ),
+
+              // ------------------------------------------------------------------
+              // 2. THE BODY (Scrolls vertically as ONE unit)
+              // ------------------------------------------------------------------
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Scrollable Main Columns
+                      Expanded(
+                        child: NotificationListener<ScrollUpdateNotification>(
+                          onNotification: (notification) {
+                            if (notification.depth == 0 && _headerHorizontalController.hasClients) {
+                              if (_headerHorizontalController.offset != notification.metrics.pixels) {
+                                _headerHorizontalController.jumpTo(notification.metrics.pixels);
+                              }
+                            }
+                            return false;
+                          },
+                          child: SingleChildScrollView(
+                            controller: _bodyHorizontalController,
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: mainWidth,
+                              child: Column(
+                                children: displayData.map((item) {
+                                  final isSelected = _selectedItems.contains(item);
+                                  return Column(
+                                    children: [
+                                      _buildDataRow(item, isSelected, theme, colorScheme, regularColumns),
+                                      Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      // Sticky Action Columns
+                      if (stickyColumns.isNotEmpty)
+                        SizedBox(
+                          width: stickyWidth,
+                          child: Column(
+                            children: displayData.map((item) {
+                              final isSelected = _selectedItems.contains(item);
+                              return Column(
+                                children: [
+                                  // 🚀 Passes the sticky flag to ensure it renders transparent/correctly
+                                  _buildDataRow(item, isSelected, theme, colorScheme, stickyColumns, isSticky: true),
+                                  Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
-            ),
-            _buildPaginationFooter(theme, colorScheme),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildHeader(ThemeData theme, ColorScheme colorScheme) {
+  // --- REBUILT HELPERS WITH FIXED HEIGHTS TO ENSURE LEFT/RIGHT ALIGNMENT ---
+
+  Widget _buildHeaderRow(List<TableColumn<T>> cols, ThemeData theme, ColorScheme colorScheme, {bool isSticky = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 17, horizontal: 17),
+      height: 56, // Fixed height guarantees alignment
+      padding: EdgeInsets.symmetric(horizontal: isSticky ? 16 : 17),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5))),
       ),
       child: Row(
         children: [
-          if (widget.showCheckboxes) ...[
+          if (!isSticky && widget.showCheckboxes) ...[
             _buildCheckboxContainer(
               child: Checkbox(
                 value: widget.data.isNotEmpty && _selectedItems.length == widget.data.length,
@@ -164,9 +248,8 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
             ),
             const SizedBox(width: 12),
           ],
-          ...widget.columns.asMap().entries.map((entry) {
-            int idx = entry.key;
-            var col = entry.value;
+          ...cols.map((col) {
+            int idx = widget.columns.indexOf(col);
             return Expanded(
               flex: col.flex,
               child: InkWell(
@@ -195,15 +278,19 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     );
   }
 
-  Widget _buildRow(T item, bool isSelected, ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildDataRow(T item, bool isSelected, ThemeData theme, ColorScheme colorScheme, List<TableColumn<T>> cols, {bool isSticky = false}) {
     return InkWell(
       onTap: widget.onRowTap != null ? () => widget.onRowTap!(item) : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+        height: 64, // Fixed height guarantees alignment across split lists
+        padding: EdgeInsets.symmetric(horizontal: isSticky ? 16 : 20),
+        
+        // 🚀 PERFECT COLORS: Now uses your exact original hover/selection logic for BOTH sides!
         color: isSelected ? colorScheme.primary.withOpacity(0.08) : Colors.transparent,
+        
         child: Row(
           children: [
-            if (widget.showCheckboxes) ...[
+            if (!isSticky && widget.showCheckboxes) ...[
               _buildCheckboxContainer(
                 child: Checkbox(
                   value: isSelected,
@@ -218,9 +305,12 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
               ),
               const SizedBox(width: 12),
             ],
-            ...widget.columns.map((col) => Expanded(
+            ...cols.map((col) => Expanded(
               flex: col.flex,
-              child: col.builder(item),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: col.builder(item),
+              ),
             )),
           ],
         ),
@@ -241,95 +331,32 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
     );
   }
 
-  Widget _buildPaginationFooter(ThemeData theme, ColorScheme colorScheme) {
-    final int total = widget.data.length;
-    final int start = total == 0 ? 0 : (_currentPage * widget.rowsPerPage) + 1;
-    final int end = (start + widget.rowsPerPage - 1) > total ? total : (start + widget.rowsPerPage - 1);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3))),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
+  Widget _buildLoadingState(ThemeData theme, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.all(60.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          CircularProgressIndicator(color: colorScheme.primary),
+          const SizedBox(height: 16),
           Text(
-            "Rows per page: ${widget.rowsPerPage}",
-            style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(width: 32),
-          Text(
-            "$start–$end of $total",
-            style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-          ),
-          const SizedBox(width: 16),
-          IconButton(
-            onPressed: _currentPage > 0 ? () => setState(() => _currentPage--) : null,
-            icon: const Icon(Icons.chevron_left, size: 20),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 16),
-          IconButton(
-            onPressed: end < total ? () => setState(() => _currentPage++) : null,
-            icon: const Icon(Icons.chevron_right, size: 20),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
+            "Loading data...",
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLoadingState(ThemeData theme, ColorScheme colorScheme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildHeader(theme, colorScheme),
-        ...List.generate(5, (index) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildShimmerRow(colorScheme),
-            Divider(
-              height: 1, 
-              color: colorScheme.outlineVariant.withOpacity(0.2)
-            ),
-          ],
-        )),
-      ],
-    );
-  }
-
-  Widget _buildShimmerRow(ColorScheme colorScheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-      child: Row(
-        children: widget.columns.map((col) => Expanded(
-          flex: col.flex,
-          child: Container(
-            height: 14,
-            margin: const EdgeInsets.only(right: 24),
-            decoration: BoxDecoration(
-              color: colorScheme.onSurface.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-        )).toList(),
-      ),
-    );
-  }
-
-  // 🚀 COMPLETELY REWRITTEN EMPTY STATE
   Widget _buildEmptyState(ThemeData theme, ColorScheme colorScheme) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildHeader(theme, colorScheme),
-        
-        // Use padding instead of a hardcoded MediaQuery height
+        _buildHeaderRow(widget.columns, theme, colorScheme),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 80.0, horizontal: 24.0),
           child: Column(
@@ -354,14 +381,6 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
                   color: colorScheme.onSurfaceVariant, 
                   fontWeight: FontWeight.w600
                 )
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Try adjusting your filters or check back later.",
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.6)
-                ),
-                textAlign: TextAlign.center, // Keeps it neat on mobile
               ),
             ],
           ),

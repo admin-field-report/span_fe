@@ -79,11 +79,12 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
     );
   }
 
-  void _showCreateInspectionPanel() {
+  void _showCreateInspectionPanel() async {
     final isMobile = AppResponsive.isMobileScreen(context);
+    String? newInspectionId;
 
     if (isMobile) {
-      showModalBottomSheet(
+    newInspectionId = await showModalBottomSheet<String>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
@@ -96,7 +97,7 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
         ),
       );
     } else {
-      showDialog(
+     newInspectionId = await showDialog<String>(
         context: context,
         builder: (context) => Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -108,6 +109,19 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
           ),
         ),
       );
+    }
+    // 🚀 2. If we got an ID back, the creation was successful!
+    if (newInspectionId != null && newInspectionId.isNotEmpty) {
+      
+      // A. Trigger the background refresh so the list is updated when they hit "Back"
+      // TODO: Replace this with your actual fetch method
+      inspectionController.getAllInspections(widget.projectId); 
+
+      // B. Navigate to the new details screen safely using the Parent's context!
+      if (context.mounted) {
+        final exactUrl = '/projects/details/${widget.projectId}/inspections/$newInspectionId';
+        context.go(exactUrl);
+      }
     }
   }
 
@@ -123,86 +137,103 @@ class _ProjectInspectionsTabState extends State<ProjectInspectionsTab> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 20),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min, 
-                crossAxisAlignment: CrossAxisAlignment.stretch, 
-                children: [
-                  _buildTopToolbar(theme),
-                  const SizedBox(height: 10),
+            
+            // 🚀 1. Wrap the entire AppCard in Expanded
+            Expanded(
+              child: AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch, 
+                  children: [
+                    _buildTopToolbar(theme),
 
-                  ListenableBuilder(
-                    listenable: inspectionController,
-                    builder: (context, child) {
-                      final displayData = _getFilteredInspections();
-                      return CommonTable<ProjectInspection>(
-                        isLoading: inspectionController.isInspectionsLoading,
-                        data: displayData,
-                        showCheckboxes: false,
-                        
-                        // Optional: If your CommonTable widget supports row tapping, uncomment this!
-                        // onRowTap: (item) => context.push('/inspection/${item.id}'),
-
-                        columns: [
-                          TableColumn(
-                            title: 'Sr No.',
-                            flex: 1,
-                            minWidth: 60,
-                            builder: (item) {
-                              final index = inspectionController.inspections.indexOf(item) + 1;
-                              return Text(index.toString().padLeft(2, '0'));
+                    // 🚀 2. Wrap the Table in Expanded so it fills the rest of the card
+                    Expanded(
+                      child: ListenableBuilder(
+                        listenable: inspectionController,
+                        builder: (context, child) {
+                          final displayData = _getFilteredInspections();
+                          return CommonTable<ProjectInspection>(
+                            isLoading: inspectionController.isInspectionsLoading,
+                            data: displayData,
+                            showCheckboxes: false,
+                            
+                            // 🚀 1. ACTIVATED: Entire row is now tappable!
+                            onRowTap: (item) {
+                              final exactUrl = '/projects/details/${widget.projectId}/inspections/${item.id}';
+                              context.go(exactUrl);
                             },
-                          ),
-                          TableColumn(
-                            title: 'Inspector',
-                            flex: 2,
-                            sortable: false,
-                            builder: (item) => Text(item.name),
-                          ),
-                          TableColumn(
-                            title: 'Date',
-                            flex: 2,
-                            sortable: true,
-                            sortValue: (item) => item.createTime,
-                            builder: (item) => Text(
-                              DateFormat('dd MMM yyyy').format(item.createTime),
-                            ),
-                          ),
-                          // 🔽 UPDATED ACTIONS COLUMN 🔽
-                          TableColumn(
-                            title: "Actions",
-                            flex: 0,
-                            minWidth: 100,
-                            builder: (p) => Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // VIEW DETAILS BUTTON
-                                IconButton(
-                                  tooltip: "View Details",
-                                  icon: const Icon(Icons.visibility_outlined, size: 20),
-                                  color: colorScheme.primary,
-                                  onPressed: () {
-                                    final exactUrl = '/projects/details/${widget.projectId}/inspections/${p.id}';
-                                    context.go(exactUrl);
-                                  },
+
+                            columns: [
+                              TableColumn(
+                                title: 'Sr No.',
+                                flex: 1,
+                                minWidth: 60,
+                                builder: (item) {
+                                  final index = inspectionController.inspections.indexOf(item) + 1;
+                                  return Text(index.toString().padLeft(2, '0'));
+                                },
+                              ),
+                              TableColumn(
+                                title: 'Inspector',
+                                flex: 2,
+                                sortable: false,
+                                builder: (item) => Text(item.name),
+                              ),
+                              TableColumn(
+                                title: 'Date',
+                                flex: 2,
+                                sortable: true,
+                                sortValue: (item) => item.createTime,
+                                builder: (item) => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      DateFormat('dd MMM yyyy').format(item.createTime),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                    const SizedBox(height: 2), // Tiny spacing
+                                    Text(
+                                      DateFormat('hh:mm a').format(item.createTime),
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant, 
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                // DELETE BUTTON
-                                IconButton(
-                                  tooltip: "Delete",
-                                  icon: const Icon(Icons.delete_outline, size: 20),
-                                  color: colorScheme.error,
-                                  onPressed: () => _confirmDelete(context, p),
+                              ),
+                              
+                              // 🚀 2. UPDATED: Removed View icon, shrank width, kept Sticky!
+                              TableColumn(
+                                title: "Actions",
+                                flex: 0,
+                                minWidth: 60, // Shrank from 100 since there is only one icon now
+                                isStickyRight: true, 
+                                builder: (p) => Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // DELETE BUTTON
+                                    IconButton(
+                                      tooltip: "Delete",
+                                      icon: const Icon(Icons.delete_outline, size: 20),
+                                      color: colorScheme.error,
+                                      onPressed: () => _confirmDelete(context, p),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                  )  
-                ]
-              )
+                              ),
+                            ],
+                          );
+                        }
+                      ),
+                    ),  
+                  ]
+                )
+              ),
             ),
           ],
         );

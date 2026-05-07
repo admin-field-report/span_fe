@@ -220,7 +220,7 @@ class _EditProjectFormState extends State<EditProjectForm> {
           children: [
             Text(
               "Edit Project", 
-              style: theme.textTheme.headlineSmall?.copyWith(
+              style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.8,
               )

@@ -181,8 +181,8 @@ class _AddProjectFormState extends State<AddProjectForm> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text("New Project", 
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
             letterSpacing: -0.8,
           )),
         // Close icon always available in top right for clarity

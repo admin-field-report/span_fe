@@ -70,10 +70,12 @@ class GeneratedReportView extends StatelessWidget {
                       label: "Close & Finish",
                       variant: ButtonVariant.filled,
                       onPressed: () {
-                        // Pop this modal
-                        Navigator.pop(context);
-                        // Pop the Preview Screen to go back to the tables
-                        Navigator.pop(context, true); 
+                        // 🚀 1. Grab the navigator state BEFORE the context is destroyed
+                        final nav = Navigator.of(context);
+                        
+                        // 2. Safely pop multiple times!
+                        nav.pop();       // Closes the 'Generated' modal
+                        nav.pop(true);   // Closes the 'Preview' screen and returns 'true'
                       },
                     ),
                   ),

@@ -99,7 +99,7 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
         Text(
           "Inspection Detail",
           style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],

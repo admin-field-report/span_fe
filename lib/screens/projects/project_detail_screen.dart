@@ -145,81 +145,79 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
       color: theme.scaffoldBackgroundColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+        // 🚀 IMPORTANT: The parent Column MUST NOT be MainAxisSize.min if it contains an Expanded!
+        // Changed to .max so it fills the screen and allows the Expanded child to work.
+        mainAxisSize: MainAxisSize.max, 
         children: [
-          // 🚀 UPDATED HEADER SECTION
+          // 🚀 HEADER SECTION
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center, 
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Top Row: Project Name + Spinner/Edit Icon
+                const SizedBox(width: 4), 
+                
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, 
+                  mainAxisSize: MainAxisSize.min, 
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min, 
+                      children: [
+                        Text(
+                          _projectName, 
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        if (_isLoadingProjectName) ...[
+                          const SizedBox(width: 12),
+                          const SizedBox(
+                            width: 14, height: 14, 
+                            child: CircularProgressIndicator(strokeWidth: 2)
+                          )
+                        ] else ...[
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: _showEditProject,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.edit_outlined, 
+                                size: 20, 
+                                color: theme.colorScheme.primary
+                              ),
+                            ),
+                          ),
+                        ]
+                      ],
+                    ),
+                    
+                    if (_clientName != null && _clientName!.isNotEmpty && !_isLoadingProjectName) ...[
+                      const SizedBox(height: 2),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Flexible(
-                            child: Text(
-                              _projectName, 
-                              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 17),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          Icon(
+                            Icons.person_outline, 
+                            size: 13, 
+                            color: theme.colorScheme.onSurfaceVariant
                           ),
-                          if (_isLoadingProjectName) ...[
-                            const SizedBox(width: 12),
-                            const SizedBox(
-                              width: 14, height: 14, 
-                              child: CircularProgressIndicator(strokeWidth: 2)
-                            )
-                          ] else ...[
-                            const SizedBox(width: 8),
-                            InkWell(
-                              onTap: _showEditProject,
-                              borderRadius: BorderRadius.circular(6),
-                              child: Padding(
-                                padding: const EdgeInsets.all(4.0),
-                                child: Icon(
-                                  Icons.edit_outlined, 
-                                  size: 20, 
-                                  color: theme.colorScheme.primary
-                                ),
-                              ),
-                            ),
-                          ]
-                        ],
-                      ),
-                      
-                      // Bottom Row: Client Name Subtitle
-                      if (_clientName != null && _clientName!.isNotEmpty && !_isLoadingProjectName) ...[
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.person_outline, 
-                              size: 13, 
+                          const SizedBox(width: 4),
+                          Text(
+                            _clientName!,
+                            style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _clientName!,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        )
-                      ],
+                          ),
+                        ],
+                      )
                     ],
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -231,24 +229,27 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
             horizontalPadding: 24.0,
           ),
 
-          Padding(
-            padding: const EdgeInsets.only(top: 0),
-            child: ListenableBuilder(
-              listenable: _tabController,
-              builder: (context, _) {
-                switch (_tabController.index) {
-                  case 0:
-                    return ProjectInspectionsTab(projectId: widget.projectId);
-                  case 1:
-                    return ProjectDocuments(projectId: widget.projectId);
-                  case 2:
-                    return ProjectMediaTab(projectId: widget.projectId);
-                  case 3:
-                    return ProjectReports(projectId: widget.projectId);
-                  default:
-                    return const SizedBox.shrink();
-                }
-              },
+          // 🚀 THE FIX: Wrapped the Tab content in Expanded!
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 0),
+              child: ListenableBuilder(
+                listenable: _tabController,
+                builder: (context, _) {
+                  switch (_tabController.index) {
+                    case 0:
+                      return ProjectInspectionsTab(projectId: widget.projectId);
+                    case 1:
+                      return ProjectDocuments(projectId: widget.projectId);
+                    case 2:
+                      return ProjectMediaTab(projectId: widget.projectId);
+                    case 3:
+                      return ProjectReports(projectId: widget.projectId);
+                    default:
+                      return const SizedBox.shrink();
+                  }
+                },
+              ),
             ),
           ),
         ],

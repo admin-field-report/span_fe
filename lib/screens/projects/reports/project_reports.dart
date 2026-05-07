@@ -90,90 +90,116 @@ class _ProjectReportsState extends State<ProjectReports> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 20),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min, 
-                crossAxisAlignment: CrossAxisAlignment.stretch, 
-                children: [
-                  _buildTopToolbar(theme),
-                  const SizedBox(height: 10),
-                  ListenableBuilder(
-                    listenable: projectController,
-                    builder: (context, child) {
-                      final displayData = _getFilteredReports();
-                      return CommonTable<ProjectReport>(
-                        isLoading: projectController.isReportLoading,
-                        data: displayData,
-                        showCheckboxes: false,
-                        columns: [
-                          TableColumn(
-                            title: 'Sr No.',
-                            flex: 1,
-                            minWidth: 60,
-                            builder: (item) {
-                              final index = projectController.reports.indexOf(item) + 1;
-                              return Text(index.toString().padLeft(2, '0'));
-                            },
-                          ),
-                          TableColumn(
-                            title: 'Report Name',
-                            flex: 2,
-                            sortable: false,
-                            builder: (item) => Text(
-                              item.name,
-                              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                          ),
-                          TableColumn(
-                            title: 'Created Date',
-                            flex: 2,
-                            sortable: true,
-                            sortValue: (item) => item.createDate,
-                            builder: (item) => Text(
-                              DateFormat('dd MMM yyyy').format(item.createDate),
-                            ),
-                          ),
-                          // 🚀 UPDATED ACTIONS COLUMN
-                          TableColumn(
-                            title: "Actions",
-                            flex: 0,
-                            minWidth: 120, // Increased slightly to fit two icons comfortably
-                            builder: (report) => Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit_outlined, size: 20),
-                                  color: colorScheme.primary,
-                                  tooltip: "Edit Report",
-                                  onPressed: () async {
-                                    final didUpdate = await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => EditReportScreen(reportId: report.id),
+            
+            // 🚀 1. Wrap the entire AppCard in Expanded
+            Expanded(
+              child: AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch, 
+                  children: [
+                    _buildTopToolbar(theme),                    
+                    // 🚀 2. Wrap the Table in Expanded so it fills the rest of the card
+                    Expanded(
+                      child: ListenableBuilder(
+                        listenable: projectController,
+                        builder: (context, child) {
+                          final displayData = _getFilteredReports();
+                          return CommonTable<ProjectReport>(
+                            isLoading: projectController.isReportLoading,
+                            data: displayData,
+                            showCheckboxes: false,
+                            columns: [
+                              TableColumn(
+                                title: 'Sr No.',
+                                flex: 1,
+                                minWidth: 60,
+                                builder: (item) {
+                                  final index = projectController.reports.indexOf(item) + 1;
+                                  return Text(index.toString().padLeft(2, '0'));
+                                },
+                              ),
+                              TableColumn(
+                                title: 'Report Name',
+                                flex: 2,
+                                sortable: false,
+                                builder: (item) => Text(
+                                  item.name,
+                                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                              
+                              // 🚀 3. Stacked Date & Time for consistency!
+                              TableColumn(
+                                title: 'Created Date',
+                                flex: 2,
+                                sortable: true,
+                                sortValue: (item) => item.createDate,
+                                builder: (item) => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      DateFormat('dd MMM yyyy').format(item.createDate),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      DateFormat('hh:mm a').format(item.createDate),
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant, 
+                                        fontSize: 12,
                                       ),
-                                    );
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              // 🚀 4. ADDED isStickyRight to keep actions pinned!
+                              TableColumn(
+                                title: "Actions",
+                                flex: 0,
+                                minWidth: 100, // Perfect width for 2 icons
+                                isStickyRight: true, // 🌟 The magic property
+                                builder: (report) => Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, size: 20),
+                                      color: colorScheme.primary,
+                                      tooltip: "Edit Report",
+                                      onPressed: () async {
+                                        final didUpdate = await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => EditReportScreen(reportId: report.id),
+                                          ),
+                                        );
 
-                                    if (didUpdate == true && mounted) {
-                                      projectController.getAllReports(widget.projectId);
-                                    }
-                                  },
+                                        if (didUpdate == true && mounted) {
+                                          projectController.getAllReports(widget.projectId);
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 20),
+                                      color: colorScheme.error,
+                                      tooltip: "Delete Report",
+                                      onPressed: () => _confirmDelete(context, report),
+                                    ),
+                                  ],
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 20),
-                                  color: colorScheme.error,
-                                  tooltip: "Delete Report",
-                                  onPressed: () => _confirmDelete(context, report),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                  )  
-                ]
-              )
+                              ),
+                            ],
+                          );
+                        }
+                      ),
+                    )  
+                  ]
+                )
+              ),
             )
           ],
         );
