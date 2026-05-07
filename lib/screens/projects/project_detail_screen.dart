@@ -151,7 +151,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         children: [
           // 🚀 HEADER SECTION
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(8, 0, 16, 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center, 
               children: [
