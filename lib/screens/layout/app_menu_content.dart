@@ -154,14 +154,14 @@ class AppMenuContent extends StatelessWidget {
             isSelected: _isPathActive(context, '/templates/tags'), // 🚀 Now gets highlighted!
             onTap: () => _navigate(context, '/templates/tags')
           ),
-          _NavTile(
-            icon: Icons.assessment_outlined, 
-            label: "Reports", 
-            isCollapsed: false, 
-            isSubItem: true, 
-            isSelected: _isPathActive(context, '/templates/reports'), // 🚀 Now gets highlighted!
-            onTap: () => _navigate(context, '/templates/reports')
-          ),
+          // _NavTile(
+          //   icon: Icons.assessment_outlined, 
+          //   label: "Reports", 
+          //   isCollapsed: false, 
+          //   isSubItem: true, 
+          //   isSelected: _isPathActive(context, '/templates/reports'), // 🚀 Now gets highlighted!
+          //   onTap: () => _navigate(context, '/templates/reports')
+          // ),
         ],
       ),
     );
