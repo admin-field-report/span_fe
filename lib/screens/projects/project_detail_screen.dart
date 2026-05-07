@@ -7,6 +7,8 @@ import 'reports/project_reports.dart';
 import './widgets/project_medias.dart';
 import '../../widgets/tab/tab.dart';
 import '../../core/api_service.dart';
+import './widgets/edit_project_form.dart'; 
+import '../../utils/utils.dart';
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;
@@ -29,6 +31,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
   final List<String> _sections = ['inspections', 'documents', 'media', 'reports'];
   
   String _projectName = "Loading...";
+  String? _clientName;
   bool _isLoadingProjectName = true;
 
   @override
@@ -58,8 +61,14 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
       if (resData['success'] == true && resData['data'] != null) {
         if (mounted) {
           setState(() {
-            // Adjust the key ('name' or 'project_name') based on your exact API response structure
             _projectName = resData['data']['name'] ?? 'Unnamed Project';
+            
+            if (resData['data']['client'] != null && resData['data']['client']['name'] != null) {
+              _clientName = resData['data']['client']['name'];
+            } else {
+              _clientName = null;
+            }
+            
             _isLoadingProjectName = false;
           });
         }
@@ -67,6 +76,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         if (mounted) {
           setState(() {
             _projectName = 'Unknown Project';
+            _clientName = null;
             _isLoadingProjectName = false;
           });
         }
@@ -76,9 +86,43 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
       if (mounted) {
         setState(() {
           _projectName = 'Error loading project';
+          _clientName = null;
           _isLoadingProjectName = false;
         });
       }
+    }
+  }
+
+  // 🚀 NEW: Method to open the Edit form and refresh data upon saving
+  Future<void> _showEditProject() async {
+    final bool isDesktop = AppResponsive.isDesktopScreen(context);
+    bool? isUpdated = false;
+
+    if (isDesktop) {
+      isUpdated = await showDialog<bool>(
+        context: context,
+        barrierColor: Colors.black.withOpacity(0.5),
+        builder: (context) => Center(
+          child: Material(
+            color: Colors.transparent,
+            child: EditProjectForm(projectId: widget.projectId),
+          ),
+        ),
+      );
+    } else {
+      isUpdated = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        builder: (context) => EditProjectForm(projectId: widget.projectId),
+      );
+    }
+
+    // If the form returned true (meaning a successful save), re-fetch the details!
+    if (isUpdated == true) {
+      setState(() => _isLoadingProjectName = true);
+      _fetchProjectDetails();
     }
   }
 
@@ -103,9 +147,11 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 🚀 UPDATED HEADER SECTION
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
@@ -113,22 +159,65 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                 ),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 🚀 NEW: Replaced static text with the dynamic state variable
-                      Text(
-                        _projectName, 
-                        style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w500)
+                      // Top Row: Project Name + Spinner/Edit Icon
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _projectName, 
+                              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 17),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (_isLoadingProjectName) ...[
+                            const SizedBox(width: 12),
+                            const SizedBox(
+                              width: 14, height: 14, 
+                              child: CircularProgressIndicator(strokeWidth: 2)
+                            )
+                          ] else ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: _showEditProject,
+                              borderRadius: BorderRadius.circular(6),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
+                                child: Icon(
+                                  Icons.edit_outlined, 
+                                  size: 20, 
+                                  color: theme.colorScheme.primary
+                                ),
+                              ),
+                            ),
+                          ]
+                        ],
                       ),
-                      // Optional: Show a tiny spinner next to the text while it loads
-                      if (_isLoadingProjectName) ...[
-                        const SizedBox(width: 12),
-                        const SizedBox(
-                          width: 12, 
-                          height: 12, 
-                          child: CircularProgressIndicator(strokeWidth: 2)
+                      
+                      // Bottom Row: Client Name Subtitle
+                      if (_clientName != null && _clientName!.isNotEmpty && !_isLoadingProjectName) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.person_outline, 
+                              size: 13, 
+                              color: theme.colorScheme.onSurfaceVariant
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _clientName!,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         )
-                      ]
+                      ],
                     ],
                   ),
                 ),

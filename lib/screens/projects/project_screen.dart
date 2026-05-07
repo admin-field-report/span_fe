@@ -9,6 +9,7 @@ import '../../widgets/confirmation/confirmation_remove.dart';
 import '../../models/project.dart';
 import './controllers/project_controller.dart';
 import './widgets/add_project_form.dart';
+import './widgets/edit_project_form.dart'; 
 import '../../core/api_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/utils.dart';
@@ -21,7 +22,7 @@ class ProjectScreen extends StatefulWidget {
 }
 
 class _ProjectScreenState extends State<ProjectScreen> {
-    final ApiService _apiService = ApiService();
+  final ApiService _apiService = ApiService();
   String _searchQuery = "";
 
   @override
@@ -38,10 +39,10 @@ class _ProjectScreenState extends State<ProjectScreen> {
   }
 
   void _showAddProject(BuildContext context) {
-   final bool isDesktop = AppResponsive.isDesktopScreen(context);
+    final bool isDesktop = AppResponsive.isDesktopScreen(context);
 
-  if (isDesktop) {
-    showDialog(
+    if (isDesktop) {
+      showDialog(
         context: context,
         barrierColor: Colors.black.withOpacity(0.5),
         builder: (context) => Center(
@@ -58,6 +59,32 @@ class _ProjectScreenState extends State<ProjectScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         builder: (context) => const AddProjectForm(isDesktop: false),
+      );
+    }
+  }
+
+  // 🚀 NEW: Method to show the Edit Project Form
+  void _showEditProject(BuildContext context, Project project) {
+    final bool isDesktop = AppResponsive.isDesktopScreen(context);
+
+    if (isDesktop) {
+      showDialog(
+        context: context,
+        barrierColor: Colors.black.withOpacity(0.5),
+        builder: (context) => Center(
+          child: Material(
+            color: Colors.transparent,
+            child: EditProjectForm(projectId: project.id),
+          ),
+        ),
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        builder: (context) => EditProjectForm(projectId: project.id),
       );
     }
   }
@@ -90,23 +117,23 @@ class _ProjectScreenState extends State<ProjectScreen> {
 
   void _confirmDelete(BuildContext context, Project project) {
     showDialog(
-        context: context,
-        barrierColor: Colors.black.withOpacity(0.5),
-        builder: (context) => Center(
-          child: Material(
-            color: Colors.transparent,
-            child: ConfirmationDialog(
-              title: "Remove Project",
-              description: "Are you sure you want to remove '${project.name}'?",
-              confirmLabel: "Remove",
-              onConfirm: () async => await removeProject(context, project.id),
-            ),
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: ConfirmationDialog(
+            title: "Remove Project",
+            description: "Are you sure you want to remove '${project.name}'?",
+            confirmLabel: "Remove",
+            onConfirm: () async => await removeProject(context, project.id),
           ),
         ),
-      );
+      ),
+    );
   }
 
-@override
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -115,109 +142,119 @@ class _ProjectScreenState extends State<ProjectScreen> {
       listenable: projectController,
       builder: (context, child) {
         return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 10),
+            _buildHeader(context, theme),
+            SizedBox(height: 20),
 
-              SizedBox(height: 10),
-
-              _buildHeader(context, theme),
-
-              SizedBox(height: 20),
-
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, 
-                  crossAxisAlignment: CrossAxisAlignment.stretch, 
-                  children: [
-                    // 1. HEADER SECTION
-                    _buildTopToolbar(theme),
-                    
-                    // 2. TABLE SECTION
-                    ListenableBuilder(
-                      listenable: projectController,
-                      builder: (context, child) {
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                mainAxisSize: MainAxisSize.min, 
+                crossAxisAlignment: CrossAxisAlignment.stretch, 
+                children: [
+                  // 1. HEADER SECTION
+                  _buildTopToolbar(theme),
+                  
+                  // 2. TABLE SECTION
+                  ListenableBuilder(
+                    listenable: projectController,
+                    builder: (context, child) {
                       final displayData = _getFilteredProjects();
                       return CommonTable<Project>(
-                          isLoading: projectController.isLoading,
-                          data: displayData,
-                          showCheckboxes: false,
-                          rowsPerPage: 10,
-                          onRowTap: (project) {
-                            final id = project.id;
-                            context.go('/projects/details/$id/inspections');
-                          },
-                          columns: [
-                            TableColumn(
-                              title: "Name",
-                              flex: 3,
-                              minWidth: 250,
-                              sortable: true,
-                              sortValue: (p) => p.name,
-                              builder: (p) => _buildProductCell(p, theme),
+                        isLoading: projectController.isLoading,
+                        data: displayData,
+                        showCheckboxes: false,
+                        rowsPerPage: 10,
+                        onRowTap: (project) {
+                          final id = project.id;
+                          context.go('/projects/details/$id/inspections');
+                        },
+                        columns: [
+                          TableColumn(
+                            title: "Name",
+                            flex: 3,
+                            minWidth: 250,
+                            sortable: true,
+                            sortValue: (p) => p.name,
+                            builder: (p) => _buildProductCell(p, theme),
+                          ),
+                          TableColumn(
+                            title: "Description",
+                            flex: 3,
+                            minWidth: 200,
+                            builder: (p) => Text(
+                              p.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: colorScheme.onSurfaceVariant),
                             ),
-                            TableColumn(
-                              title: "Description",
-                              flex: 3,
-                              minWidth: 200,
-                              builder: (p) => Text(
-                                p.description,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: colorScheme.onSurfaceVariant),
-                              ),
+                          ),
+                          TableColumn(
+                            title: "Created at",
+                            flex: 2,
+                            minWidth: 150,
+                            sortable: true,
+                            sortValue: (p) => p.createDate,
+                            builder: (p) => _buildDateTimeCell(p, theme),
+                          ),
+                          TableColumn(
+                            title: "Actions",
+                            flex: 0,
+                            minWidth: 120, // Slightly widened to fit both icons
+                            builder: (p) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // 🚀 NEW: Edit Button
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, size: 20),
+                                  color: colorScheme.primary,
+                                  tooltip: "Edit Project",
+                                  onPressed: () => _showEditProject(context, p),
+                                ),
+                                // Existing Delete Button
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: colorScheme.error,
+                                  tooltip: "Delete Project",
+                                  onPressed: () => _confirmDelete(context, p),
+                                ),
+                              ],
                             ),
-                            TableColumn(
-                              title: "Created at",
-                              flex: 2,
-                              minWidth: 150,
-                              sortable: true,
-                              sortValue: (p) => p.createDate,
-                              builder: (p) => _buildDateTimeCell(p, theme),
-                            ),
-                            TableColumn(
-                              title: "Actions",
-                              flex: 0,
-                              minWidth: 150,
-                              builder: (p) => IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 20),
-                                color: colorScheme.error,
-                                onPressed: () => _confirmDelete(context, p),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    
-                  ],
-                ),
-              )
-            ],
-          );
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
+          ],
+        );
       },
     );
   }
 
   // --- UI CONCEPT HELPERS ---
   Widget _buildHeader(BuildContext context, ThemeData theme) {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text("Projects", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w500)),
-          Button(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Projects", style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w500)),
+            Button(
               label: "Add Project",
               icon: Icons.add_rounded,
               onPressed: () => _showAddProject(context),
             )
-        ],
-      ),
-    ],
-  );
-}
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _buildProductCell(Project p, ThemeData theme) {
     return Row(

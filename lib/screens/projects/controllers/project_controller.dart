@@ -43,25 +43,28 @@ class ProjectController extends ChangeNotifier {
   String? get error => _error;
   
   Future<void> getAllProjects() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final response = await _apiService.get('/project/user/${authController.user?.id}');
-      final Map<String, dynamic> responseData = jsonDecode(response.body); 
-
-      if (responseData['success'] == true) {
-        final List dataList = responseData['data'] ?? [];
-        _projects = dataList.map((item) => Project.fromJson(item)).toList();
-      }
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
+      _isLoading = true;
+      _error = null;
       notifyListeners();
+
+      try {
+        final response = await _apiService.get('/project/user/${authController.user?.id}');
+        final Map<String, dynamic> responseData = jsonDecode(response.body); 
+
+        if (responseData['success'] == true) {
+          final List dataList = responseData['data'] ?? [];
+          _projects = dataList.map((item) => Project.fromJson(item)).toList();
+          
+          // 🚀 NEW: Sort the list descending by createDate (newest first)
+          _projects.sort((a, b) => b.createDate.compareTo(a.createDate));
+        }
+      } catch (e) {
+        _error = e.toString();
+      } finally {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
-  }
 
   Future<void> getAllInspections(String projectId) async {
     _isInspectionsLoading = true;
