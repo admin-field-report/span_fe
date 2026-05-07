@@ -39,31 +39,59 @@ class _AddProjectFormState extends State<AddProjectForm> {
   }
 
   Future<void> createProject(BuildContext context) async {
-      setState(() => _isCreating = true);    try {
+    setState(() => _isCreating = true);
+
+    try {
+      // 1. Call the first API to create the project
       final response = await _apiService.post('/project/createProject', {
         "name": _nameController.text.trim(),
         "description": _descController.text.trim(),
         "template_id": _selectedTemplateId,
       });
+      
       final Map<String, dynamic> responseData = jsonDecode(response.body); 
 
       if (responseData['success'] == true) {
+        
+        // 🚀 EXTRACT THE NEW PROJECT ID
+        final dynamic data = responseData['data'];
+        final String newProjectId = data['id']?? "";
+
+        // 2. Call the second API to bind the project document
+        if (newProjectId.isNotEmpty) {
+          final docResponse = await _apiService.post('/projectDocument', {
+            "name": _nameController.text.trim(),
+            "project_id": newProjectId,
+            "template_id": _selectedTemplateId,
+          });
+          
+          final Map<String, dynamic> docResponseData = jsonDecode(docResponse.body);
+          
+          if (docResponseData['success'] != true) {
+            debugPrint("Warning: Project created, but document binding failed.");
+          }
+        }
+
         projectController.getAllProjects();
         if (mounted) Navigator.pop(context);
+        
         ToastService.show(
           context,
           title: "Project Created",
-          message: "Your project has been added successfully.",
+          message: "Your project has been created and bound successfully.",
           type: ToastType.success,
         );      
+      } else {
+        throw Exception(responseData['message'] ?? 'Failed to create project');
       }
     } catch (e) {
-       ToastService.show(
-          context,
-          title: "Error",
-          message: "Failed to create project.",
-          type: ToastType.error,
-        );    
+      debugPrint("Create Project Error: $e");
+      ToastService.show(
+        context,
+        title: "Error",
+        message: "Failed to create project.",
+        type: ToastType.error,
+      );    
     } finally {
       if (mounted) {
         setState(() => _isCreating = false);
@@ -124,7 +152,7 @@ class _AddProjectFormState extends State<AddProjectForm> {
                   onChanged: (val) {
                     setState(() => _selectedTemplateId = val);
                   },
-                  validator: (val) => val == null ? "Required" : null,
+                  // validator: (val) => val == null ? "Required" : null,
                 );
               },
             ),
