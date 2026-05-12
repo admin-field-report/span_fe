@@ -278,13 +278,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   Future<void> _showManageTagsDialog(Set<String> currentTagIds) async {
     if (_selectedGroupId == null) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTagsDialog(
+    final isMobile = AppResponsive.isMobileScreen(context);
+
+    // 🚀 1. Extract the content into a helper method so we don't duplicate code
+    Widget buildContent(BuildContext context) {
+      return ManageTagsDialog(
         controller: _controller,
         initialSelectedIds: currentTagIds,
-        
         onSave: (updatedTagIds, newTagsToCreate) async {
           final success = await _controller.updateGroupTags(
             groupId: _selectedGroupId!, 
@@ -302,20 +302,56 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             return false;
           }
         },
-      ),
-    );
+      );
+    }
+
+    // 🚀 2. Show the appropriate overlay based on screen size
+    if (isMobile) {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              color: Theme.of(context).colorScheme.surface,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: buildContent(context),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: 500, // Keep a nice constrained width for desktop
+            child: buildContent(context),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _showManageTemplatesDialog(Set<String> currentTemplateIds) async {
     if (_selectedGroupId == null) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTemplatesDialog(
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final theme = Theme.of(context);
+
+    // 🚀 1. Extract the content into a helper method
+    Widget buildContent(BuildContext context) {
+      return ManageTemplatesDialog(
         controller: _controller,
         initialSelectedIds: currentTemplateIds,
-        
         onSave: (updatedTemplateIds) async {
           final success = await _controller.updateGroupTemplates(
             groupId: _selectedGroupId!, 
@@ -332,8 +368,44 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             return false; 
           }
         },
-      ),
-    );
+      );
+    }
+
+    // 🚀 2. Show the responsive overlay!
+    if (isMobile) {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true, 
+        backgroundColor: Colors.transparent,
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              color: theme.colorScheme.surfaceContainer,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: buildContent(context),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          backgroundColor: theme.colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: 500,
+            child: buildContent(context),
+          ),
+        ),
+      );
+    }
   }
 
   // ==========================================
@@ -487,7 +559,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                     
                     return ListTile(
                       title: Text(group.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-                      subtitle: Text("${group.tags.length} Tags • ${group.templates.length} Templates", style: const TextStyle(fontSize: 12)),
+                      // subtitle: Text("${group.tags.length} Tags • ${group.templates.length} Templates", style: const TextStyle(fontSize: 12)),
                       selected: isSelected,
                       selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
                       onTap: () {

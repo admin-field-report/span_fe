@@ -122,6 +122,8 @@ class TagController extends ChangeNotifier {
         tagGroups = (data['data'] as List)
             .map((g) => AppTagGroup.fromJson(g as Map<String, dynamic>))
             .toList();
+
+        tagGroups.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       }
     } catch (e) {
       debugPrint("Error fetching tag groups: $e");

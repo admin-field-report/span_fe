@@ -75,155 +75,155 @@ class _ManageTagsDialogState extends State<ManageTagsDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    return Dialog(
-      backgroundColor: theme.colorScheme.surfaceContainer,
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.hardEdge,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 800),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // --- HEADER ---
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              color: theme.colorScheme.surface,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("Manage Tags", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close), 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+    // 🚀 1. Removed the 'Dialog' and 'ConstrainedBox' wrappers!
+    // The parent now controls the sizing and shape.
+    return Material(
+      color: theme.colorScheme.surfaceContainer, // Let the parent's background color show through
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // 🚀 Allows the modal to shrink-wrap its content
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // --- HEADER ---
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            color: theme.colorScheme.surface,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Manage Tags", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.close), 
+                  onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                ),
+              ],
             ),
-            const Divider(height: 1),
-            
-            // --- BODY ---
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(height: 12),
-                            
-                            AbsorbPointer(
-                              absorbing: _isSubmitting,
-                              child: FormControlTextField(
-                                controller: _newTagNameController,
-                                hintText: "New tag name...",
-                                prefixIcon: Icons.local_offer_outlined,
-                              ),
+          ),
+          const Divider(height: 1),
+          
+          // --- BODY ---
+          // 🚀 2. Changed 'Expanded' to 'Flexible' so it doesn't force maximum height
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(height: 12),
+                          
+                          AbsorbPointer(
+                            absorbing: _isSubmitting,
+                            child: FormControlTextField(
+                              controller: _newTagNameController,
+                              hintText: "New tag name...",
+                              prefixIcon: Icons.local_offer_outlined,
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: AbsorbPointer(
-                                    absorbing: _isSubmitting,
-                                    child: ColorPickerField(
-                                      currentColor: _newTagColor,
-                                      onColorChanged: (c) => setState(() => _newTagColor = c),
-                                    ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AbsorbPointer(
+                                  absorbing: _isSubmitting,
+                                  child: ColorPickerField(
+                                    label: 'Tag Color',
+                                    currentColor: _newTagColor,
+                                    onColorChanged: (c) => setState(() => _newTagColor = c),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Button(
-                                  label: "Add Tag",
-                                  icon: Icons.add,
-                                  variant: ButtonVariant.filled,
-                                  onPressed: _isSubmitting ? null : _addNewTagToLocalList,
-                                ),
-                              ],
-                            ),
-                            
-                            if (_newlyCreatedTags.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              const Divider(height: 1),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: _newlyCreatedTags.map((t) {
-                                  final tagColor = _hexToColor(t["color"]!);
-                                  return Chip(
-                                    label: Text(t["name"]!, style: TextStyle(color: tagColor, fontSize: 12, fontWeight: FontWeight.bold)),
-                                    backgroundColor: tagColor.withOpacity(0.1),
-                                    side: BorderSide(color: tagColor.withOpacity(0.5)),
-                                    deleteIconColor: tagColor,
-                                    onDeleted: _isSubmitting ? null : () => setState(() => _newlyCreatedTags.remove(t)),
-                                  );
-                                }).toList(),
+                              ),
+                              const SizedBox(width: 12),
+                              Button(
+                                label: "Add Tag",
+                                icon: Icons.add,
+                                variant: ButtonVariant.filled,
+                                onPressed: _isSubmitting ? null : _addNewTagToLocalList,
                               ),
                             ],
+                          ),
+                          
+                          if (_newlyCreatedTags.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            const Divider(height: 1),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _newlyCreatedTags.map((t) {
+                                final tagColor = _hexToColor(t["color"]!);
+                                return Chip(
+                                  label: Text(t["name"]!, style: TextStyle(color: tagColor, fontSize: 12, fontWeight: FontWeight.bold)),
+                                  backgroundColor: tagColor.withOpacity(0.1),
+                                  side: BorderSide(color: tagColor.withOpacity(0.5)),
+                                  deleteIconColor: tagColor,
+                                  onDeleted: _isSubmitting ? null : () => setState(() => _newlyCreatedTags.remove(t)),
+                                );
+                              }).toList(),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
                     ),
-                    
-                    const SizedBox(height: 24),
-                    const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    
-                    // 🚀 2. EXISTING TAG SELECTION
-                    AbsorbPointer(
-                      absorbing: _isSubmitting,
-                      child: SizedBox(
-                        height: 300, 
-                        child: InlineSelectionFilter<AppTag>(
-                          allItems: widget.controller.globalTags, 
-                          selectedIds: _selectedTagIds, 
-                          getName: (t) => t.name, 
-                          getId: (t) => t.id,
-                          onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Divider(height: 1),
-            
-            // --- FOOTER ---
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Button(
-                    label: "Cancel", 
-                    variant: ButtonVariant.outline, 
-                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
                   ),
-                  const SizedBox(width: 12),
-                  Button(
-                    label: _isSubmitting ? "Saving..." : "Save Changes",
-                    isLoading: _isSubmitting,
-                    onPressed: _isSubmitting ? null : _onSave,
+                  
+                  const SizedBox(height: 24),
+                  const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  
+                  // 🚀 3. EXISTING TAG SELECTION
+                  AbsorbPointer(
+                    absorbing: _isSubmitting,
+                    child: SizedBox(
+                      height: 300, 
+                      child: InlineSelectionFilter<AppTag>(
+                        allItems: widget.controller.globalTags, 
+                        selectedIds: _selectedTagIds, 
+                        getName: (t) => t.name, 
+                        getId: (t) => t.id,
+                        onToggle: (id, isSelected) => setState(() => isSelected ? _selectedTagIds.add(id) : _selectedTagIds.remove(id)),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          const Divider(height: 1),
+          
+          // --- FOOTER ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Button(
+                  label: "Cancel", 
+                  variant: ButtonVariant.outline, 
+                  onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                ),
+                const SizedBox(width: 12),
+                Button(
+                  label: _isSubmitting ? "Saving..." : "Save Changes",
+                  isLoading: _isSubmitting,
+                  onPressed: _isSubmitting ? null : _onSave,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

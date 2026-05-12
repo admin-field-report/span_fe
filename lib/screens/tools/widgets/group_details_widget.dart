@@ -6,7 +6,6 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import './custom_tool_preview.dart';
 import '../../../widgets/search_field/search_field.dart';
 import '../../../widgets/button/button.dart';
-import '../create_tool_screen.dart';
 import './manage_tools_panel.dart';
 import '../controllers/tool_controller.dart';
 import '../../../utils/app_responsive.dart';
@@ -153,52 +152,21 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
             }
           },
         ),
-        const SizedBox(width: 12),
-        Button(
-          label: "Create Tool",
-          variant: ButtonVariant.outline,
-          icon: Icons.add,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          onPressed: () async {
-            final didCreate = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => CreateToolScreen(
-                  availableGroups: widget.allToolGroups, 
-                  initialGroupId: widget.group.id,
-                  availableTagGroups: widget.allTagGroups,
-                ),
-              ),
-            );
-
-            if (didCreate == true && widget.onGroupUpdated != null) {
-              widget.onGroupUpdated!();
-            }
-          },
-        ),
       ],
     );
 
-    // 🚀 3. The Responsive Header Setup
-    Widget responsiveHeader = isMobile
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Text(widget.group.name, style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [actionButtons],
-              ),
-            ],
-          )
-        : Row(
+    return Padding(
+      padding: isMobile ? const EdgeInsets.fromLTRB(0, 10, 0, 10) : const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if(!isMobile) Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
                   widget.group.name, 
-                  style: Theme.of(context).textTheme.headlineMedium,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
                   maxLines: 1, 
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -206,24 +174,23 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
               const SizedBox(width: 16),
               actionButtons,
             ],
-          );
+          ),
 
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          responsiveHeader,
-
-          const SizedBox(height: 24),
+          SizedBox(height: isMobile ? 0 : 15),
           
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 16,
-            runSpacing: 16,
+          Row(
             children: [
-              SearchField(width: 250, hintText: "Search tools...", onChanged: (value) => setState(() => _searchQuery = value)),
+              Expanded(
+                child: SearchField(
+                  hintText: "Search tools...", 
+                  onChanged: (value) => setState(() => _searchQuery = value)
+                ),
+              ),
+              
+              if (isMobile) ...[
+                const SizedBox(width: 16),
+                actionButtons,
+              ]
             ],
           ),
           
@@ -307,9 +274,11 @@ class MobileGroupDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(group.name)),
+      appBar: AppBar(
+        title: Text(group.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+        centerTitle: false,
+      ),
       
-      // 🚀 LISTEN TO THE CONTROLLER NATIVELY
       body: ListenableBuilder(
         listenable: toolController,
         builder: (context, child) {

@@ -154,6 +154,7 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
                         children: [
                           Expanded(
                             child: ColorPickerField(
+                              label: 'Tag Color',
                               currentColor: _newTagColor,
                               onColorChanged: (c) => setState(() => _newTagColor = c),
                             ),

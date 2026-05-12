@@ -5,12 +5,14 @@ import '../../utils/app_responsive.dart';
 
 class ColorPickerField extends StatelessWidget {
   final Color currentColor;
+  final String label;
   final ValueChanged<Color> onColorChanged;
 
   const ColorPickerField({
     super.key,
     required this.currentColor,
     required this.onColorChanged,
+    this.label = "Choose Color",
   });
 
   @override
@@ -32,7 +34,7 @@ class ColorPickerField extends StatelessWidget {
         
         // --- Open Picker Button ---
         Button(
-          label: "Choose Color",
+          label: label,
           icon: Icons.palette_outlined,
           variant: ButtonVariant.outline,
           onPressed: () {

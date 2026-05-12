@@ -113,7 +113,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
           children: [
             // --- BACK BUTTON HEADER ---
             Padding(
-              padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 8.0),
+              padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 3.0),
               child: TextButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back, size: 20),

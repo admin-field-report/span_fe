@@ -58,7 +58,7 @@ class CanvasState extends State<Canvas> {
   
   bool _isFullScreen = false;
   
-  bool _showLeftPanel = true; 
+  bool _showLeftPanel = false; 
   bool _showPropertiesPanel = false; // strictly manual toggle now!
 
   String _selectedTool = 'Select';
