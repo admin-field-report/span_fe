@@ -8,9 +8,12 @@ import '../../screens/auth/controllers/auth_controller.dart';
 class MainScaffold extends StatefulWidget {
   final Widget child;
   final bool isScrollable;
+  final bool removePadding;
+
   const MainScaffold({
     required this.child,
     this.isScrollable = true,
+    this.removePadding = false,
     super.key
   });
 
@@ -123,24 +126,37 @@ class _MainScaffoldState extends State<MainScaffold> {
                       _buildStickyHeader(context, isMobile, colorScheme, theme),
                       
                       // DYNAMIC BODY
+                      // Expanded(
+                      //   child: Padding(
+                      //     padding: isMobile 
+                      //         ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
+                      //         : const EdgeInsets.fromLTRB(20, 0, 24, 20),
+                      //     child: AnimatedContainer(
+                      //       duration: const Duration(milliseconds: 300),
+                      //       margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
+                      //       child: ClipRRect(
+                      //         borderRadius: BorderRadius.circular(8),
+                      //         child: widget.child,
+                      //       ),
+                      //     ),
+                      //   ),
+                      // ),
+                      // DYNAMIC BODY
                       Expanded(
                         child: Padding(
-                          padding: isMobile 
-                              ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
-                              : const EdgeInsets.fromLTRB(20, 0, 24, 20),
+                          padding: widget.removePadding 
+                              ? EdgeInsets.zero 
+                              : (isMobile 
+                                  ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
+                                  : const EdgeInsets.fromLTRB(20, 0, 24, 20)),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 300),
-                            margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
+                            margin: widget.removePadding 
+                                ? EdgeInsets.zero 
+                                : (isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16)),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: widget.child, 
-                              // child: widget.isScrollable
-                              //     ? SingleChildScrollView(
-                              //         primary: true,
-                              //         physics: const BouncingScrollPhysics(),
-                              //         child: widget.child,
-                              //       )
-                              //     : widget.child, 
+                              borderRadius: BorderRadius.circular(widget.removePadding ? 0 : 8),
+                              child: widget.child,
                             ),
                           ),
                         ),

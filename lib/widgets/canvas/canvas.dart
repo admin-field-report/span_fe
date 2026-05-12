@@ -5,7 +5,8 @@ import 'package:universal_html/html.dart' as html;
 
 import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
-import 'widgets/property_panel.dart'; 
+import 'widgets/property_panel.dart';
+import '../../utils/app_responsive.dart'; 
 
 // Helper class for the left sidebar tools
 class _ToolItem {
@@ -759,7 +760,7 @@ class CanvasState extends State<Canvas> {
   bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots', 'Herringbone', 'Concrete', 'Shingles', 'Insulation'].contains(tool);
 
   Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = AppResponsive.isMobileScreen(context);
     return IconButton(
       tooltip: msg,
       onPressed: isEnabled ? onTap : null, 
@@ -771,7 +772,7 @@ class CanvasState extends State<Canvas> {
   }
 
   Widget _colorButton(String label, Color color, int mode) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = AppResponsive.isMobileScreen(context);
     return GestureDetector(
       onTap: () => _showColorPicker(mode),
       child: Column(children: [
@@ -787,7 +788,7 @@ class CanvasState extends State<Canvas> {
   }
 
   Widget _formatToggle(IconData icon, bool isActive, VoidCallback onTap, ThemeData theme) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = AppResponsive.isMobileScreen(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -987,7 +988,7 @@ class CanvasState extends State<Canvas> {
   }
 
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = AppResponsive.isMobileScreen(context);
     
     return ExpansionTile(
       title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 13)),
@@ -1126,7 +1127,7 @@ class CanvasState extends State<Canvas> {
   }
 
   Widget _buildTopToolbar(ThemeData theme) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+    final isMobile = AppResponsive.isMobileScreen(context);
     
     return Container(
       width: double.infinity,
@@ -1202,7 +1203,7 @@ class CanvasState extends State<Canvas> {
           
           // _vDiv(theme),
 
-          if (widget.showCloseButton) ...[
+          if (widget.showCloseButton && !_isFullScreen) ...[
             const SizedBox(width: 8), // Little spacing
             Container(
               decoration: BoxDecoration(
@@ -1227,6 +1228,7 @@ class CanvasState extends State<Canvas> {
     final theme = Theme.of(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final double stylingPanelWidth = math.min(240.0, screenWidth * 0.75);
+    final bool isMobileDevice = AppResponsive.isAndroid || AppResponsive.isIOS;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -1321,12 +1323,13 @@ class CanvasState extends State<Canvas> {
                                 ),
                               ),
 
-                              Positioned(
-                                bottom: 24,
-                                right: 24,
-                                child: FloatingActionButton.small(
-                                  heroTag: 'fullscreen_fab',
-                                  backgroundColor: theme.colorScheme.surface,
+                              if (!isMobileDevice)
+                                Positioned(
+                                  bottom: 24,
+                                  right: 24,
+                                  child: FloatingActionButton.small(
+                                    heroTag: 'fullscreen_fab',
+                                    backgroundColor: theme.colorScheme.surface,
                                   foregroundColor: theme.colorScheme.primary,
                                   elevation: 4,
                                   onPressed: _toggleNativeFullscreen,
@@ -1336,7 +1339,7 @@ class CanvasState extends State<Canvas> {
                                 ),
                               ),
 
-                              if (_showLeftPanel && !_isFullScreen)
+                              if (_showLeftPanel)
                                 Positioned(
                                   top: 0,
                                   left: 0,
@@ -1348,7 +1351,7 @@ class CanvasState extends State<Canvas> {
                         ),
 
                         // CUSTOM DATA PANEL (Sits permanently on the right, under overlays)
-                        if (widget.customRightPanel != null && !_isFullScreen)
+                        if (widget.customRightPanel != null)
                           Container(
                             width: 320, // Keep your custom panel size consistent
                             decoration: BoxDecoration(

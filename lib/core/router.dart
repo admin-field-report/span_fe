@@ -47,8 +47,10 @@ final router = GoRouter(
     ShellRoute(
       builder: (context, state, child) {
         final bool isCanvasRoute = state.uri.path.contains('/canvas');
+        final bool removePadding = state.uri.path.contains('/canvas');
         return MainScaffold(
-          isScrollable: !isCanvasRoute, 
+          isScrollable: !isCanvasRoute,
+          removePadding: removePadding,
           child: child,
         );
       },
