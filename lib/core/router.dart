@@ -173,7 +173,7 @@ final router = GoRouter(
       if (continueTo != null && continueTo.isNotEmpty) {
         return continueTo; // Send them back to the deep link!
       }
-      return '/'; // Default fallback if no deep link existed
+      return '/projects'; // Default fallback if no deep link existed
     }
 
     // 6. Allow all normal navigation to proceed

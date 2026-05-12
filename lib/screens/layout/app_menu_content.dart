@@ -42,13 +42,13 @@ class AppMenuContent extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _NavTile(
-                    icon: Icons.grid_view_rounded,
-                    label: "Dashboard",
-                    isCollapsed: isCollapsed,
-                    isSelected: _isPathActive(context, '/'),
-                    onTap: () => _navigate(context, '/'),
-                  ),
+                  // _NavTile(
+                  //   icon: Icons.grid_view_rounded,
+                  //   label: "Dashboard",
+                  //   isCollapsed: isCollapsed,
+                  //   isSelected: _isPathActive(context, '/'),
+                  //   onTap: () => _navigate(context, '/'),
+                  // ),
                   _NavTile(
                     icon: Icons.folder_outlined,
                     label: "Projects",
