@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../core/api_service.dart';
 import '../../screens/auth/controllers/auth_controller.dart';
 
@@ -381,14 +382,40 @@ class _AIDataScreenState extends State<AIDataScreen> {
                 color: message.isUser ? theme.colorScheme.surfaceVariant.withOpacity(0.5) : Colors.transparent,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurface,
-                  fontSize: 15,
-                  height: 1.5,
-                ),
-              ),
+              // 🚀 THE FIX: Use MarkdownBody for AI, standard Text for User
+              child: message.isUser 
+                ? Text(
+                    message.text,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface,
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  )
+                : MarkdownBody(
+                    data: message.text,
+                    selectable: true, // Allows the user to copy text from the response!
+                    styleSheet: MarkdownStyleSheet(
+                      p: TextStyle(color: theme.colorScheme.onSurface, fontSize: 15, height: 1.5),
+                      h1: TextStyle(color: theme.colorScheme.onSurface, fontSize: 24, fontWeight: FontWeight.bold, height: 1.5),
+                      h2: TextStyle(color: theme.colorScheme.onSurface, fontSize: 20, fontWeight: FontWeight.bold, height: 1.5),
+                      h3: TextStyle(color: theme.colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.bold, height: 1.5),
+                      listBullet: TextStyle(color: theme.colorScheme.primary, fontSize: 15),
+                      // Beautiful code block styling:
+                      code: TextStyle(
+                        backgroundColor: Colors.transparent,
+                        color: theme.colorScheme.primary,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                      ),
+                      codeblockPadding: const EdgeInsets.all(12),
+                    ),
+                  ),
             ),
           ),
           
