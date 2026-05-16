@@ -58,7 +58,7 @@ class _AddProjectFormState extends State<AddProjectForm> {
         final String newProjectId = data['id']?? "";
 
         // 2. Call the second API to bind the project document
-        if (newProjectId.isNotEmpty) {
+        if (newProjectId.isNotEmpty && _selectedTemplateId != null) {
           final docResponse = await _apiService.post('/projectDocument', {
             "name": _nameController.text.trim(),
             "project_id": newProjectId,
