@@ -113,7 +113,7 @@ class ProjectController extends ChangeNotifier {
   notifyListeners();
 
   try {
-    final response = await _apiService.get('/presignedurl/canvas-json-images/$projectId');
+    final response = await _apiService.get('/presignedurl/project-media/$projectId');
     final List<dynamic> responseData = jsonDecode(response.body);
 
     List<InspectionMediaGroup> groups = [];

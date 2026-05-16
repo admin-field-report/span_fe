@@ -99,7 +99,7 @@ class InspectionController extends ChangeNotifier {
 
   Future<List<String>> _fetchMedia(String inspectionId) async {
     try {
-      final response = await _apiService.get('/presignedurl/inspections-images/$inspectionId');
+      final response = await _apiService.get('/presignedurl/inspection-images/$inspectionId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
 
       if (responseData['data'] != null && (responseData['data'] as List).isNotEmpty) {
