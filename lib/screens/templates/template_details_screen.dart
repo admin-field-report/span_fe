@@ -339,20 +339,36 @@ final Set<int> _fetchedTabs = {};
 
   // 🚀 REFACTORED TAG CHIP (Much cleaner since the Model handles the hex conversion now!)
   Widget _buildTagChip(AppTag tag) {
-    // Determine text color based on the actual background color luminance
-    Color textColor = tag.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
-    bool isWhiteBg = tag.color == Colors.white || tag.color.computeLuminance() > 0.95;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tag.color, // Direct from your model
+        color: tag.color.withOpacity(0.1), // 🚀 Light background tint
+        border: Border.all(color: tag.color.withOpacity(0.5)), // 🚀 Outlined border
         borderRadius: BorderRadius.circular(16),
-        border: isWhiteBg ? Border.all(color: Colors.grey.shade300) : null,
       ),
-      child: Text(
-        tag.name,
-        style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w600),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 🚀 The little solid color dot
+          Container(
+            width: 8, 
+            height: 8, 
+            decoration: BoxDecoration(
+              color: tag.color, 
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          // 🚀 Text colored to match the tag
+          Text(
+            tag.name, 
+            style: TextStyle(
+              color: tag.color, 
+              fontSize: 12, 
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
