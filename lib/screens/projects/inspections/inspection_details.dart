@@ -171,7 +171,7 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              onTap: () {
+              onTap: () async {
                 final String documentId = doc['id']; 
                 final currentPath = GoRouterState.of(context).uri.path;
                 final cleanPath = currentPath.endsWith('/') 
@@ -179,7 +179,10 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                     : currentPath;
                     
                 final canvasUrl = '$cleanPath/canvas?document=$documentId&page=1';
-                context.go(canvasUrl);
+                await context.push(canvasUrl);
+                if (mounted) {
+                  inspectionController.fetchInspectionDetails(widget.inspectionId);
+                }
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
