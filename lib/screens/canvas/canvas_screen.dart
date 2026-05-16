@@ -9,6 +9,7 @@ import '../../services/toast_service.dart';
 
 import '../../../widgets/canvas/canvas.dart' as custom_canvas;
 import '../../../widgets/canvas/models/canvas_models.dart';
+import '../../../widgets/confirmation/confirmation_remove.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'utils/canvas_export.dart';
@@ -46,6 +47,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isPageLoading = false;
   bool _isLoadingDocument = true;
   bool _isSaving = false;
+
+  bool _hasUnsavedChanges = false;
 
   DrawingObject? _selectedCanvasObject;
   List<CustomToolGroup> _customToolGroups = [];
@@ -483,6 +486,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         final resData = jsonDecode(response.body);
 
         if (resData['success'] == true) {
+          _hasUnsavedChanges = false; // 🚀 Reset on save!
           if (mounted) ToastService.show(context, message: "Image Annotations saved successfully!", type: ToastType.success);
         } else {
           throw Exception(resData['message'] ?? 'Failed to save image annotations');
@@ -521,7 +525,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           }
         }
-
+        _hasUnsavedChanges = false;
         if (mounted) ToastService.show(context, message: "All Annotations saved successfully!", type: ToastType.success);
       }
     } catch (e) {
@@ -706,6 +710,35 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  Future<void> _handleClose() async {
+    if (!_hasUnsavedChanges) {
+      Navigator.of(context).pop();
+      return;
+    }
+    bool shouldClose = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) => ConfirmationDialog(
+        title: "Exit Without Saving?",
+        description: "Are you sure you want to exit? Any unsaved changes will be permanently lost.",
+        confirmLabel: "Exit",
+        cancelLabel: "Cancel",
+        confirmColor: Colors.red,
+        onConfirm: () async {
+          shouldClose = true;
+          // Note: We don't pop the screen here because your ConfirmationDialog 
+          // automatically pops itself when this function finishes!
+        },
+      ),
+    );
+
+    // If they confirmed, pop the actual Canvas screen
+    if (shouldClose && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -770,12 +803,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
           // 🚀 FIX: Removed the API calls here! Now it just updates local state.
           onInspectionDescriptionChanged: (val) {
             setState(() => _inspectionDescription = val);
+            _hasUnsavedChanges = true;
           },
           onInspectionTagsChanged: (val) {
             setState(() => _inspectionTagIds = val);
+            _hasUnsavedChanges = true;
           },
 
-          onUpdate: () => _getCurrentCanvasKey().currentState?.refreshCanvas(),
+          onUpdate: () {
+            _hasUnsavedChanges = true;
+            _getCurrentCanvasKey().currentState?.refreshCanvas();
+          },
           
           // 🚀 ROUTE UPLOAD LOGIC
           onImageUpload: (fileName, bytes) async {
@@ -821,7 +859,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ),
 
         showCloseButton: true,
-        onClosePressed: () => Navigator.of(context).pop(),
+        onClosePressed: _handleClose,
         leftActions: [],
         rightActions: [
           if (widget.annotateImageKey == null) _buildPageSelector(theme),
@@ -856,6 +894,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
         onSelectionChanged: (selectedObject) {
           setState(() {
             _selectedCanvasObject = selectedObject;
+            if (selectedObject != null) _hasUnsavedChanges = true;
           });
         },
       ),
