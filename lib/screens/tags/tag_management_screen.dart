@@ -7,6 +7,7 @@ import '../../../widgets/form_components/color_picker_field.dart';
 import './controllers/tag_controller.dart';
 import '../../../models/tag_models.dart';
 import '../../utils/app_responsive.dart';
+import '../../widgets/confirmation/confirmation_remove.dart';
 
 import 'widgets/manage_tags_dialog.dart';
 import 'widgets/manage_templates_dialog.dart';
@@ -57,7 +58,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // MOBILE NAVIGATION HELPER
   // ==========================================
   
-  Widget _buildMobileHeader(String title) {
+// 🚀 Updated Mobile Header
+  Widget _buildMobileHeader(String title, {VoidCallback? onDelete}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Row(
@@ -69,6 +71,14 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+          
+          // 🚀 Show delete button if callback is provided
+          if (onDelete != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: "Delete Group",
+              onPressed: onDelete,
+            ),
         ],
       ),
     );
@@ -409,6 +419,40 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   }
 
   // ==========================================
+  // DELETE LOGIC
+  // ==========================================
+  Future<void> _confirmDeleteGroup(String groupId, String groupName) async {
+    await showDialog(
+      context: context,
+      builder: (context) => ConfirmationDialog(
+        title: "Delete Tag Group",
+        description: "Are you sure you want to delete '$groupName'?",
+        confirmLabel: "Delete",
+        confirmColor: Colors.red,
+        // 🚀 The dialog automatically handles the loading spinner during this async call!
+        onConfirm: () async {
+          final success = await _controller.deleteGroup(groupId);
+          
+          if (!mounted) return;
+          
+          if (success) {
+            ToastService.show(context, message: "Tag group deleted successfully", type: ToastType.success);
+            setState(() {
+              _selectedGroupId = null; // Clear selection
+              if (!AppResponsive.isDesktopScreen(context)) {
+                _currentMobileView = MobileView.groups; // Send mobile users back to the list
+              }
+            });
+          } else {
+            ToastService.show(context, message: "Failed to delete tag group", type: ToastType.error);
+            // Optional: You could throw an Exception here if you want the dialog to stay open on failure!
+          }
+        },
+      ),
+    );
+  }
+
+  // ==========================================
   // MAIN BUILDER
   // ==========================================
 
@@ -471,11 +515,16 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ],
         );
       case MobileView.groupDetails:
+        final activeGroup = _controller.tagGroups.where((g) => g.id == _selectedGroupId).firstOrNull;
         return Column(
           key: const ValueKey('details'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildMobileHeader(_controller.tagGroups.where((g) => g.id == _selectedGroupId).firstOrNull?.name ?? "Details"),
+            _buildMobileHeader(
+              activeGroup?.name ?? "Details",
+              // 🚀 Pass the delete callback!
+              onDelete: activeGroup != null ? () => _confirmDeleteGroup(activeGroup.id, activeGroup.name) : null,
+            ),
             Expanded(child: _buildSelectedGroupDetails(theme, isDesktop: false)),
           ],
         );
@@ -559,7 +608,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                     
                     return ListTile(
                       title: Text(group.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-                      // subtitle: Text("${group.tags.length} Tags • ${group.templates.length} Templates", style: const TextStyle(fontSize: 12)),
                       selected: isSelected,
                       selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
                       onTap: () {
@@ -569,7 +617,22 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         });
                         _controller.fetchTemplatesForGroup(group.id);
                       },
-                      trailing: const Icon(Icons.chevron_right, size: 16),
+                      
+                      // 🚀 THE NEW TRAILING ROW
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min, // Prevents the Row from taking up the whole tile
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                            tooltip: "Delete Group",
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(), // Removes default bulky button sizing
+                            onPressed: () => _confirmDeleteGroup(group.id, group.name),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -605,9 +668,21 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         children: [
           if (isDesktop) ...[
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), // 🚀 Tweaked padding for the icon
               color: theme.colorScheme.surface,
-              child: Text(activeGroup.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(activeGroup.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  
+                  // 🚀 Add the Desktop Delete Button here!
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: "Delete Group",
+                    onPressed: () => _confirmDeleteGroup(activeGroup.id, activeGroup.name),
+                  )
+                ],
+              ),
             ),
             const Divider(height: 1),
           ],
@@ -680,7 +755,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
-Widget _buildGlobalTagsList(ThemeData theme) {
+  Widget _buildGlobalTagsList(ThemeData theme) {
     final query = _tagSearchController.text.toLowerCase();
     var filteredTags = _controller.globalTags.where((t) {
       return t.name.toLowerCase().contains(query);

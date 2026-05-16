@@ -283,4 +283,21 @@ class TagController extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> deleteGroup(String groupId) async {
+    try {
+      final response = await _api.delete('/tagGroup/$groupId');
+      
+      if (response.statusCode == 200) {
+        // Remove from local list and refresh UI
+        tagGroups.removeWhere((g) => g.id == groupId);
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Error deleting tag group: $e");
+      return false;
+    }
+  }
 }
