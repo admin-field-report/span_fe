@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../../core/theme_controller.dart';
 
@@ -12,54 +11,51 @@ class SettingsScreen extends StatelessWidget {
       const Color(0xFF2065D1), const Color(0xFFFDA92D), const Color(0xFFFF3030),
     ];
 
-    return Drawer(
-      width: 400,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      child: ListenableBuilder(
-        listenable: themeController,
-        builder: (context, _) {
-          final theme = Theme.of(context);
-          final colorScheme = theme.colorScheme;
+    return ListenableBuilder(
+      listenable: themeController,
+      builder: (context, _) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
 
-          return SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Settings",
-                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded),
-                        style: IconButton.styleFrom(
-                          backgroundColor: colorScheme.onSurface.withOpacity(0.05),
-                        ),
-                      ),
-                    ],
+        return Scaffold(
+          // Uses transparent to seamlessly blend into your MainScaffold's background
+          backgroundColor: Colors.transparent, 
+          
+          // 🚀 Align topCenter keeps it at the top, but centers it horizontally on large screens
+          body: Align(
+            alignment: Alignment.topCenter, 
+            child: ConstrainedBox(
+              // 🚀 Prevents the UI from stretching infinitely on wide desktop monitors!
+              constraints: const BoxConstraints(maxWidth: 700),
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                children: [
+                  // 🚀 Clean, page-level header (No close button!)
+                  Text(
+                    "Settings",
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(24),
-                    children: [
-                      _buildAppearanceSection(theme, colorScheme),
-                      const SizedBox(height: 32),
-                      _buildPresetSection(theme, colorScheme, accentColors),
-                    ],
+                  const SizedBox(height: 8),
+                  Text(
+                    "Manage your app appearance and preferences.",
+                    style: TextStyle(color: colorScheme.onSurface.withOpacity(0.6), fontSize: 14),
                   ),
-                ),
-              ],
+                  
+                  const SizedBox(height: 40),
+                  
+                  // Sections
+                  _buildAppearanceSection(theme, colorScheme),
+                  const SizedBox(height: 40),
+                  _buildPresetSection(theme, colorScheme, accentColors),
+                ],
+              ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -87,8 +83,9 @@ class SettingsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: colorScheme.onSurface.withOpacity(0.05),
+        color: colorScheme.surfaceVariant.withOpacity(0.5),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
       ),
       child: Row(
         children: [
@@ -107,20 +104,22 @@ class SettingsScreen extends StatelessWidget {
         onTap: () => themeController.setThemeMode(mode),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 16), // A bit more padding for desktop
           decoration: BoxDecoration(
             color: active ? themeController.targetColor : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: active ? [BoxShadow(color: themeController.targetColor.withOpacity(0.3), blurRadius: 8)] : null,
+            boxShadow: active 
+                ? [BoxShadow(color: themeController.targetColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] 
+                : null,
           ),
           child: Column(
             children: [
-              Icon(icon, size: 18, color: active ? Colors.white : Colors.grey),
-              const SizedBox(height: 4),
+              Icon(icon, size: 22, color: active ? Colors.white : Colors.grey),
+              const SizedBox(height: 6),
               Text(label, style: TextStyle(
                 color: active ? Colors.white : Colors.grey, 
-                fontSize: 11,
-                fontWeight: active ? FontWeight.bold : FontWeight.normal
+                fontSize: 13,
+                fontWeight: active ? FontWeight.bold : FontWeight.w600
               )),
             ],
           ),
@@ -131,15 +130,15 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _buildColorGrid(List<Color> colors, ColorScheme colorScheme) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 16, // Spaced out slightly more for a breathable desktop layout
+      runSpacing: 16,
       children: colors.map((color) {
         bool selected = themeController.targetColor.value == color.value;
         return GestureDetector(
           onTap: () => themeController.setTargetColor(color),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: 42, height: 42,
+            width: 48, height: 48, // Slightly larger targets
             decoration: BoxDecoration(
               color: color,
               shape: BoxShape.circle,
@@ -147,8 +146,11 @@ class SettingsScreen extends StatelessWidget {
                 color: selected ? colorScheme.onSurface : Colors.transparent,
                 width: 2
               ),
+              boxShadow: selected 
+                  ? [BoxShadow(color: color.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))] 
+                  : [],
             ),
-            child: selected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
+            child: selected ? const Icon(Icons.check, color: Colors.white, size: 24) : null,
           ),
         );
       }).toList(),
@@ -157,14 +159,14 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _buildSectionHeader(String title, ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12, left: 4),
+      padding: const EdgeInsets.only(bottom: 16, left: 4),
       child: Text(
-        title,
+        title.toUpperCase(),
         style: TextStyle(
-          color: theme.colorScheme.onSurface.withOpacity(0.4), 
-          fontSize: 11, 
+          color: theme.colorScheme.onSurface.withOpacity(0.5), 
+          fontSize: 12, 
           fontWeight: FontWeight.w800, 
-          letterSpacing: 1.2
+          letterSpacing: 1.5
         ),
       ),
     );

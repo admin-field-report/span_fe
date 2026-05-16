@@ -148,7 +148,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                               ? EdgeInsets.zero 
                               : (isMobile 
                                   ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
-                                  : const EdgeInsets.fromLTRB(20, 0, 24, 20)),
+                                  : const EdgeInsets.fromLTRB(15, 0, 15, 15)),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 300),
                             margin: widget.removePadding 
@@ -218,14 +218,14 @@ class _MainScaffoldState extends State<MainScaffold> {
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
               color: colorScheme.onSurface,
             ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 20),
-            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-            color: colorScheme.onSurface.withOpacity(0.6),
-          ),
-          const SizedBox(width: 16),
-          _buildUserAvatar(theme, colorScheme),
+          // const Spacer(),
+          // IconButton(
+          //   icon: const Icon(Icons.settings_outlined, size: 20),
+          //   onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+          //   color: colorScheme.onSurface.withOpacity(0.6),
+          // ),
+          // const SizedBox(width: 16),
+          // _buildUserAvatar(theme, colorScheme),
         ],
       ),
     );

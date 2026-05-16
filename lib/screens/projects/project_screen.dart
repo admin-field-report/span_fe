@@ -253,11 +253,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text("Projects", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            Button(
-              label: "Add Project",
-              icon: Icons.add_rounded,
-              onPressed: () => _showAddProject(context),
-            )
           ],
         ),
       ],
@@ -305,7 +300,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
 
   Widget _buildTopToolbar(ThemeData theme) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
-    final colorScheme = theme.colorScheme;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
@@ -318,29 +312,24 @@ class _ProjectScreenState extends State<ProjectScreen> {
             ),
           ),
 
-          if (isDesktop) ...[
-            const Spacer(),
-            Tooltip(
-              message: 'Refresh Projects',
-              child: InkWell(
-                onTap: projectController.isLoading ? null : () {
-                  projectController.getAllProjects();
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.refresh_rounded, 
-                    size: 20, 
-                    color: colorScheme.onSurface.withOpacity(0.7)
-                  ),
-                ),
+          if (isDesktop) const Spacer(),
+          // const Spacer(),
+          if (isDesktop) 
+            Button(
+              label: "Add Project",
+              icon: Icons.add_rounded,
+              onPressed: () => _showAddProject(context),
+            )
+          else ...[
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: "Add Project",
+              icon: Icon(Icons.add_rounded, color: theme.colorScheme.primary),
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.primaryContainer,
               ),
-            ),
+              onPressed: () => _showAddProject(context),
+            )
           ],
         ],
       )
