@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
@@ -16,6 +17,7 @@ import 'utils/canvas_export.dart';
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
+  final String projectDocumentId;
   final String projectId;
   final String inspectionId;
   final String page;
@@ -30,6 +32,7 @@ class CanvasScreen extends StatefulWidget {
     required this.projectId,
     required this.inspectionId,
     required this.documentId,
+    required this.projectDocumentId,
     this.page = '1',
     this.annotateImageUrl,
     this.annotateImageKey,
@@ -108,7 +111,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   
   Future<void> _fetchInspectionAnnotation() async {
     try {
-      final response = await _apiService.get('/inspection/annotation/${widget.inspectionId}');
+      // final response = await _apiService.get('/inspection/annotation/${widget.inspectionId}'); // TODO
+      final response = await _apiService.get('/inspection/document/annotation/${widget.projectDocumentId}');
       final resData = jsonDecode(response.body);
 
       if (resData['success'] == true && resData['data'] != null) {
@@ -137,9 +141,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
             "tag_id_list": _inspectionTagIds,
             "image_url_list": _inspectionImageUrls
           }
-        ]
+        ],
+        "project_id": widget.projectId,
+        "inspection_id": widget.inspectionId,
+        "project_document_id": widget.projectDocumentId,
       };
-      await _apiService.post('/inspection/add-annotation/${widget.inspectionId}', payload);
+      // await _apiService.post('/inspection/add-annotation/${widget.inspectionId}', payload); // TODO
+      await _apiService.post('/inspection/document/add-annotation', payload);
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
     }
@@ -151,10 +159,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
         "file": fileName,
         "content_type": "image/jpeg", 
         "project_id": widget.projectId,
-        "inspection_id": widget.inspectionId
+        "inspection_id": widget.inspectionId,
+        "project_document_id": widget.projectDocumentId,
       };
       
-      final response = await _apiService.post('/inspection/project-inspection-images/presigned-url', payload);
+      // final response = await _apiService.post('/inspection/project-inspection-images/presigned-url', payload); // TODO
+      final response = await _apiService.post('/inspection/document/image/presigned-url', payload);
       final responseData = jsonDecode(response.body);
       
       if (responseData['signedUrl'] != null && responseData['key'] != null) {
@@ -167,7 +177,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
            setState(() {
               _inspectionImageUrls.add(s3Key);
            });
-           await _saveInspectionLevelAnnotation(); // Sync with API immediately
+          //  await _saveInspectionLevelAnnotation(); // Sync with API immediately
         } else {
            throw Exception("Inspection image S3 upload failed");
         }
@@ -208,7 +218,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _currentPage = 'Attached Image';
       
       try {
-        // final imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
         http.Response imageResponse;
         http.Response annResponse;
 
@@ -216,11 +225,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
         if (widget.isInspectionImage) {
           // 1. Fetch the image using the new Inspection API
           final String encodedKey = Uri.encodeComponent(widget.annotateImageKey!);
-          imageResponse = await _apiService.get('/inspection/annotation/image?key=$encodedKey');
+          // imageResponse = await _apiService.get('/inspection/annotation/image?key=$encodedKey'); // TODO
+          imageResponse = await _apiService.get('/inspection/document/image?key=$encodedKey');
           
           // 2. Fetch the JSON data (⚠️ REPLACE WITH YOUR ACTUAL INSPECTION GET-JSON API)
           final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
-          annResponse = await _apiService.get('/inspection/annotationImage/image_json?InspectionImageJsonUrl=$jsonKey');
+          // annResponse = await _apiService.get('/inspection/annotationImage/image_json?InspectionImageJsonUrl=$jsonKey'); // TODO
+          annResponse = await _apiService.get('/inspection/document/annotationImage/image_json?InspectionDocumentImageJsonUrl=$jsonKey');
         } 
         // 🔀 BRANCH 2: FETCHING OBJECT IMAGES (Your existing code)
         else {
@@ -476,7 +487,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
         // 🔀 BRANCH 1: SAVING INSPECTION IMAGES
         if (widget.isInspectionImage) {
-           response = await _apiService.post('/inspection/annotationImage/image_json', payload);
+          //  response = await _apiService.post('/inspection/annotationImage/image_json', payload); // TODO
+           response = await _apiService.post('/inspection/document/annotationImage/image_json', payload);
         } 
         // 🔀 BRANCH 2: SAVING OBJECT IMAGES
         else {
@@ -712,9 +724,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Future<void> _handleClose() async {
     if (!_hasUnsavedChanges) {
-      Navigator.of(context).pop();
+      _executeRefreshAndClose();
       return;
     }
+    
     bool shouldClose = false;
 
     await showDialog(
@@ -727,15 +740,45 @@ class _CanvasScreenState extends State<CanvasScreen> {
         confirmColor: Colors.red,
         onConfirm: () async {
           shouldClose = true;
-          // Note: We don't pop the screen here because your ConfirmationDialog 
-          // automatically pops itself when this function finishes!
         },
       ),
     );
 
-    // If they confirmed, pop the actual Canvas screen
     if (shouldClose && mounted) {
-      Navigator.of(context).pop();
+      // 🚀 FIX 1: Call the helper method here instead of a raw pop!
+      _executeRefreshAndClose();
+    }
+  }
+
+  void _executeRefreshAndClose() {
+    // 🚀 FIX 2: Check if this is the NESTED image canvas
+    // If annotateImageKey is not null, we know this is a sub-canvas opened via Navigator.push
+    if (widget.annotateImageKey != null) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(); 
+      }
+      return; // Stop here! Don't mess with go_router for nested screens.
+    }
+
+    // --- BELOW IS ONLY FOR THE MAIN DOCUMENT CANVAS ---
+
+    // 1. Grab the extra data passed from the go_router
+    final extra = GoRouterState.of(context).extra;
+    
+    // 2. Safely execute the refresh function depending on how you passed it
+    if (extra is Function) {
+      extra(); 
+    } else if (extra is Map<String, dynamic> && extra['onRefresh'] is Function) {
+      extra['onRefresh']();
+    }
+
+    // 3. Safely pop or route back
+    if (extra is Map<String, dynamic> && extra['returnUrl'] != null) {
+       context.go(extra['returnUrl']);
+    } else if (Navigator.of(context).canPop()) {
+       Navigator.of(context).pop();
+    } else {
+       context.go('/'); // Ultimate fallback so they never get stuck
     }
   }
 
@@ -843,6 +886,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           onImageTap: (s3Key, url) {
             Navigator.push(context, MaterialPageRoute(
                 builder: (context) => CanvasScreen(
+                  projectDocumentId: widget.projectDocumentId,
                   documentId: widget.documentId, 
                   projectId: widget.projectId,
                   inspectionId: widget.inspectionId, 

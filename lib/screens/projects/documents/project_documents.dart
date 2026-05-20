@@ -189,22 +189,22 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                               ),
                               
                               // 🚀 3. ADDED isStickyRight to keep the delete button pinned!
-                              TableColumn(
-                                title: "Actions",
-                                flex: 0,
-                                minWidth: 60, // Shrank since it's just one icon
-                                isStickyRight: true, // 🌟 The magic property
-                                builder: (doc) => Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, size: 20),
-                                      color: colorScheme.error,
-                                      onPressed: () => _confirmDelete(context, doc),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              // TableColumn(
+                              //   title: "Actions",
+                              //   flex: 0,
+                              //   minWidth: 60, // Shrank since it's just one icon
+                              //   isStickyRight: true, // 🌟 The magic property
+                              //   builder: (doc) => Row(
+                              //     mainAxisSize: MainAxisSize.min,
+                              //     children: [
+                              //       IconButton(
+                              //         icon: const Icon(Icons.delete_outline, size: 20),
+                              //         color: colorScheme.error,
+                              //         onPressed: () => _confirmDelete(context, doc),
+                              //       ),
+                              //     ],
+                              //   ),
+                              // ),
                             ],
                           );
                         }

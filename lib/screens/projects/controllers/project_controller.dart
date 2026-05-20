@@ -109,52 +109,70 @@ class ProjectController extends ChangeNotifier {
   }
 
   Future<void> getAllProjectMedia(String projectId) async {
-  _isMediaLoading = true;
-  notifyListeners();
+    _isMediaLoading = true;
+    notifyListeners();
 
-  try {
-    final response = await _apiService.get('/presignedurl/project-media/$projectId');
-    final List<dynamic> responseData = jsonDecode(response.body);
+    try {
+      final response = await _apiService.get('/presignedurl/project-media/$projectId');
+      final List<dynamic> responseData = jsonDecode(response.body);
 
-    List<InspectionMediaGroup> groups = [];
+      List<InspectionMediaGroup> groups = [];
 
-    for (var inspectionJson in responseData) {
-      List<ProjectMedia> itemsInThisInspection = [];
-      final List canvasItems = inspectionJson['canvas_page_item'] ?? [];
-
-      for (var item in canvasItems) {
-        final List images = item['canvas_page_item_image'] ?? [];
-        final List tagsJson = item['canvas_page_item_tag'] ?? [];
+      for (var inspectionJson in responseData) {
+        List<ProjectMedia> itemsInThisInspection = [];
         
-        final List<ProjectMediaTag> itemTags = 
-            tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList();
+        // 1. Parse Canvas Items (Your existing code)
+        final List canvasItems = inspectionJson['canvas_page_item'] ?? [];
+        for (var item in canvasItems) {
+          final List images = item['canvas_page_item_image'] ?? [];
+          final List tagsJson = item['canvas_page_item_tag'] ?? [];
+          
+          final List<ProjectMediaTag> itemTags = 
+              tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList();
 
-        for (var img in images) {
-          itemsInThisInspection.add(ProjectMedia(
-            id: "${item['id']}_${img['id'] ?? itemsInThisInspection.length}",
-            imageUrl: img['signedUrl'],
-            tags: itemTags,
+          for (var img in images) {
+            itemsInThisInspection.add(ProjectMedia(
+              id: "${item['id']}_${img['id'] ?? itemsInThisInspection.length}",
+              imageUrl: img['signedUrl'],
+              tags: itemTags,
+            ));
+          }
+        }
+
+        // 2. 🚀 Parse Project Document Images (The new code)
+        final List projectDocuments = inspectionJson['project_document'] ?? [];
+        for (var doc in projectDocuments) {
+          final List images = doc['inspection_document_image'] ?? [];
+          
+          for (var img in images) {
+            itemsInThisInspection.add(ProjectMedia(
+              id: "${doc['id']}_${img['id'] ?? itemsInThisInspection.length}",
+              imageUrl: img['signedUrl'],
+              tags: [], // No tags provided in the JSON for document images
+            ));
+          }
+        }
+
+        // 3. Add to group if we found any media from either source
+        if (itemsInThisInspection.isNotEmpty) {
+          groups.add(InspectionMediaGroup(
+            inspectionId: inspectionJson['id'],
+            inspectionName: inspectionJson['name'], // Note: This might be null based on your JSON
+            createTime: DateTime.parse(inspectionJson['create_time']),
+            items: itemsInThisInspection,
           ));
         }
       }
-
-      if (itemsInThisInspection.isNotEmpty) {
-        groups.add(InspectionMediaGroup(
-          inspectionId: inspectionJson['id'],
-          inspectionName: inspectionJson['name'],
-          createTime: DateTime.parse(inspectionJson['create_time']),
-          items: itemsInThisInspection,
-        ));
-      }
+      
+      _groupedMedia = groups;
+      
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _isMediaLoading = false;
+      notifyListeners();
     }
-    _groupedMedia = groups;
-  } catch (e) {
-    _error = e.toString();
-  } finally {
-    _isMediaLoading = false;
-    notifyListeners();
   }
-}
 
   Future<void> getAllReports(String projectId) async {
     _isReportLoading = true;
