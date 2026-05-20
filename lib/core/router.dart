@@ -19,9 +19,9 @@ import '../screens/layout/not_found_screen.dart';
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final router = GoRouter(
-  navigatorKey: rootNavigatorKey,
-  refreshListenable: authController,
   initialLocation: '/',
+  refreshListenable: authController,
+  navigatorKey: rootNavigatorKey,
   errorBuilder: (context, state) => const NotFoundScreen(),
   routes: [
     // --- PUBLIC ROUTES ---
@@ -143,11 +143,12 @@ final router = GoRouter(
 
     // Helper function: Safely attach the intended path to the redirect URL
     String createRedirect(String targetPath) {
-      // Don't save default routes as "intended destinations"
+      
+      if (authController.isExplicitLogout) return targetPath;
+
       final targetUri = continueTo ?? (path != '/' && path != '/login' && path != '/loading' && path != '/signup' ? fullUri : null);
       
       if (targetUri != null) {
-        // This safely encodes the URL. Example: /loading?continue=%2Fcanvas%3Fdoc%3D123
         return Uri(path: targetPath, queryParameters: {'continue': targetUri}).toString();
       }
       return targetPath;
@@ -167,7 +168,6 @@ final router = GoRouter(
 
     // 4. Logged in but User Data is missing? Fetch it on /loading
     if (isAuthenticated && authController.user == null) {
-      if (path == '/loading') return null;
       return createRedirect('/loading');
     }
 
