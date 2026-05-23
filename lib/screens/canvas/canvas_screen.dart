@@ -87,14 +87,20 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  void _switchPage(String newPage) async {
+void _switchPage(String newPage) async {
     _syncCurrentPageObjects(); 
     setState(() {
+      _isPageLoading = true;
       _currentPage = newPage;
       _selectedCanvasObject = null;
     });
+    
     await _fetchPageImage(newPage);
     await _fetchSavedAnnotations(newPage); 
+    
+    if (mounted) {
+      setState(() => _isPageLoading = false);
+    }
   }
 
   Future<ui.Image> _decodeBase64Image(String base64Str) async {
@@ -731,6 +737,33 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
   }
 
+  Widget _buildLoadingOverlay(ThemeData theme) {
+    return Container(
+      color: theme.colorScheme.surface.withOpacity(0.6), // Semi-transparent bg
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)]
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: theme.colorScheme.primary),
+              const SizedBox(height: 12),
+              Text(
+                _isSaving ? "Saving changes..." : "Loading page...", 
+                style: const TextStyle(fontWeight: FontWeight.bold)
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleClose() async {
     if (!_hasUnsavedChanges) {
       _executeRefreshAndClose();
@@ -807,136 +840,143 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: custom_canvas.Canvas(
-        key: _getCurrentCanvasKey(),
-        initialBackgroundImage: _pageDataMap[_currentPage]?.backgroundImageBytes,
-        initialObjects: _pageDataMap[_currentPage]?.objects ?? [],
-        onToolChanged: (toolName) {
-          if (toolName != 'CustomTool' && _selectedCustomTool != null) {
-            setState(() => _selectedCustomTool = null);
-          }
-        },
-        customTabLabel: "Custom Tools",
-        customTabContent: CustomToolsPanel(
-          groups: _customToolGroups,
-          selectedTool: _selectedCustomTool,
-          // 🚀 NEW: Updated logic to split between Native and Stamp drawing behaviors
-          onToolSelected: (tool) {
-            setState(() {
-              _selectedCustomTool = tool;
-
-              if (tool.toolObjects.length == 1) {
-                // 🚀 SINGLE OBJECT: Extract props and trigger native drawing mode
-                final obj = tool.toolObjects.first;
-                final nativeToolName = _getToolNameFromType(obj.type);
-                
-                _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                  nativeToolName, 
-                  obj.strokeWidth, 
-                  obj.color, 
-                  obj.fillColor ?? Colors.transparent, 
-                  obj.opacity,
-                );
-              } else {
-                // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
-                _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                  'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                  customToolId: tool.toolId,
-                  customToolShapes: tool.toolObjects, 
-                );
+      body: Stack(
+        children: [
+          custom_canvas.Canvas(
+            key: _getCurrentCanvasKey(),
+            initialBackgroundImage: _pageDataMap[_currentPage]?.backgroundImageBytes,
+            initialObjects: _pageDataMap[_currentPage]?.objects ?? [],
+            onToolChanged: (toolName) {
+              if (toolName != 'CustomTool' && _selectedCustomTool != null) {
+                setState(() => _selectedCustomTool = null);
               }
-            });
-          },
-          onClose: () {
-             setState(() => _selectedCustomTool = null);
-             _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-          },
-        ),
+            },
+            customTabLabel: "Custom Tools",
+            customTabContent: CustomToolsPanel(
+              groups: _customToolGroups,
+              selectedTool: _selectedCustomTool,
+              // 🚀 NEW: Updated logic to split between Native and Stamp drawing behaviors
+              onToolSelected: (tool) {
+                setState(() {
+                  _selectedCustomTool = tool;
 
-        customRightPanel: PropertiesPanel(
-          activeObject: _selectedCanvasObject, 
-          availableTags: _availableTags,
-          
-          inspectionDescription: _inspectionDescription,
-          inspectionTagIds: _inspectionTagIds,
-          inspectionImageUrls: _inspectionImageUrls,
-          
-          onInspectionDescriptionChanged: (val) {
-            setState(() => _inspectionDescription = val);
-            _hasUnsavedChanges = true;
-          },
-          onInspectionTagsChanged: (val) {
-            setState(() => _inspectionTagIds = val);
-            _hasUnsavedChanges = true;
-          },
+                  if (tool.toolObjects.length == 1) {
+                    // 🚀 SINGLE OBJECT: Extract props and trigger native drawing mode
+                    final obj = tool.toolObjects.first;
+                    final nativeToolName = _getToolNameFromType(obj.type);
+                    
+                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                      nativeToolName, 
+                      obj.strokeWidth, 
+                      obj.color, 
+                      obj.fillColor ?? Colors.transparent, 
+                      obj.opacity,
+                    );
+                  } else {
+                    // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
+                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                      'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+                      customToolId: tool.toolId,
+                      customToolShapes: tool.toolObjects, 
+                    );
+                  }
+                });
+              },
+              onClose: () {
+                setState(() => _selectedCustomTool = null);
+                _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
+              },
+            ),
 
-          onUpdate: () {
-            _hasUnsavedChanges = true;
-            _getCurrentCanvasKey().currentState?.refreshCanvas();
-          },
-          
-          onImageUpload: (fileName, bytes) async {
-            if (_selectedCanvasObject != null) {
-              await _uploadImageForObject(fileName, bytes);
-            } else {
-              await _uploadInspectionImage(fileName, bytes);
-            }
-          },
-          
-          onImageDelete: (s3Key) async {
-            if (_selectedCanvasObject != null) {
-              await _deleteImageForObject(s3Key);
-            } else {
+            customRightPanel: PropertiesPanel(
+              activeObject: _selectedCanvasObject, 
+              availableTags: _availableTags,
+              
+              inspectionDescription: _inspectionDescription,
+              inspectionTagIds: _inspectionTagIds,
+              inspectionImageUrls: _inspectionImageUrls,
+              
+              onInspectionDescriptionChanged: (val) {
+                setState(() => _inspectionDescription = val);
+                _hasUnsavedChanges = true;
+              },
+              onInspectionTagsChanged: (val) {
+                setState(() => _inspectionTagIds = val);
+                _hasUnsavedChanges = true;
+              },
+
+              onUpdate: () {
+                _hasUnsavedChanges = true;
+                _getCurrentCanvasKey().currentState?.refreshCanvas();
+              },
+              
+              onImageUpload: (fileName, bytes) async {
+                if (_selectedCanvasObject != null) {
+                  await _uploadImageForObject(fileName, bytes);
+                } else {
+                  await _uploadInspectionImage(fileName, bytes);
+                }
+              },
+              
+              onImageDelete: (s3Key) async {
+                if (_selectedCanvasObject != null) {
+                  await _deleteImageForObject(s3Key);
+                } else {
+                  setState(() {
+                    _inspectionImageUrls.remove(s3Key);
+                  });
+                  await _saveInspectionLevelAnnotation(); 
+                }
+              },
+              
+              allowImageUpload: widget.annotateImageKey == null,
+              
+              onImageTap: (s3Key, url) {
+                Navigator.push(context, MaterialPageRoute(
+                    builder: (context) => CanvasScreen(
+                      projectDocumentId: widget.projectDocumentId,
+                      documentId: widget.documentId, 
+                      projectId: widget.projectId,
+                      inspectionId: widget.inspectionId, 
+                      annotateImageUrl: url, 
+                      annotateImageKey: s3Key,
+                      isInspectionImage: _selectedCanvasObject == null, 
+                    ),
+                ));
+              },
+              onClose: () {
+                setState(() => _selectedCanvasObject = null);
+                _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
+              },
+            ),
+
+            showCloseButton: true,
+            onClosePressed: _handleClose,
+            leftActions: [],
+            rightActions: [
+              if (widget.annotateImageKey == null) _buildPageSelector(theme),
+              const SizedBox(width: 12),
+              
+              // if (_isSaving)
+              //   Container(margin: const EdgeInsets.symmetric(horizontal: 12), width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: theme.colorScheme.primary))
+              // else
+              IconButton(tooltip: "Save Annotations", icon: const Icon(Icons.save_outlined), color: theme.colorScheme.primary, onPressed: _saveAnnotations),
+              
+              const SizedBox(width: 8),
+            ],
+
+            onSelectionChanged: (selectedObject) {
               setState(() {
-                _inspectionImageUrls.remove(s3Key);
+                _selectedCanvasObject = selectedObject;
+                if (selectedObject != null) _hasUnsavedChanges = true;
               });
-              await _saveInspectionLevelAnnotation(); 
-            }
-          },
-          
-          allowImageUpload: widget.annotateImageKey == null,
-          
-          onImageTap: (s3Key, url) {
-            Navigator.push(context, MaterialPageRoute(
-                builder: (context) => CanvasScreen(
-                  projectDocumentId: widget.projectDocumentId,
-                  documentId: widget.documentId, 
-                  projectId: widget.projectId,
-                  inspectionId: widget.inspectionId, 
-                  annotateImageUrl: url, 
-                  annotateImageKey: s3Key,
-                  isInspectionImage: _selectedCanvasObject == null, 
-                ),
-            ));
-          },
-          onClose: () {
-            setState(() => _selectedCanvasObject = null);
-            _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-          },
-        ),
-
-        showCloseButton: true,
-        onClosePressed: _handleClose,
-        leftActions: [],
-        rightActions: [
-          if (widget.annotateImageKey == null) _buildPageSelector(theme),
-          const SizedBox(width: 12),
-          
-          if (_isSaving)
-            Container(margin: const EdgeInsets.symmetric(horizontal: 12), width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: theme.colorScheme.primary))
-          else
-            IconButton(tooltip: "Save Annotations", icon: const Icon(Icons.save_outlined), color: theme.colorScheme.primary, onPressed: _saveAnnotations),
-          
-          const SizedBox(width: 8),
+            },
+          ),
+          // 2. THE FLOATING LOADER OVERLAY
+          if (_isPageLoading || _isSaving)
+            _buildLoadingOverlay(theme),
         ],
-
-        onSelectionChanged: (selectedObject) {
-          setState(() {
-            _selectedCanvasObject = selectedObject;
-            if (selectedObject != null) _hasUnsavedChanges = true;
-          });
-        },
-      ),
+      )
     );
   }
 }
