@@ -63,7 +63,12 @@ class CanvasState extends State<Canvas> {
   bool _isFullScreen = false;
   
   bool _showLeftPanel = false; 
-  bool _showPropertiesPanel = false; // strictly manual toggle now!
+  bool _showPropertiesPanel = false; 
+
+  // 🚀 NEW: STATE VARIABLES FOR RESIZABLE PANELS
+  double _leftPanelWidth = 250.0;
+  double _rightPanelWidth = 320.0;
+  double _propertiesPanelWidth = 260.0;
 
   String _selectedTool = 'Select';
 
@@ -115,7 +120,6 @@ class CanvasState extends State<Canvas> {
   @override
   void initState() {
     super.initState();
-    // Load the objects passed from CanvasScreen
     _drawingObjects = List.from(widget.initialObjects);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -123,33 +127,26 @@ class CanvasState extends State<Canvas> {
     });
   }
 
-  // Helper to let CanvasScreen force redraws
   void refreshCanvas() {
     if (mounted) setState(() {});
   }
 
-  // 🚀 3. ADD THE MATH METHOD:
   void _centerDocument() {
     if (_viewerKey.currentContext == null) return;
     
-    // Grab the actual size of the viewer container on the screen
     final RenderBox renderBox = _viewerKey.currentContext!.findRenderObject() as RenderBox;
     final size = renderBox.size;
 
-    // Smart Scale: If the screen is smaller than the 816x1056 document, scale it down to fit!
     double initialScale = 1.0;
     if (size.width < 816 || size.height < 1056) {
-      // We subtract 40 to give it a nice 20px padding around the edges
       final scaleX = (size.width - 40) / 816;
       final scaleY = (size.height - 40) / 1056;
       initialScale = math.min(scaleX, scaleY);
     }
 
-    // Calculate exact center coordinates
     final double dx = (size.width - (816 * initialScale)) / 2;
     final double dy = (size.height - (1056 * initialScale)) / 2;
 
-    // Apply the translation and scale to the viewer natively
     _transformationController.value = Matrix4.identity()
       ..translate(dx, dy)
       ..scale(initialScale);
@@ -163,12 +160,11 @@ class CanvasState extends State<Canvas> {
     super.dispose();
   }
   
-
   void applyExternalToolConfig(String tool, double stroke, Color color, Color fill, double opacity, {String? customToolId, List<DrawingObject>? customToolShapes}) {
     setState(() {
       _selectedTool = tool;
-      _selectedCustomToolId = customToolId;          // Store the ID
-      _selectedCustomToolShapes = customToolShapes;  // Store the JSON shapes!
+      _selectedCustomToolId = customToolId;          
+      _selectedCustomToolShapes = customToolShapes;  
       
       for (var obj in _drawingObjects) {
         obj.isSelected = false;
@@ -259,7 +255,7 @@ class CanvasState extends State<Canvas> {
                   if (existingObject != null) {
                     existingObject.text = controller.text;
                     existingObject.end = existingObject.start + calculatedSize;
-                    widget.onSelectionChanged?.call(existingObject); // SYNC
+                    widget.onSelectionChanged?.call(existingObject); 
                   } else {
                     final textObj = DrawingObject(
                       start: position, end: position + calculatedSize, type: DrawingType.text, text: controller.text,
@@ -272,8 +268,7 @@ class CanvasState extends State<Canvas> {
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
                     _activeObject = textObj;
-                    // _selectedTool = 'Select';
-                    widget.onSelectionChanged?.call(textObj); // SYNC
+                    widget.onSelectionChanged?.call(textObj); 
                   }
                 });
               }
@@ -298,7 +293,7 @@ class CanvasState extends State<Canvas> {
         _redoStack.add(_drawingObjects.map((e) => e.copy()).toList());
         _drawingObjects = _undoStack.removeLast();
         _activeObject = null;
-        widget.onSelectionChanged?.call(null); // SYNC
+        widget.onSelectionChanged?.call(null); 
       });
     }
   }
@@ -309,7 +304,7 @@ class CanvasState extends State<Canvas> {
         _undoStack.add(_drawingObjects.map((e) => e.copy()).toList());
         _drawingObjects = _redoStack.removeLast();
         _activeObject = null;
-        widget.onSelectionChanged?.call(null); // SYNC
+        widget.onSelectionChanged?.call(null); 
       });
     }
   }
@@ -320,7 +315,7 @@ class CanvasState extends State<Canvas> {
       setState(() {
         _drawingObjects.removeWhere((o) => o.isSelected);
         _activeObject = null;
-        widget.onSelectionChanged?.call(null); // SYNC
+        widget.onSelectionChanged?.call(null); 
       });
     }
   }
@@ -345,8 +340,7 @@ class CanvasState extends State<Canvas> {
         pastedObj.isSelected = true; 
         _drawingObjects.add(pastedObj);
         _activeObject = pastedObj;
-        // _selectedTool = 'Select'; 
-        widget.onSelectionChanged?.call(pastedObj); // SYNC
+        widget.onSelectionChanged?.call(pastedObj); 
       });
     }
   }
@@ -485,7 +479,6 @@ class CanvasState extends State<Canvas> {
 
         _currentPreview = DrawingObject(
           start: pos, end: pos, type: type, points: pts, strokeWidth: objStroke, color: objColor, fillColor: objFill, opacity: objOpacity,
-          // 🚀 NEW: INJECT THE CUSTOM TOOL DATA INTO THE OBJECT!
           toolId: type == DrawingType.customTool ? _selectedCustomToolId : null,
           internalShapes: type == DrawingType.customTool ? _selectedCustomToolShapes : null,
         );
@@ -508,14 +501,14 @@ class CanvasState extends State<Canvas> {
           hitObj.isSelected = true;
           _activeObject = hitObj; _activeHandle = hitHandle;
           
-          widget.onSelectionChanged?.call(_activeObject); // SYNC
+          widget.onSelectionChanged?.call(_activeObject);
 
           if (hitHandle == ResizeHandle.rotation) _initialRotationAngle = math.atan2(pos.dy - hitObj.center.dy, pos.dx - hitObj.center.dx) - hitObj.rotation;
           else if (hitHandle == ResizeHandle.body) _dragOffset = pos - hitObj.start;
         } else {
           for (var obj in _drawingObjects) obj.isSelected = false;
           _activeObject = null;
-          widget.onSelectionChanged?.call(null); // SYNC
+          widget.onSelectionChanged?.call(null); 
         }
       }
     });
@@ -580,9 +573,8 @@ class CanvasState extends State<Canvas> {
         _currentPreview!.isSelected = true;
         _drawingObjects.add(_currentPreview!);
         _activeObject = _currentPreview;
-        // _selectedTool = 'Select'; 
         _currentPreview = null;
-        widget.onSelectionChanged?.call(_activeObject); // SYNC
+        widget.onSelectionChanged?.call(_activeObject); 
       }
       _activeHandle = ResizeHandle.none;
     });
@@ -617,9 +609,8 @@ class CanvasState extends State<Canvas> {
 
       _drawingObjects.add(_currentPreview!);
       _activeObject = _currentPreview;
-      // _selectedTool = 'Select';
       _currentPreview = null;
-      widget.onSelectionChanged?.call(_activeObject); // SYNC
+      widget.onSelectionChanged?.call(_activeObject); 
     }
   }
 
@@ -789,8 +780,39 @@ class CanvasState extends State<Canvas> {
   }
 
   // ==========================================
-  // UI BUILDING HELPERS (STYLING PANEL)
+  // UI BUILDING HELPERS
   // ==========================================
+
+  // 🚀 4. NEW: REUSABLE DRAG HANDLE COMPONENT
+  Widget _buildResizer({required bool isLeft, required Function(double) onPanUpdate}) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onPanUpdate: (details) => onPanUpdate(details.delta.dx),
+        child: Container(
+          width: 8,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              left: isLeft ? BorderSide.none : BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 1),
+              right: isLeft ? BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 1) : BorderSide.none,
+            ),
+          ),
+          child: Center(
+            child: Container(
+              width: 3,
+              height: 32,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2)
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   bool _isShapeSelected(String tool) => ['Rect', 'Circle', 'Line', 'Arrow', 'Polygon'].contains(tool);
   bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots', 'Herringbone', 'Concrete', 'Shingles', 'Insulation'].contains(tool);
@@ -1051,7 +1073,7 @@ class CanvasState extends State<Canvas> {
                     _selectedTool = tool.name;
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _activeObject = null;
-                    widget.onSelectionChanged?.call(null); // SYNC
+                    widget.onSelectionChanged?.call(null); 
                   });
                   widget.onToolChanged?.call(tool.name);
                 },
@@ -1080,18 +1102,14 @@ class CanvasState extends State<Canvas> {
   }
 
   Widget _buildLeftToolsPanel(ThemeData theme) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double panelWidth = math.min(250.0, screenWidth * 0.75);
     final bool hasCustomTab = widget.customTabContent != null;
 
+    // 🚀 REMOVED THE HARDCODED WIDTH HERE, NOW INJECTED BY THE STATE
     return Container(
-      width: panelWidth,
+      width: _leftPanelWidth, 
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(5, 0))
-        ]
+        // Removed the right border because the Drag Handle has it!
       ),
       child: DefaultTabController(
         length: hasCustomTab ? 2 : 1,
@@ -1172,17 +1190,13 @@ class CanvasState extends State<Canvas> {
         color: theme.colorScheme.surface,
         border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
       ),
-      // 🚀 1. Wrap with LayoutBuilder to get the available screen width
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 🚀 2. Add the Scroll View
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            // 🚀 3. Force the Row to be AT LEAST as wide as the screen
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: Row(
-                // 🚀 4. This replaces Spacer()! It pushes the two groups apart on large screens.
                 mainAxisAlignment: MainAxisAlignment.spaceBetween, 
                 children: [
                   
@@ -1241,7 +1255,6 @@ class CanvasState extends State<Canvas> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Added a little spacing so it doesn't touch the left group when scrolling
                       const SizedBox(width: 16), 
 
                       if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
@@ -1287,9 +1300,10 @@ class CanvasState extends State<Canvas> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double stylingPanelWidth = math.min(240.0, screenWidth * 0.75);
-    final bool isMobileDevice = AppResponsive.isAndroid || AppResponsive.isIOS;
+    final isMobileDevice = AppResponsive.isAndroid || AppResponsive.isIOS;
+    
+    // Safety clamp logic to prevent crashing on tiny screens
+    final double maxPanelWidth = math.max(200.0, MediaQuery.of(context).size.width * 0.5);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1304,7 +1318,6 @@ class CanvasState extends State<Canvas> {
           const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
           const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
           const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
-          // const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
           const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
             if (_selectedTool == 'Pen') _finalizeCurrentPreview();
           }),
@@ -1316,7 +1329,6 @@ class CanvasState extends State<Canvas> {
             children: [
               _buildTopToolbar(theme),
               
-              // 🚀 MASTER STACK: Allows overlays on top of the entire layout
               Expanded(
                 child: Stack(
                   children: [
@@ -1361,7 +1373,6 @@ class CanvasState extends State<Canvas> {
                                           onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
                                           onPointerUp: _handlePointerUp,
                                           
-                                          // 🚀 3. THE ANCHOR: The Listener is now perfectly molded to the 816x1056 paper
                                           child: Container(
                                             width: 816,  
                                             height: 1056, 
@@ -1404,7 +1415,16 @@ class CanvasState extends State<Canvas> {
                                   top: 0,
                                   left: 0,
                                   bottom: 0,
-                                  child: _buildLeftToolsPanel(theme),
+                                  child: Row(
+                                    children: [
+                                      _buildLeftToolsPanel(theme),
+                                      // 🚀 DRAG HANDLE (LEFT)
+                                      _buildResizer(
+                                        isLeft: true,
+                                        onPanUpdate: (dx) => setState(() => _leftPanelWidth = (_leftPanelWidth + dx).clamp(200.0, maxPanelWidth))
+                                      )
+                                    ],
+                                  ),
                                 ),
                             ],
                           ),
@@ -1412,15 +1432,22 @@ class CanvasState extends State<Canvas> {
 
                         // CUSTOM DATA PANEL (Sits permanently on the right, under overlays)
                         if (widget.customRightPanel != null)
-                          Container(
-                            width: 320, // Keep your custom panel size consistent
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surface,
-                              border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(-5, 0))]
-                            ),
-                            child: widget.customRightPanel!,
-                          ),
+                          Row(
+                            children: [
+                              // 🚀 DRAG HANDLE (RIGHT)
+                              _buildResizer(
+                                isLeft: false,
+                                onPanUpdate: (dx) => setState(() => _rightPanelWidth = (_rightPanelWidth - dx).clamp(200.0, maxPanelWidth))
+                              ),
+                              Container(
+                                width: _rightPanelWidth, 
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                ),
+                                child: widget.customRightPanel!,
+                              ),
+                            ],
+                          )
                       ],
                     ),
 
@@ -1432,24 +1459,32 @@ class CanvasState extends State<Canvas> {
                         top: 0,
                         right: 0,
                         bottom: 0,
-                        child: Container(
-                          width: stylingPanelWidth,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            border: Border(left: BorderSide(color: theme.colorScheme.outlineVariant)),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(-5, 0))
-                            ]
-                          ),
-                          child: PropertiesPanel(
-                            title: _activeObject != null 
-                                ? "EDIT ANNOTATION" 
-                                : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
-                                    ? "${_selectedTool.toUpperCase()} SETTINGS" 
-                                    : "STYLING"),
-                            content: _buildPanelContent(theme),
-                            onClose: () => setState(() => _showPropertiesPanel = false),
-                          ),
+                        child: Row(
+                          children: [
+                            // 🚀 DRAG HANDLE (STYLING)
+                            _buildResizer(
+                              isLeft: false,
+                              onPanUpdate: (dx) => setState(() => _propertiesPanelWidth = (_propertiesPanelWidth - dx).clamp(200.0, maxPanelWidth))
+                            ),
+                            Container(
+                              width: _propertiesPanelWidth, 
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(-5, 0))
+                                ]
+                              ),
+                              child: PropertiesPanel(
+                                title: _activeObject != null 
+                                    ? "EDIT ANNOTATION" 
+                                    : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
+                                        ? "${_selectedTool.toUpperCase()} SETTINGS" 
+                                        : "STYLING"),
+                                content: _buildPanelContent(theme),
+                                onClose: () => setState(() => _showPropertiesPanel = false),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
