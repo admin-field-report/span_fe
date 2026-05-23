@@ -111,7 +111,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
   
   Future<void> _fetchInspectionAnnotation() async {
     try {
-      // final response = await _apiService.get('/inspection/annotation/${widget.inspectionId}'); // TODO
       final response = await _apiService.get('/inspection/document/annotation/${widget.projectDocumentId}');
       final resData = jsonDecode(response.body);
 
@@ -146,7 +145,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         "inspection_id": widget.inspectionId,
         "project_document_id": widget.projectDocumentId,
       };
-      // await _apiService.post('/inspection/add-annotation/${widget.inspectionId}', payload); // TODO
       await _apiService.post('/inspection/document/add-annotation', payload);
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
@@ -163,7 +161,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         "project_document_id": widget.projectDocumentId,
       };
       
-      // final response = await _apiService.post('/inspection/project-inspection-images/presigned-url', payload); // TODO
       final response = await _apiService.post('/inspection/document/image/presigned-url', payload);
       final responseData = jsonDecode(response.body);
       
@@ -177,7 +174,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
            setState(() {
               _inspectionImageUrls.add(s3Key);
            });
-          //  await _saveInspectionLevelAnnotation(); // Sync with API immediately
         } else {
            throw Exception("Inspection image S3 upload failed");
         }
@@ -223,14 +219,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
         // 🔀 BRANCH 1: FETCHING INSPECTION IMAGES
         if (widget.isInspectionImage) {
-          // 1. Fetch the image using the new Inspection API
           final String encodedKey = Uri.encodeComponent(widget.annotateImageKey!);
-          // imageResponse = await _apiService.get('/inspection/annotation/image?key=$encodedKey'); // TODO
           imageResponse = await _apiService.get('/inspection/document/image?key=$encodedKey');
           
-          // 2. Fetch the JSON data (⚠️ REPLACE WITH YOUR ACTUAL INSPECTION GET-JSON API)
           final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
-          // annResponse = await _apiService.get('/inspection/annotationImage/image_json?InspectionImageJsonUrl=$jsonKey'); // TODO
           annResponse = await _apiService.get('/inspection/document/annotationImage/image_json?InspectionDocumentImageJsonUrl=$jsonKey');
         } 
         // 🔀 BRANCH 2: FETCHING OBJECT IMAGES (Your existing code)
@@ -253,9 +245,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
           }
         }
 
-        // final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
-        // final annResponse = await _apiService.get('/canvas/imageDataFromS3?imageJsonUrl=$jsonKey');
-        
         if (annResponse.statusCode == 200) {
            final annData = jsonDecode(annResponse.body);
            if (annData['success'] == true && annData['data'] != null && annData['data'].isNotEmpty) {
@@ -266,7 +255,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 DrawingType parsedType = _parseDrawingType(item['type']);
                 String? savedToolId = item['toolId'];
                 
-                // 🚀 NEW: We extract the JSON shapes instead of the image
                 List<DrawingObject>? matchedInternalShapes;
 
                 if (parsedType == DrawingType.customTool && savedToolId != null) {
@@ -282,7 +270,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 loadedObjects.add(DrawingObject(
                   type: parsedType,
                   toolId: savedToolId,
-                  internalShapes: matchedInternalShapes, // 🚀 Inject the JSON objects here!
+                  internalShapes: matchedInternalShapes,
                   start: Offset(item['start']['dx'] * 816.0, item['start']['dy'] * 1056.0),
                   end: Offset(item['end']['dx'] * 816.0, item['end']['dy'] * 1056.0),
                   text: item['text'],
@@ -387,7 +375,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             DrawingType parsedType = _parseDrawingType(item['type']);
             String? savedToolId = item['toolId'];
             
-            // 🚀 NEW: Extract JSON shapes for multi-page documents
             List<DrawingObject>? matchedInternalShapes;
             
             if (parsedType == DrawingType.customTool && savedToolId != null) {
@@ -403,7 +390,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             loadedObjects.add(DrawingObject(
               type: parsedType,
               toolId: savedToolId,
-              internalShapes: matchedInternalShapes, // 🚀 Inject shapes here!
+              internalShapes: matchedInternalShapes, 
               start: Offset((item['start']['dx'] ?? 0.0) * 816.0, (item['start']['dy'] ?? 0.0) * 1056.0),
               end: Offset((item['end']['dx'] ?? 0.0) * 816.0, (item['end']['dy'] ?? 0.0) * 1056.0),
               strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
@@ -471,7 +458,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     setState(() => _isSaving = true);
     _syncCurrentPageObjects(); 
     
-    // Also explicitly save the inspection level metadata just in case
     await _saveInspectionLevelAnnotation();
 
     try {
@@ -485,20 +471,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
         
         http.Response response;
 
-        // 🔀 BRANCH 1: SAVING INSPECTION IMAGES
         if (widget.isInspectionImage) {
-          //  response = await _apiService.post('/inspection/annotationImage/image_json', payload); // TODO
            response = await _apiService.post('/inspection/document/annotationImage/image_json', payload);
-        } 
-        // 🔀 BRANCH 2: SAVING OBJECT IMAGES
-        else {
+        } else {
            response = await _apiService.post('/canvas/image/jsonData', payload);
         }
 
         final resData = jsonDecode(response.body);
 
         if (resData['success'] == true) {
-          _hasUnsavedChanges = false; // 🚀 Reset on save!
+          _hasUnsavedChanges = false;
           if (mounted) ToastService.show(context, message: "Image Annotations saved successfully!", type: ToastType.success);
         } else {
           throw Exception(resData['message'] ?? 'Failed to save image annotations');
@@ -605,12 +587,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
         for (var groupJson in responseData['data']) {
           List<CustomTool> tools = [];
           
-          // Using the exact key 'toolds' from your API response
           if (groupJson['toolds'] != null) {
             for (var toolJson in groupJson['toolds']) {
               List<DrawingObject> parsedObjects = [];
               
-              // 🚀 Using 'imageJsonData' from the API to parse the vector shapes
               if (toolJson['imageJsonData'] != null) {
                 for (var item in toolJson['imageJsonData']) {
                   parsedObjects.add(DrawingObject.fromJson(item));
@@ -621,7 +601,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 toolId: toolJson['toolId'] ?? '', 
                 toolName: toolJson['toolName'] ?? 'Unknown Tool',
                 tagIds: List<String>.from(toolJson['tagIds'] ?? []),
-                toolObjects: parsedObjects, // The parsed JSON shapes!
+                toolObjects: parsedObjects,
               ));
             }
           }
@@ -697,6 +677,35 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+  // 🚀 NEW: Helper to get tool name directly from DrawingType
+  String _getToolNameFromType(DrawingType type) {
+    switch (type) {
+      case DrawingType.pencil: return 'Pencil';
+      case DrawingType.pen: return 'Pen';
+      case DrawingType.rect: return 'Rect';
+      case DrawingType.circle: return 'Circle';
+      case DrawingType.polygon: return 'Polygon';
+      case DrawingType.line: return 'Line';
+      case DrawingType.arrow: return 'Arrow';
+      case DrawingType.text: return 'Text';
+      case DrawingType.brick: return 'Brick';
+      case DrawingType.grid: return 'Grid';
+      case DrawingType.horizontal: return 'Horizontal';
+      case DrawingType.vertical: return 'Vertical';
+      case DrawingType.forwardDiag: return 'Forward';
+      case DrawingType.reverseDiag: return 'Reverse';
+      case DrawingType.weave: return 'Weave';
+      case DrawingType.diamond: return 'Diamond';
+      case DrawingType.dots: return 'Dots';
+      case DrawingType.herringbone: return 'Herringbone';
+      case DrawingType.concrete: return 'Concrete';
+      case DrawingType.shingles: return 'Shingles';
+      case DrawingType.insulation: return 'Insulation';
+      case DrawingType.pin: return 'Pin';
+      default: return 'CustomTool'; // Fallback
+    }
+  }
+
   Widget _buildPageSelector(ThemeData theme) {
     if (_pages.isEmpty) return const SizedBox.shrink();
     if (_pages.length <= 1) {
@@ -745,40 +754,32 @@ class _CanvasScreenState extends State<CanvasScreen> {
     );
 
     if (shouldClose && mounted) {
-      // 🚀 FIX 1: Call the helper method here instead of a raw pop!
       _executeRefreshAndClose();
     }
   }
 
   void _executeRefreshAndClose() {
-    // 🚀 FIX 2: Check if this is the NESTED image canvas
-    // If annotateImageKey is not null, we know this is a sub-canvas opened via Navigator.push
     if (widget.annotateImageKey != null) {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop(); 
       }
-      return; // Stop here! Don't mess with go_router for nested screens.
+      return; 
     }
 
-    // --- BELOW IS ONLY FOR THE MAIN DOCUMENT CANVAS ---
-
-    // 1. Grab the extra data passed from the go_router
     final extra = GoRouterState.of(context).extra;
     
-    // 2. Safely execute the refresh function depending on how you passed it
     if (extra is Function) {
       extra(); 
     } else if (extra is Map<String, dynamic> && extra['onRefresh'] is Function) {
       extra['onRefresh']();
     }
 
-    // 3. Safely pop or route back
     if (extra is Map<String, dynamic> && extra['returnUrl'] != null) {
        context.go(extra['returnUrl']);
     } else if (Navigator.of(context).canPop()) {
        Navigator.of(context).pop();
     } else {
-       context.go('/'); // Ultimate fallback so they never get stuck
+       context.go('/'); 
     }
   }
 
@@ -819,14 +820,31 @@ class _CanvasScreenState extends State<CanvasScreen> {
         customTabContent: CustomToolsPanel(
           groups: _customToolGroups,
           selectedTool: _selectedCustomTool,
+          // 🚀 NEW: Updated logic to split between Native and Stamp drawing behaviors
           onToolSelected: (tool) {
             setState(() {
               _selectedCustomTool = tool;
-              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                'CustomTool', 2, Colors.black, Colors.transparent, 1,
-                customToolId: tool.toolId,
-                customToolShapes: tool.toolObjects, 
-              );
+
+              if (tool.toolObjects.length == 1) {
+                // 🚀 SINGLE OBJECT: Extract props and trigger native drawing mode
+                final obj = tool.toolObjects.first;
+                final nativeToolName = _getToolNameFromType(obj.type);
+                
+                _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                  nativeToolName, 
+                  obj.strokeWidth, 
+                  obj.color, 
+                  obj.fillColor ?? Colors.transparent, 
+                  obj.opacity,
+                );
+              } else {
+                // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
+                _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                  'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+                  customToolId: tool.toolId,
+                  customToolShapes: tool.toolObjects, 
+                );
+              }
             });
           },
           onClose: () {
@@ -835,17 +853,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
           },
         ),
 
-        // 🌟 CONDITIONAL PROPERTIES PANEL 🌟
         customRightPanel: PropertiesPanel(
           activeObject: _selectedCanvasObject, 
           availableTags: _availableTags,
           
-          // 🚀 SEND DOWN THE INSPECTION STATE
           inspectionDescription: _inspectionDescription,
           inspectionTagIds: _inspectionTagIds,
           inspectionImageUrls: _inspectionImageUrls,
           
-          // 🚀 FIX: Removed the API calls here! Now it just updates local state.
           onInspectionDescriptionChanged: (val) {
             setState(() => _inspectionDescription = val);
             _hasUnsavedChanges = true;
@@ -860,7 +875,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             _getCurrentCanvasKey().currentState?.refreshCanvas();
           },
           
-          // 🚀 ROUTE UPLOAD LOGIC
           onImageUpload: (fileName, bytes) async {
             if (_selectedCanvasObject != null) {
               await _uploadImageForObject(fileName, bytes);
@@ -869,7 +883,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           },
           
-          // 🚀 ROUTE DELETE LOGIC
           onImageDelete: (s3Key) async {
             if (_selectedCanvasObject != null) {
               await _deleteImageForObject(s3Key);
@@ -877,14 +890,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
               setState(() {
                 _inspectionImageUrls.remove(s3Key);
               });
-              await _saveInspectionLevelAnnotation(); // Auto-save DB removal
+              await _saveInspectionLevelAnnotation(); 
             }
           },
           
           allowImageUpload: widget.annotateImageKey == null,
           
-          // 🚀 (Optional) If you want the API to fetch the image view, you can do it here, 
-          // but if your S3 links are public, the direct URL routing below works perfectly!
           onImageTap: (s3Key, url) {
             Navigator.push(context, MaterialPageRoute(
                 builder: (context) => CanvasScreen(
@@ -917,24 +928,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
             IconButton(tooltip: "Save Annotations", icon: const Icon(Icons.save_outlined), color: theme.colorScheme.primary, onPressed: _saveAnnotations),
           
           const SizedBox(width: 8),
-          
-          // PopupMenuButton<String>(
-          //   tooltip: "Export PDF",
-          //   icon: const Icon(Icons.picture_as_pdf_outlined), 
-          //   offset: const Offset(0, 45),
-          //   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          //   onSelected: (val) {
-          //     _syncCurrentPageObjects(); 
-          //     exportCanvasToPdf(
-          //       context: context, exportAll: val == 'all', pages: _pages, 
-          //       currentPage: _currentPage, pageDataMap: _pageDataMap
-          //     );
-          //   },
-          //   itemBuilder: (context) => [
-          //     const PopupMenuItem(value: 'current', child: ListTile(leading: Icon(Icons.insert_drive_file_outlined, size: 18), title: Text("Export Current Page"), dense: true)),
-          //     const PopupMenuItem(value: 'all', child: ListTile(leading: Icon(Icons.copy_all_rounded, size: 18), title: Text("Export All Pages"), dense: true)),
-          //   ],
-          // ),
         ],
 
         onSelectionChanged: (selectedObject) {
