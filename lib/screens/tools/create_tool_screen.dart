@@ -1,4 +1,5 @@
 import 'package:field_report_fe/services/toast_service.dart';
+import 'package:field_report_fe/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../widgets/button/button.dart';
@@ -22,7 +23,7 @@ class GroupSelectableItem implements SelectableItem<String> {
 
 class CreateToolScreen extends StatefulWidget {
   final List<ToolGroup> availableGroups;
-  final List<AppTagGroup> availableTagGroups; // 🚀 Using the real TagGroups
+  final List<AppTagGroup> availableTagGroups; 
   final String? initialGroupId;
 
   const CreateToolScreen({
@@ -50,7 +51,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-select the group if passed in from the previous screen
     if (widget.initialGroupId != null && widget.availableGroups.any((g) => g.id == widget.initialGroupId)) {
       _selectedGroupId = widget.initialGroupId;
     }
@@ -62,25 +62,20 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     super.dispose();
   }
 
-  // 🚀 2. MAKE THIS ASYNC
   Future<void> _saveTool() async {
-    // 1. Form Validation
     if (!_formKey.currentState!.validate()) return;
 
-    // 2. Canvas Validation
     final canvasState = _canvasKey.currentState;
     if (canvasState == null || canvasState.objects.isEmpty) {
       ToastService.show(context, message: "Please draw a tool on the canvas before saving.", type: ToastType.error);
       return;
     }
 
-    // 3. Start Loading
     setState(() => _isLoading = true);
 
     String toolName = _nameController.text.trim();
     String canvasJson = jsonEncode(canvasState.objects.map((e) => e.toJson()).toList());
 
-    // 4. Call the API (We will build this in the controller next!)
     bool success = await _toolController.createTool(
       name: toolName,
       groupId: _selectedGroupId!,
@@ -88,14 +83,12 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       tagIds: _selectedTagIds.toList(),
     );
 
-    // 5. Stop Loading
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    // 6. Handle Success/Fail
     if (success) {
       ToastService.show(context, message: "Tool '$toolName' created successfully!", type: ToastType.success);
-      Navigator.pop(context, true); // Pass 'true' back so the parent screen knows to refresh!
+      Navigator.pop(context, true); 
     } else {
       ToastService.show(context, message: "Failed to create tool. Please try again.", type: ToastType.error);
     }
@@ -108,103 +101,100 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     return Scaffold(
       backgroundColor: theme.colorScheme.surfaceContainer,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- BACK BUTTON HEADER ---
-            Padding(
-              padding: const EdgeInsets.only(left: 16.0, top: 16.0, bottom: 3.0),
-              child: TextButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back, size: 20),
-                label: const Text("Back", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.onSurface,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-              ),
-            ),
-            
-            Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            bool isMobile = AppResponsive.isMobileScreen(context);
+            Widget formFields = _buildFormFields(theme);
+            Widget stickyFooter = _buildStickyFooter(theme);
 
-            // --- RESPONSIVE LAYOUT WITH STICKY FOOTER ---
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  bool isMobile = constraints.maxWidth < 800;
-                  Widget canvasSection = _buildCanvasSection(theme);
-                  Widget formFields = _buildFormFields(theme);
-                  Widget stickyFooter = _buildStickyFooter(theme);
-
-                  if (isMobile) {
-                    return Column(
+            if (isMobile) {
+              return Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(10.0, 10.0, 10.0, 10.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 🚀 Mobile: Pass isExpanded = false
+                          _buildCanvasSection(theme, isExpanded: false),
+                          const SizedBox(height: 32),
+                          formFields,
+                        ],
+                      ),
+                    ),
+                  ),
+                  stickyFooter,
+                ],
+              );
+            } else {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    // 🚀 FIX: Removed the SingleChildScrollView here! 
+                    // Padding allows the canvas to stretch to the parent's height.
+                    child: Padding(
+                      // padding: const EdgeInsets.all(0.0),
+                      padding: const EdgeInsets.fromLTRB(0, 15.0, 0, 0),
+                      child: _buildCanvasSection(theme, isExpanded: true),
+                    ),
+                  ),
+                  Container(width: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
                       children: [
-                        // Scrollable Body
                         Expanded(
                           child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(24.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                canvasSection,
-                                const SizedBox(height: 32),
-                                formFields,
-                              ],
-                            ),
+                            padding: const EdgeInsets.all(15.0),
+                            child: formFields,
                           ),
                         ),
-                        // 🚀 Sticky Footer at the bottom of the screen
                         stickyFooter,
                       ],
-                    );
-                  } else {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Left Canvas Area
-                        Expanded(
-                          flex: 3,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(32.0),
-                            child: canvasSection,
-                          ),
-                        ),
-                        Container(width: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-                        // Right Form Area
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            children: [
-                              // Scrollable Form
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  padding: const EdgeInsets.all(32.0),
-                                  child: formFields,
-                                ),
-                              ),
-                              // 🚀 Sticky Footer at the bottom of the right panel
-                              stickyFooter,
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-                },
-              ),
-            ),
-          ],
+                    ),
+                  ),
+                ],
+              );
+            }
+          },
         ),
       ),
     );
   }
 
-  Widget _buildCanvasSection(ThemeData theme) {
+  // 🚀 FIX: Added the isExpanded parameter
+  Widget _buildCanvasSection(ThemeData theme, {required bool isExpanded}) {
+    
+    // The core canvas container
+    Widget canvasContainer = Container(
+      width: double.infinity, 
+      height: isExpanded ? null : 500, // 🚀 Fluid on desktop, fixed at 500 on mobile
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // color: theme.colorScheme.surface,
+        // borderRadius: BorderRadius.circular(12),
+        // border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Canvas(
+        key: _canvasKey,
+        leftActions: const [], rightActions: const [],
+      ),
+    );
+
+    // 🚀 Wrap in Expanded ONLY if requested (Desktop)
+    if (isExpanded) {
+      canvasContainer = Expanded(child: canvasContainer);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
+            const SizedBox(width: 10),
             const Text("1. Draw Tool", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
             Container(
@@ -215,24 +205,11 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        Container(
-          height: 600, 
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Canvas(
-            key: _canvasKey,
-            leftActions: const [], rightActions: const [],
-          ),
-        ),
+        canvasContainer, // 🚀 Render the dynamic container here
       ],
     );
   }
 
-  // 🚀 EXTRACTED JUST THE FIELDS
   Widget _buildFormFields(ThemeData theme) {
     return Form(
       key: _formKey,
@@ -267,7 +244,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
           const Text("3. Tags (Optional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           
-          // 🚀 RENDER THE COLORED TAG GROUPS
           ...widget.availableTagGroups.map((tagGroup) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 24.0),
@@ -290,7 +266,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  // 🚀 THE PREMIUM COLORED TAG COMPONENT
   Widget _buildColoredTagChip(AppTag tag, ThemeData theme) {
     bool isSelected = _selectedTagIds.contains(tag.id);
 
@@ -305,10 +280,8 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          // 15% opacity background if selected, clear if not
           color: isSelected ? tag.color.withOpacity(0.15) : Colors.transparent,
           border: Border.all(
-            // Colored border if selected, dim grey outline if not
             color: isSelected ? tag.color : theme.colorScheme.outlineVariant.withOpacity(0.5),
             width: isSelected ? 1.5 : 1,
           ),
@@ -317,7 +290,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // The colored circle indicator
             Container(width: 10, height: 10, decoration: BoxDecoration(color: tag.color, shape: BoxShape.circle)),
             const SizedBox(width: 8),
             Text(
@@ -334,10 +306,9 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  // 🚀 THE NEW STICKY FOOTER
   Widget _buildStickyFooter(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         border: Border(top: BorderSide(color: theme.dividerColor.withOpacity(0.1))),
@@ -347,20 +318,32 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       ),
       child: SafeArea(
         top: false, 
-        child: Button(
-          label: _isLoading ? "Saving..." : "Save Tool", // 🚀 Dynamic Label
-          variant: ButtonVariant.filled,
-          width: double.infinity,
-          icon: Icons.check,
-          isLoading: _isLoading, // 🚀 Triggers the spinner inside your custom button
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          onPressed: _isLoading ? null : _saveTool, // 🚀 Disable clicks while loading
+        // 🚀 Converted to a Row to hold both the Cancel and Save buttons seamlessly
+        child: Row(
+          children: [
+            Button(
+              label: "Cancel",
+              variant: ButtonVariant.outline,
+              onPressed: _isLoading ? null : () => Navigator.pop(context), 
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Button(
+                label: _isLoading ? "Saving..." : "Save Tool", 
+                variant: ButtonVariant.filled,
+                icon: Icons.check,
+                isLoading: _isLoading, 
+                // padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
+                onPressed: _isLoading ? null : _saveTool, 
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
-
 
 
 class CreateToolGroupPanel extends StatefulWidget {

@@ -1136,89 +1136,114 @@ class CanvasState extends State<Canvas> {
         color: theme.colorScheme.surface,
         border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          IconButton(
-            tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
-            icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined),
-            color: theme.colorScheme.primary,
-            iconSize: isMobile ? 16 : 20, 
-            padding: EdgeInsets.all(isMobile ? 4 : 8),
-            constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => setState(() => _showLeftPanel = !_showLeftPanel),
-          ),
-          _vDiv(theme),
+      // 🚀 1. Wrap with LayoutBuilder to get the available screen width
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 🚀 2. Add the Scroll View
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            // 🚀 3. Force the Row to be AT LEAST as wide as the screen
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Row(
+                // 🚀 4. This replaces Spacer()! It pushes the two groups apart on large screens.
+                mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+                children: [
+                  
+                  // --- LEFT ACTIONS GROUP ---
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
+                        icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined),
+                        color: theme.colorScheme.primary,
+                        iconSize: isMobile ? 16 : 20, 
+                        padding: EdgeInsets.all(isMobile ? 4 : 8),
+                        constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+                        onPressed: () => setState(() => _showLeftPanel = !_showLeftPanel),
+                      ),
+                      _vDiv(theme),
 
-          Container(
-            decoration: BoxDecoration(
-              color: _selectedTool == 'Select' ? theme.colorScheme.primary.withOpacity(0.15) : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: IconButton(
-              tooltip: "Select Tool",
-              iconSize: isMobile ? 16 : 20, 
-              padding: EdgeInsets.all(isMobile ? 4 : 8),
-              constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-              icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-              onPressed: () {
-                setState(() {
-                  _selectedTool = 'Select';
-                  for (var obj in _drawingObjects) obj.isSelected = false;
-                  _activeObject = null;
-                  widget.onSelectionChanged?.call(null); 
-                });
-                widget.onToolChanged?.call('Select'); 
-              },
-            ),
-          ),
-          _vDiv(theme),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _selectedTool == 'Select' ? theme.colorScheme.primary.withOpacity(0.15) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: IconButton(
+                          tooltip: "Select Tool",
+                          iconSize: isMobile ? 16 : 20, 
+                          padding: EdgeInsets.all(isMobile ? 4 : 8),
+                          constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+                          icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
+                          onPressed: () {
+                            setState(() {
+                              _selectedTool = 'Select';
+                              for (var obj in _drawingObjects) obj.isSelected = false;
+                              _activeObject = null;
+                              widget.onSelectionChanged?.call(null); 
+                            });
+                            widget.onToolChanged?.call('Select'); 
+                          },
+                        ),
+                      ),
+                      _vDiv(theme),
 
-          if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
-            ...widget.leftActions!,
+                      if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
+                        ...widget.leftActions!,
 
-          _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
-          _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
-          _vDiv(theme),
-          _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-          _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-          _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-          
-          const Spacer(),
-          
-          if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
-            ...widget.rightActions!,
-            
-          // _vDiv(theme),
-          
-          IconButton(
-            tooltip: _showPropertiesPanel ? "Hide Styling" : "Show Styling",
-            icon: Icon(_showPropertiesPanel ? Icons.palette : Icons.palette_outlined),
-            color: theme.colorScheme.primary,
-            iconSize: isMobile ? 16 : 20, 
-            padding: EdgeInsets.all(isMobile ? 4 : 8),
-            constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => setState(() => _showPropertiesPanel = !_showPropertiesPanel),
-          ),
-          
-          // _vDiv(theme),
+                      _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
+                      _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
+                      _vDiv(theme),
+                      _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
+                      _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
+                      _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
+                    ],
+                  ),
 
-          if (widget.showCloseButton && !_isFullScreen) ...[
-            const SizedBox(width: 8), // Little spacing
-            Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-                shape: BoxShape.circle,
+                  // --- RIGHT ACTIONS GROUP ---
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Added a little spacing so it doesn't touch the left group when scrolling
+                      const SizedBox(width: 16), 
+
+                      if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
+                        ...widget.rightActions!,
+                        
+                      IconButton(
+                        tooltip: _showPropertiesPanel ? "Hide Styling" : "Show Styling",
+                        icon: Icon(_showPropertiesPanel ? Icons.palette : Icons.palette_outlined),
+                        color: theme.colorScheme.primary,
+                        iconSize: isMobile ? 16 : 20, 
+                        padding: EdgeInsets.all(isMobile ? 4 : 8),
+                        constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
+                        onPressed: () => setState(() => _showPropertiesPanel = !_showPropertiesPanel),
+                      ),
+
+                      if (widget.showCloseButton && !_isFullScreen) ...[
+                        const SizedBox(width: 8), 
+                        Container(
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            color: theme.colorScheme.onSurface,
+                            tooltip: "Close Canvas",
+                            onPressed: widget.onClosePressed,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                ],
               ),
-              child: IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                color: theme.colorScheme.onSurface,
-                tooltip: "Close Canvas",
-                onPressed: widget.onClosePressed,
-              ),
             ),
-          ],
-        ],
+          );
+        },
       ),
     );
   }

@@ -123,11 +123,12 @@ class _MainScaffoldState extends State<MainScaffold> {
                   child: Column(
                     children: [
                       // FIXED HEADER
-                      _buildStickyHeader(context, isMobile, colorScheme, theme),
+                      if (isMobile)
+                        _buildStickyHeader(context, isMobile, colorScheme, theme),
                       
                       // DYNAMIC BODY
                       // Expanded(
-                      //   child: Padding(
+                      //   child: Padding,
                       //     padding: isMobile 
                       //         ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
                       //         : const EdgeInsets.fromLTRB(20, 0, 24, 20),
@@ -144,16 +145,17 @@ class _MainScaffoldState extends State<MainScaffold> {
                       // DYNAMIC BODY
                       Expanded(
                         child: Padding(
-                          padding: widget.removePadding 
-                              ? EdgeInsets.zero 
-                              : (isMobile 
-                                  ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
-                                  : const EdgeInsets.fromLTRB(15, 0, 15, 15)),
+                          // padding: widget.removePadding 
+                          //     ? EdgeInsets.zero 
+                          //     : (isMobile 
+                          //         ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
+                          //         : const EdgeInsets.fromLTRB(15, 0, 15, 15)),
+                          padding: EdgeInsets.all(0),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 300),
                             margin: widget.removePadding 
                                 ? EdgeInsets.zero 
-                                : (isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16)),
+                                : (isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(0, 10, 10, 10)),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(widget.removePadding ? 0 : 8),
                               child: widget.child,
