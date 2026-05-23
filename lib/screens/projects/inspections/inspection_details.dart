@@ -59,24 +59,27 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
         // ---------------------------------------------------------
         // 4. SUCCESS STATE (Modern UI)
         // ---------------------------------------------------------
-        return Padding(
-          padding: const EdgeInsets.only(top: 8.0), 
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context, theme),
-              const SizedBox(height: 32),
-              
-              _buildSectionTitle("Documents", documents.length, theme),
-              const SizedBox(height: 16),
-              _buildDocumentsList(theme, documents),
-              
-              const SizedBox(height: 40),
-              
-              _buildSectionTitle("Inspection Media", mediaUrls.length, theme),
-              const SizedBox(height: 16),
-              _buildMediaGrid(theme, mediaUrls),
-            ],
+        // 🚀 WRAPPED IN SingleChildScrollView TO ENABLE SCROLLING
+        return SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8.0, bottom: 40.0), // Added bottom padding for smooth scrolling clearance
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context, theme),
+                const SizedBox(height: 32),
+                
+                _buildSectionTitle("Documents", documents.length, theme),
+                const SizedBox(height: 16),
+                _buildDocumentsList(theme, documents),
+                
+                const SizedBox(height: 40),
+                
+                _buildSectionTitle("Inspection Media", mediaUrls.length, theme),
+                const SizedBox(height: 16),
+                _buildMediaGrid(theme, mediaUrls),
+              ],
+            ),
           ),
         );
       },
@@ -140,7 +143,6 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
       return _buildEmptySection(theme, "No documents attached.");
     }
 
-    // Upgraded to ListView.builder to easily handle "n" number of documents
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -158,7 +160,6 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             border: Border.all(
               color: theme.colorScheme.outlineVariant.withOpacity(0.5),
             ),
-            // Added subtle shadow for depth
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.02),
@@ -195,7 +196,6 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Row(
                   children: [
-                    // Added a modern file icon indicator
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -217,7 +217,7 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            docUrl.split('/').last, // Show just the filename for cleaner UI
+                            docUrl.split('/').last, 
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurface.withOpacity(0.5),
                             ),
@@ -252,7 +252,7 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
       shrinkWrap: true, 
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 250, // Slightly smaller to fit more in the row nicely
+        maxCrossAxisExtent: 250, 
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
         childAspectRatio: 1.0, 
@@ -278,9 +278,16 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             child: Image.network(
               mediaUrls[index],
               fit: BoxFit.cover, 
+              // 🚀 FORCED WIDTH AND HEIGHT TO FILL THE GRID TILE
+              width: double.infinity,
+              height: double.infinity,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
-                return const SkeletonContainer(); // Use skeleton while image loads
+                // 🚀 FORCED THE SKELETON TO FILL THE ENTIRE TILE WHILE LOADING
+                return const SkeletonContainer(
+                  width: double.infinity,
+                  height: double.infinity,
+                ); 
               },
               errorBuilder: (context, error, stackTrace) => Container(
                 color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
@@ -298,39 +305,45 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
   // =========================================================
 
   Widget _buildSkeletonLoader(ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const SkeletonContainer(width: 40, height: 40, isCircle: true),
-              const SizedBox(width: 16),
-              const SkeletonContainer(width: 200, height: 28),
-            ],
-          ),
-          const SizedBox(height: 32),
-          const SkeletonContainer(width: 120, height: 20),
-          const SizedBox(height: 16),
-          const SkeletonContainer(width: double.infinity, height: 80),
-          const SizedBox(height: 12),
-          const SkeletonContainer(width: double.infinity, height: 80),
-          const SizedBox(height: 40),
-          const SkeletonContainer(width: 150, height: 20),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 250,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+    // 🚀 WRAPPED SKELETON STATE IN SingleChildScrollView TOO!
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8.0, bottom: 40.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const SkeletonContainer(width: 40, height: 40, isCircle: true),
+                const SizedBox(width: 16),
+                const SkeletonContainer(width: 200, height: 28),
+              ],
             ),
-            itemCount: 4, // Show 4 fake skeleton squares
-            itemBuilder: (context, index) => const SkeletonContainer(),
-          ),
-        ],
+            const SizedBox(height: 32),
+            const SkeletonContainer(width: 120, height: 20),
+            const SizedBox(height: 16),
+            const SkeletonContainer(width: double.infinity, height: 80),
+            const SizedBox(height: 12),
+            const SkeletonContainer(width: double.infinity, height: 80),
+            const SizedBox(height: 40),
+            const SkeletonContainer(width: 150, height: 20),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 250,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              itemCount: 4, 
+              itemBuilder: (context, index) => const SkeletonContainer(
+                width: double.infinity,
+                height: double.infinity,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -432,7 +445,7 @@ class _SkeletonContainerState extends State<SkeletonContainer> with SingleTicker
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true); // Pulses back and forth
+    )..repeat(reverse: true); 
     
     _animation = Tween<double>(begin: 0.3, end: 0.7).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOutSine)
