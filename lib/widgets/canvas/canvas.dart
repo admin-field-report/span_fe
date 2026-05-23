@@ -236,7 +236,7 @@ class CanvasState extends State<Canvas> {
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _drawingObjects.add(textObj);
                     _activeObject = textObj;
-                    _selectedTool = 'Select';
+                    // _selectedTool = 'Select';
                     widget.onSelectionChanged?.call(textObj); // SYNC
                   }
                 });
@@ -309,7 +309,7 @@ class CanvasState extends State<Canvas> {
         pastedObj.isSelected = true; 
         _drawingObjects.add(pastedObj);
         _activeObject = pastedObj;
-        _selectedTool = 'Select'; 
+        // _selectedTool = 'Select'; 
         widget.onSelectionChanged?.call(pastedObj); // SYNC
       });
     }
@@ -544,7 +544,7 @@ class CanvasState extends State<Canvas> {
         _currentPreview!.isSelected = true;
         _drawingObjects.add(_currentPreview!);
         _activeObject = _currentPreview;
-        _selectedTool = 'Select'; 
+        // _selectedTool = 'Select'; 
         _currentPreview = null;
         widget.onSelectionChanged?.call(_activeObject); // SYNC
       }
@@ -581,7 +581,7 @@ class CanvasState extends State<Canvas> {
 
       _drawingObjects.add(_currentPreview!);
       _activeObject = _currentPreview;
-      _selectedTool = 'Select';
+      // _selectedTool = 'Select';
       _currentPreview = null;
       widget.onSelectionChanged?.call(_activeObject); // SYNC
     }
