@@ -33,10 +33,19 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
       builder: (context, _) {
         
         // ---------------------------------------------------------
-        // 1. MODERN SKELETON LOADING STATE
+        // 1. SCREEN-LEVEL LOADER (Displays in the content area)
         // ---------------------------------------------------------
         if (inspectionController.isDetailsLoading) {
-          return _buildSkeletonLoader(theme);
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(color: theme.colorScheme.primary),
+                const SizedBox(height: 16),
+                Text("Loading inspection details...", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          );
         }
 
         // ---------------------------------------------------------
@@ -46,38 +55,35 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
           return _buildErrorState(theme);
         }
 
-        final documents = inspectionController.documents;
-        final mediaUrls = inspectionController.mediaUrls;
-
         // ---------------------------------------------------------
         // 3. EMPTY STATE
         // ---------------------------------------------------------
-        if (documents.isEmpty && mediaUrls.isEmpty) {
+        if (inspectionController.documents.isEmpty && inspectionController.mediaUrls.isEmpty) {
           return _buildEmptyState(context, theme);
         }
 
         // ---------------------------------------------------------
-        // 4. SUCCESS STATE (Modern UI)
+        // 4. SUCCESS STATE
         // ---------------------------------------------------------
-        // 🚀 WRAPPED IN SingleChildScrollView TO ENABLE SCROLLING
         return SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.only(top: 8.0, bottom: 40.0), // Added bottom padding for smooth scrolling clearance
+            padding: const EdgeInsets.only(top: 8.0, bottom: 40.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(context, theme),
                 const SizedBox(height: 32),
                 
-                _buildSectionTitle("Documents", documents.length, theme),
+                _buildSectionTitle("Documents", inspectionController.documents.length, theme),
                 const SizedBox(height: 16),
-                _buildDocumentsList(theme, documents),
+                _buildDocumentsList(theme, inspectionController.documents),
                 
                 const SizedBox(height: 40),
                 
-                _buildSectionTitle("Inspection Media", mediaUrls.length, theme),
+                _buildSectionTitle("Inspection Media", inspectionController.mediaUrls.length, theme),
                 const SizedBox(height: 16),
-                _buildMediaGrid(theme, mediaUrls),
+                // 🚀 SkeletonContainer is still used inside _buildMediaGrid for the images!
+                _buildMediaGrid(theme, inspectionController.mediaUrls),
               ],
             ),
           ),
@@ -303,50 +309,6 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
   // =========================================================
   // STATE WIDGETS (Skeletons, Errors, Empty)
   // =========================================================
-
-  Widget _buildSkeletonLoader(ThemeData theme) {
-    // 🚀 WRAPPED SKELETON STATE IN SingleChildScrollView TOO!
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 8.0, bottom: 40.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const SkeletonContainer(width: 40, height: 40, isCircle: true),
-                const SizedBox(width: 16),
-                const SkeletonContainer(width: 200, height: 28),
-              ],
-            ),
-            const SizedBox(height: 32),
-            const SkeletonContainer(width: 120, height: 20),
-            const SizedBox(height: 16),
-            const SkeletonContainer(width: double.infinity, height: 80),
-            const SizedBox(height: 12),
-            const SkeletonContainer(width: double.infinity, height: 80),
-            const SizedBox(height: 40),
-            const SkeletonContainer(width: 150, height: 20),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 250,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-              ),
-              itemCount: 4, 
-              itemBuilder: (context, index) => const SkeletonContainer(
-                width: double.infinity,
-                height: double.infinity,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildErrorState(ThemeData theme) {
     return Center(
