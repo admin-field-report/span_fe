@@ -13,8 +13,9 @@ import 'widgets/manage_tags_dialog.dart';
 import 'widgets/manage_templates_dialog.dart';
 import 'widgets/create_group_wizard.dart';
 
-enum MobileView { groups, groupDetails, allTags }
-enum SortOrder { none, asc, desc }
+// 🚀 Commented out allTags and SortOrder since they are currently unused
+enum MobileView { groups, groupDetails /*, allTags */ }
+// enum SortOrder { none, asc, desc } 
 
 class TagManagementScreen extends StatefulWidget {
   const TagManagementScreen({super.key});
@@ -27,9 +28,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   final TagController _controller = TagController();
   
   final TextEditingController _groupSearchController = TextEditingController();
-  final TextEditingController _tagSearchController = TextEditingController();
+  // final TextEditingController _tagSearchController = TextEditingController();
   
-  SortOrder _tagSortOrder = SortOrder.none;
+  // SortOrder _tagSortOrder = SortOrder.none;
   String? _selectedGroupId;
   MobileView _currentMobileView = MobileView.groups;
 
@@ -38,18 +39,18 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.fetchGroups();
-      _controller.fetchTags();
+      // _controller.fetchTags(); // 🚀 Commented out global tags fetch
       _controller.fetchTemplates();
     });
     
     _groupSearchController.addListener(() => setState(() {}));
-    _tagSearchController.addListener(() => setState(() {}));
+    // _tagSearchController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _groupSearchController.dispose();
-    _tagSearchController.dispose();
+    // _tagSearchController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -58,7 +59,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // MOBILE NAVIGATION HELPER
   // ==========================================
   
-// 🚀 Updated Mobile Header
   Widget _buildMobileHeader(String title, {VoidCallback? onDelete}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
@@ -72,7 +72,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           const SizedBox(width: 8),
           Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
           
-          // 🚀 Show delete button if callback is provided
           if (onDelete != null)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -199,8 +198,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   Future<void> _showCreateGroupDialog() async {
     final isDesktop = AppResponsive.isDesktopScreen(context);
-    
-    // 🚀 Updated to use the public CreateGroupWizard class from the new file
     final wizard = CreateGroupWizard(controller: _controller);
 
     String? newGroupId;
@@ -290,7 +287,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
     final isMobile = AppResponsive.isMobileScreen(context);
 
-    // 🚀 1. Extract the content into a helper method so we don't duplicate code
     Widget buildContent(BuildContext context) {
       return ManageTagsDialog(
         controller: _controller,
@@ -315,7 +311,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       );
     }
 
-    // 🚀 2. Show the appropriate overlay based on screen size
     if (isMobile) {
       await showModalBottomSheet(
         context: context,
@@ -343,7 +338,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
-            width: 500, // Keep a nice constrained width for desktop
+            width: 500,
             child: buildContent(context),
           ),
         ),
@@ -357,7 +352,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     final isMobile = AppResponsive.isMobileScreen(context);
     final theme = Theme.of(context);
 
-    // 🚀 1. Extract the content into a helper method
     Widget buildContent(BuildContext context) {
       return ManageTemplatesDialog(
         controller: _controller,
@@ -381,7 +375,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       );
     }
 
-    // 🚀 2. Show the responsive overlay!
     if (isMobile) {
       await showModalBottomSheet(
         context: context,
@@ -429,7 +422,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         description: "Are you sure you want to delete '$groupName'?",
         confirmLabel: "Delete",
         confirmColor: Colors.red,
-        // 🚀 The dialog automatically handles the loading spinner during this async call!
         onConfirm: () async {
           final success = await _controller.deleteGroup(groupId);
           
@@ -438,14 +430,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           if (success) {
             ToastService.show(context, message: "Tag group deleted successfully", type: ToastType.success);
             setState(() {
-              _selectedGroupId = null; // Clear selection
+              _selectedGroupId = null;
               if (!AppResponsive.isDesktopScreen(context)) {
-                _currentMobileView = MobileView.groups; // Send mobile users back to the list
+                _currentMobileView = MobileView.groups; 
               }
             });
           } else {
             ToastService.show(context, message: "Failed to delete tag group", type: ToastType.error);
-            // Optional: You could throw an Exception here if you want the dialog to stay open on failure!
           }
         },
       ),
@@ -477,11 +468,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch, 
                         children: [
-                          Expanded(flex: 2, child: _buildTagGroupsList(theme, isDesktop: true)),
+                          // 🚀 Adjusted flex to fill the space cleanly
+                          Expanded(flex: 3, child: _buildTagGroupsList(theme, isDesktop: true)),
                           const SizedBox(width: 16),
-                          Expanded(flex: 3, child: _buildSelectedGroupDetails(theme, isDesktop: true)),
-                          const SizedBox(width: 16),
-                          Expanded(flex: 2, child: _buildGlobalTagsList(theme)),
+                          Expanded(flex: 5, child: _buildSelectedGroupDetails(theme, isDesktop: true)),
+                          // 🚀 Commented out the global tags column
+                          // const SizedBox(width: 16),
+                          // Expanded(flex: 2, child: _buildGlobalTagsList(theme)),
                         ],
                       ),
                     ),
@@ -522,12 +515,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           children: [
             _buildMobileHeader(
               activeGroup?.name ?? "Details",
-              // 🚀 Pass the delete callback!
               onDelete: activeGroup != null ? () => _confirmDeleteGroup(activeGroup.id, activeGroup.name) : null,
             ),
             Expanded(child: _buildSelectedGroupDetails(theme, isDesktop: false)),
           ],
         );
+      // 🚀 Commented out the allTags mobile view handler
+      /*
       case MobileView.allTags:
         return Column(
           key: const ValueKey('all_tags'),
@@ -537,6 +531,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             Expanded(child: _buildGlobalTagsList(theme)),
           ],
         );
+      */
     }
   }
 
@@ -579,6 +574,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           const Divider(height: 1),
           const Divider(height: 1),
 
+          // 🚀 Commented out the Mobile 'All Tags' list tile 
+          /*
           if (!isDesktop) ...[
             ListTile(
               leading: Container(
@@ -593,8 +590,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             ),
             const Divider(height: 1, thickness: 4), 
           ],
+          */
+          
           Expanded(
-            // 🚀 REMOVED the isEmpty check here!
             child: _controller.isGroupsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : filteredGroups.isEmpty
@@ -617,16 +615,14 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         });
                         _controller.fetchTemplatesForGroup(group.id);
                       },
-                      
-                      // 🚀 THE NEW TRAILING ROW
                       trailing: Row(
-                        mainAxisSize: MainAxisSize.min, // Prevents the Row from taking up the whole tile
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
                             tooltip: "Delete Group",
                             padding: const EdgeInsets.all(4),
-                            constraints: const BoxConstraints(), // Removes default bulky button sizing
+                            constraints: const BoxConstraints(),
                             onPressed: () => _confirmDeleteGroup(group.id, group.name),
                           ),
                           const SizedBox(width: 8),
@@ -668,14 +664,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         children: [
           if (isDesktop) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), // 🚀 Tweaked padding for the icon
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: theme.colorScheme.surface,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(activeGroup.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  
-                  // 🚀 Add the Desktop Delete Button here!
                   IconButton(
                     icon: const Icon(Icons.delete_outline, color: Colors.red),
                     tooltip: "Delete Group",
@@ -703,7 +697,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         variant: ButtonVariant.outline,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         onPressed: () => _showManageTagsDialog(currentTagIds), 
-                        
                       )
                     ],
                   ),
@@ -725,12 +718,10 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         icon: Icons.edit,
                         variant: ButtonVariant.outline,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        
                         onPressed: () {
                           final Set<String> currentTemplateIds = activeGroup.templates.map((t) => t.id).toSet();
                           _showManageTemplatesDialog(currentTemplateIds);
                         },
-                        
                       )
                     ],
                   ),
@@ -755,13 +746,14 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
+  // 🚀 Commented out the entire global tags list builder
+  /*
   Widget _buildGlobalTagsList(ThemeData theme) {
     final query = _tagSearchController.text.toLowerCase();
     var filteredTags = _controller.globalTags.where((t) {
       return t.name.toLowerCase().contains(query);
     }).toList();
 
-    // 🚀 Apply the 3-state sorting logic
     if (_tagSortOrder != SortOrder.none) {
       filteredTags.sort((a, b) {
         final comp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -787,7 +779,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
           const Divider(height: 1),
 
-          // 🚀 All Tags Search & Sort Row
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -795,7 +786,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
               children: [
                 Expanded(
                   child: SizedBox(
-                    height: 45, // 🚀 Forces a compact height!
+                    height: 45, 
                     child: FormControlTextField(
                       controller: _tagSearchController,
                       hintText: "Search tags...",
@@ -805,7 +796,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                 ),
                 const SizedBox(width: 8), 
                 
-                // 🚀 Borderless, Icon-Only Sorting Button
                 Container(
                   decoration: BoxDecoration(
                     color: _tagSortOrder == SortOrder.none 
@@ -846,7 +836,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           const Divider(height: 1),
 
           Expanded(
-            // 🚀 REMOVED the isEmpty check here! It now spins on EVERY fetch.
             child: _controller.isTagsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : SingleChildScrollView(
@@ -860,7 +849,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       ),
     );
   }
+  */
 
+  // 🚀 Kept this helper as it's used by _buildSelectedGroupDetails
   Widget _buildTagChip(AppTag tag) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
