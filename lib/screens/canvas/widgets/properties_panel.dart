@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data'; 
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
@@ -8,12 +10,10 @@ class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
   final List<ProjectTag> availableTags;
   
-  // 🔽 NEW: Inspection Level Data
   final String? inspectionDescription;
   final List<String>? inspectionTagIds;
   final List<String>? inspectionImageUrls;
   
-  // 🔽 NEW: Inspection Level Callbacks
   final ValueChanged<String>? onInspectionDescriptionChanged;
   final ValueChanged<List<String>>? onInspectionTagsChanged;
 
@@ -30,7 +30,6 @@ class PropertiesPanel extends StatefulWidget {
     required this.activeObject,
     required this.availableTags,
     
-    // Inspection props
     this.inspectionDescription,
     this.inspectionTagIds,
     this.inspectionImageUrls,
@@ -56,7 +55,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   bool _isUploading = false; 
   final Set<String> _deletingKeys = {};
 
-  // 🚀 DYNAMIC GETTERS: These decide which data pool to read from automatically
   String get _currentDescription => widget.activeObject != null 
       ? (widget.activeObject!.description ?? "") 
       : (widget.inspectionDescription ?? "");
@@ -81,10 +79,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     if (widget.activeObject != null) {
       if (widget.activeObject!.description != _descController.text) {
         widget.activeObject!.description = _descController.text;
-        widget.onUpdate(); // Trigger canvas update
+        widget.onUpdate(); 
       }
     } else {
-      // 🚀 Inspection Level Update
       if (widget.inspectionDescription != _descController.text) {
         widget.onInspectionDescriptionChanged?.call(_descController.text);
       }
@@ -94,8 +91,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   @override
   void didUpdateWidget(covariant PropertiesPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
-    // Re-bind the controller text if the active object changes OR if the inspection data changes while no object is selected
     if (widget.activeObject != oldWidget.activeObject || 
        (widget.activeObject == null && widget.inspectionDescription != oldWidget.inspectionDescription)) {
       
@@ -125,7 +120,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       });
       widget.onUpdate();
     } else {
-      // 🚀 Inspection Level Update
       List<String> updatedTags = List.from(_currentTagIds);
       if (updatedTags.contains(tagId)) {
         updatedTags.remove(tagId);
@@ -136,17 +130,89 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
-  Future<void> _pickAndUploadImage() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true, 
-      );
+  // 🚀 NEW: Shows the bottom sheet to pick between Camera and Gallery
+  void _showImageOptions() {
+    if (kIsWeb) {
+      // Skip the bottom sheet on web and just open the file explorer
+      _pickAndUploadImage(useCamera: false);
+      return;
+    }
 
-      if (result != null && result.files.single.bytes != null) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                child: Text(
+                  "Add Photo",
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Take a Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAndUploadImage(useCamera: true);
+                },
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Upload from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAndUploadImage(useCamera: false);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 🚀 REVISED: Routes intelligently between ImagePicker and FilePicker
+  Future<void> _pickAndUploadImage({required bool useCamera}) async {
+    try {
+      Uint8List? fileBytes;
+      String fileName = "";
+
+      if (useCamera) {
+        // Trigger the native mobile camera
+        final ImagePicker picker = ImagePicker();
+        final XFile? photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+        
+        if (photo != null) {
+          fileBytes = await photo.readAsBytes();
+          fileName = photo.name;
+        }
+      } else {
+        // Trigger the standard gallery/file explorer
+        FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.image,
+          withData: true, 
+        );
+
+        if (result != null && result.files.single.bytes != null) {
+          fileBytes = result.files.single.bytes;
+          fileName = result.files.single.name;
+        }
+      }
+
+      // If a file was successfully captured/selected, upload it!
+      if (fileBytes != null) {
         setState(() => _isUploading = true);
-        await widget.onImageUpload(result.files.single.name, result.files.single.bytes!);
-        // The parent handles where the image URL gets saved based on its own state!
+        await widget.onImageUpload(fileName, fileBytes);
         widget.onUpdate();
       }
     } catch (e) {
@@ -167,7 +233,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    // 🚀 NEW: If it's an image view AND no object is selected, hide the inspection details!
     if (widget.activeObject == null && !widget.allowImageUpload) {
       return Container(
         width: 300,
@@ -204,7 +269,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   
-                  // 🌟 DYNAMIC CONTEXT HEADER 🌟
                   Text(
                     widget.activeObject != null ? "Object Details" : "Inspection Details",
                     style: theme.textTheme.titleMedium?.copyWith(
@@ -246,10 +310,11 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _isUploading ? null : _pickAndUploadImage,
+                        // 🚀 REVISED: This now opens the Bottom Sheet!
+                        onPressed: _isUploading ? null : _showImageOptions,
                         icon: _isUploading 
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.cloud_upload_outlined, size: 18),
+                            : const Icon(Icons.add_a_photo_outlined, size: 18), // Switched to a camera/add icon
                         label: Text(_isUploading ? "Uploading..." : "Upload Image"),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -260,8 +325,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                     const SizedBox(height: 16),
                   ],
                   
-                  // 🌟 DYNAMIC GALLERY GRID VIEW 🌟
-                  // 🌟 DYNAMIC GALLERY GRID VIEW 🌟
                   if (imageUrls.isNotEmpty)
                     GridView.builder(
                       shrinkWrap: true,
@@ -288,7 +351,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              // 🚀 NEW: MouseRegion turns the cursor into a pointer hand on web/desktop!
                               MouseRegion(
                                 cursor: SystemMouseCursors.click,
                                 child: GestureDetector(
@@ -318,7 +380,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                                 Positioned(
                                   top: 4, right: 4,
                                   child: MouseRegion(
-                                    cursor: SystemMouseCursors.click, // Also added to the delete button!
+                                    cursor: SystemMouseCursors.click,
                                     child: GestureDetector(
                                       onTap: () => _handleDeleteImage(s3Key),
                                       child: Container(
@@ -344,5 +406,4 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       ),
     );
   }
-  
 }
