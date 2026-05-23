@@ -192,8 +192,12 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                             ),
                           );
 
-                          if (didCreate == true && activeGroup != null) {
-                            _toolController.fetchGroupDetails(activeGroup.id); 
+                          if (didCreate == true) {
+                            final currentGroupId = activeGroup?.id;
+                            if (currentGroupId != null) {
+                              _toolController.fetchGroupDetails(currentGroupId);
+                              _toolController.fetchMasterTools();
+                            }
                           }
                         },
                       ),
