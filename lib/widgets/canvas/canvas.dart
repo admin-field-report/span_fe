@@ -56,6 +56,9 @@ class Canvas extends StatefulWidget {
 
 class CanvasState extends State<Canvas> {
   final FocusNode _canvasFocusNode = FocusNode();
+
+  final TransformationController _transformationController = TransformationController();
+  final GlobalKey _viewerKey = GlobalKey();
   
   bool _isFullScreen = false;
   
@@ -114,6 +117,10 @@ class CanvasState extends State<Canvas> {
     super.initState();
     // Load the objects passed from CanvasScreen
     _drawingObjects = List.from(widget.initialObjects);
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _centerDocument();
+    });
   }
 
   // Helper to let CanvasScreen force redraws
@@ -121,12 +128,41 @@ class CanvasState extends State<Canvas> {
     if (mounted) setState(() {});
   }
 
+  // 🚀 3. ADD THE MATH METHOD:
+  void _centerDocument() {
+    if (_viewerKey.currentContext == null) return;
+    
+    // Grab the actual size of the viewer container on the screen
+    final RenderBox renderBox = _viewerKey.currentContext!.findRenderObject() as RenderBox;
+    final size = renderBox.size;
+
+    // Smart Scale: If the screen is smaller than the 816x1056 document, scale it down to fit!
+    double initialScale = 1.0;
+    if (size.width < 816 || size.height < 1056) {
+      // We subtract 40 to give it a nice 20px padding around the edges
+      final scaleX = (size.width - 40) / 816;
+      final scaleY = (size.height - 40) / 1056;
+      initialScale = math.min(scaleX, scaleY);
+    }
+
+    // Calculate exact center coordinates
+    final double dx = (size.width - (816 * initialScale)) / 2;
+    final double dy = (size.height - (1056 * initialScale)) / 2;
+
+    // Apply the translation and scale to the viewer natively
+    _transformationController.value = Matrix4.identity()
+      ..translate(dx, dy)
+      ..scale(initialScale);
+  }
+
   @override
   void dispose() {
     _canvasFocusNode.dispose();
+    _transformationController.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); 
     super.dispose();
   }
+  
 
   void applyExternalToolConfig(String tool, double stroke, Color color, Color fill, double opacity, {String? customToolId, List<DrawingObject>? customToolShapes}) {
     setState(() {
@@ -1256,6 +1292,7 @@ class CanvasState extends State<Canvas> {
     final bool isMobileDevice = AppResponsive.isAndroid || AppResponsive.isIOS;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
       body: CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
@@ -1267,7 +1304,7 @@ class CanvasState extends State<Canvas> {
           const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
           const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
           const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
-          const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
+          // const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelected,
           const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
             if (_selectedTool == 'Pen') _finalizeCurrentPreview();
           }),
@@ -1294,15 +1331,17 @@ class CanvasState extends State<Canvas> {
                             children: [
                               Positioned.fill(
                                 child: Container(
+                                  key: _viewerKey,
                                   color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                                   child: InteractiveViewer(
+                                    transformationController: _transformationController,
                                     panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
                                     scaleEnabled: true, 
                                     minScale: 0.4,     
                                     maxScale: 3.5,     
-                                    boundaryMargin: const EdgeInsets.all(double.infinity), 
-                                    child: Center(
-                                      child: MouseRegion(
+                                    boundaryMargin: const EdgeInsets.all(double.infinity),
+                                    constrained: false, 
+                                    child: MouseRegion(
                                         cursor: _getCursor(_hoveredHandle),
                                         onHover: (d) {
                                           if (_selectedTool == 'Pen' && _currentPreview != null) {
@@ -1321,29 +1360,25 @@ class CanvasState extends State<Canvas> {
                                           onPointerDown: _handlePointerDown,
                                           onPointerMove: (details) => _handlePointerMove(details, const BoxConstraints()),
                                           onPointerUp: _handlePointerUp,
-                                          child: Stack(
-                                            alignment: Alignment.center,
-                                            children: [
-                                              Container(
-                                                width: 816,  
-                                                height: 1056, 
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  boxShadow: [
-                                                    BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
-                                                  ],
-                                                ),
-                                                child: CanvasPaper(
-                                                  objects: _drawingObjects, 
-                                                  preview: _currentPreview,
-                                                  backgroundImageBytes: widget.initialBackgroundImage,                                         
-                                                ),
-                                              ),
-                                            ]
+                                          
+                                          // 🚀 3. THE ANCHOR: The Listener is now perfectly molded to the 816x1056 paper
+                                          child: Container(
+                                            width: 816,  
+                                            height: 1056, 
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              boxShadow: [
+                                                BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
+                                              ],
+                                            ),
+                                            child: CanvasPaper(
+                                              objects: _drawingObjects, 
+                                              preview: _currentPreview,
+                                              backgroundImageBytes: widget.initialBackgroundImage,                                         
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
                                   ),
                                 ),
                               ),

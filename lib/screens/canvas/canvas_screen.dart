@@ -788,6 +788,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
     if (_isLoadingDocument) {
       return Scaffold(
+        resizeToAvoidBottomInset: false,
         backgroundColor: theme.scaffoldBackgroundColor,
         body: Center(
           child: Column(
@@ -803,6 +804,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
       body: custom_canvas.Canvas(
         key: _getCurrentCanvasKey(),
