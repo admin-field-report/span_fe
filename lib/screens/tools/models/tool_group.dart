@@ -4,11 +4,13 @@ class ToolItem {
   String id;
   String name;
   String canvasJson;
+  String custom_tool_group_item_id;
 
   ToolItem({
     required this.id,
     required this.name,
     required this.canvasJson,
+    required this.custom_tool_group_item_id,
   });
 
   factory ToolItem.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class ToolItem {
       id: json['tool_id'] ?? json['id'] ?? '',
       name: json['name'] ?? 'Unnamed Tool',
       canvasJson: canvasDataString,
+      custom_tool_group_item_id: json['custom_tool_group_item_id'] ?? '',
     );
   }
 }

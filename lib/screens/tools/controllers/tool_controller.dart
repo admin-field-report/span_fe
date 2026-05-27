@@ -206,4 +206,26 @@ class ToolController extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> deleteTool(String itemId) async {
+    try {
+      final response = await _api.delete('/customToolGroupItem/$itemId');
+      
+      if (response.body.isNotEmpty) {
+        final resData = jsonDecode(response.body);
+
+        // Check for 2xx status code and ensure data payload exists
+        if (response.statusCode == 200 && resData['data'] != null) {
+          return true; 
+        } else {
+          notifyListeners();
+          return false;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
 }

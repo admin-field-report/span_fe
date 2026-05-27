@@ -6,9 +6,11 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import './custom_tool_preview.dart';
 import '../../../widgets/search_field/search_field.dart';
 import '../../../widgets/button/button.dart';
+import '../../../widgets/confirmation/confirmation_remove.dart';
 import './manage_tools_panel.dart';
 import '../controllers/tool_controller.dart';
 import '../../../utils/app_responsive.dart';
+import '../../../services/toast_service.dart';
 
 class GroupDetailsWidget extends StatefulWidget {
   final ToolGroup group;
@@ -35,11 +37,42 @@ class GroupDetailsWidget extends StatefulWidget {
 class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
   String _searchQuery = '';
 
-  void _deleteTool(ToolItem tool) {
-    setState(() {
-      widget.group.tools.removeWhere((t) => t.id == tool.id);
-    });
-    if (widget.onGroupUpdated != null) widget.onGroupUpdated!();
+  Future<void> _deleteTool(ToolItem tool) async {
+    await showDialog(
+      context: context,
+      builder: (context) => ConfirmationDialog(
+        title: "Delete Tool?",
+        description: "Are you sure you want to delete this tool? This action cannot be undone.",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        confirmColor: Colors.red,
+        onConfirm: () async {
+          
+          // 🚀 1. Call the Controller!
+          final bool isSuccess = await ToolController().deleteTool(tool.custom_tool_group_item_id);
+
+          if (isSuccess) {
+            // 2. Update UI
+            setState(() {
+              widget.group.tools.removeWhere((t) => t.id == tool.id);
+            });
+            
+            // 3. Trigger parent refresh
+            if (widget.onGroupUpdated != null) {
+              widget.onGroupUpdated!();
+            }
+
+            if (mounted) ToastService.show(context, message: "Tool deleted successfully!", type: ToastType.success);
+            
+            return; // Exit normally to close the dialog
+          } 
+          
+          // 4. Handle Failure
+          if (mounted) ToastService.show(context, message: "Failed to delete tool. Please try again.", type: ToastType.error);
+          throw Exception("Deletion failed"); 
+        },
+      ),
+    );
   }
 
   Widget _buildCanvasPreview(BuildContext context, String? jsonString) {
