@@ -13,7 +13,6 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/confirmation/confirmation_remove.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
-import 'utils/canvas_export.dart';
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
@@ -138,6 +137,10 @@ void _switchPage(String newPage) async {
   }
 
   Future<void> _saveInspectionLevelAnnotation() async {
+    if (!_hasUnsavedChanges) {
+      return; 
+    }
+
     try {
       final payload = {
         "json_data": [
@@ -153,7 +156,9 @@ void _switchPage(String newPage) async {
       };
       await _apiService.post('/inspection/document/add-annotation', payload);
     } catch (e) {
-      if (mounted) ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
+      if (mounted) {
+        ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
+      }
     }
   }
 
@@ -179,6 +184,7 @@ void _switchPage(String newPage) async {
         if (uploadResponse.statusCode == 200) {
            setState(() {
               _inspectionImageUrls.add(s3Key);
+              _hasUnsavedChanges = true;
            });
         } else {
            throw Exception("Inspection image S3 upload failed");
@@ -464,7 +470,9 @@ void _switchPage(String newPage) async {
     setState(() => _isSaving = true);
     _syncCurrentPageObjects(); 
     
-    await _saveInspectionLevelAnnotation();
+    if (widget.annotateImageKey == null) {
+      await _saveInspectionLevelAnnotation();
+    }
 
     try {
       if (widget.annotateImageKey != null) {
@@ -816,6 +824,61 @@ void _switchPage(String newPage) async {
     }
   }
 
+
+  Future<void> _handleImageTap(String s3Key, String url) async {
+    bool shouldNavigate = false;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    if (_hasUnsavedChanges) {
+      // 🚀 Show popup if there are unsaved changes
+      await showDialog(
+        context: context,
+        builder: (context) => ConfirmationDialog(
+          title: "Unsaved Changes",
+          description: "You have unsaved changes on this canvas. Please save them before annotating this image.",
+          confirmLabel: "Save & Open",
+          cancelLabel: "Close",
+          // confirmColor: isDark ? Colors.white : Colors.black, 
+          confirmColor: Colors.green,
+          onConfirm: () async {
+            // 1. Await the save function
+            await _saveAnnotations();
+            
+            // 2. Check if save was successful
+            if (!_hasUnsavedChanges) {
+              shouldNavigate = true;
+            } else {
+              throw Exception("Failed to save annotations."); 
+            }
+          },
+        ),
+      );
+    } else {
+      // 🚀 No unsaved changes, safe to navigate immediately
+      shouldNavigate = true;
+    }
+
+    // 🚀 Perform the navigation AFTER the dialog has safely closed
+    if (shouldNavigate && mounted) {
+      Navigator.push(
+        context, 
+        MaterialPageRoute(
+          builder: (context) => CanvasScreen(
+            projectDocumentId: widget.projectDocumentId,
+            documentId: widget.documentId, 
+            projectId: widget.projectId,
+            inspectionId: widget.inspectionId, 
+            annotateImageUrl: url, 
+            annotateImageKey: s3Key,
+            isInspectionImage: _selectedCanvasObject == null, 
+          ),
+        ),
+      );
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -924,6 +987,7 @@ void _switchPage(String newPage) async {
                 } else {
                   setState(() {
                     _inspectionImageUrls.remove(s3Key);
+                    _hasUnsavedChanges = true;
                   });
                   await _saveInspectionLevelAnnotation(); 
                 }
@@ -931,19 +995,7 @@ void _switchPage(String newPage) async {
               
               allowImageUpload: widget.annotateImageKey == null,
               
-              onImageTap: (s3Key, url) {
-                Navigator.push(context, MaterialPageRoute(
-                    builder: (context) => CanvasScreen(
-                      projectDocumentId: widget.projectDocumentId,
-                      documentId: widget.documentId, 
-                      projectId: widget.projectId,
-                      inspectionId: widget.inspectionId, 
-                      annotateImageUrl: url, 
-                      annotateImageKey: s3Key,
-                      isInspectionImage: _selectedCanvasObject == null, 
-                    ),
-                ));
-              },
+              onImageTap: _handleImageTap,
               onClose: () {
                 setState(() => _selectedCanvasObject = null);
                 _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
