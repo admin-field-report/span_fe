@@ -196,6 +196,109 @@ class ProjectController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+
+  // ----------------------------------------------------------------
+  // PROJECT SETTINGS APIS
+  // ----------------------------------------------------------------
+
+  Future<void> getProjectSettings(String projectId) async {
+    try {
+      // Fetch assigned Tags
+      final tagRes = await _apiService.get('/projectTagGroup/$projectId');
+      // Fetch assigned Tools
+      final toolRes = await _apiService.get('/projectCustomToolGroup/$projectId');
+      
+      // TODO: Parse these responses and store the assigned IDs in your state.
+      // e.g., assignedTagGroupIds = parsed IDs;
+      // e.g., assignedToolGroupIds = parsed IDs;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error fetching project settings: $e");
+    }
+  }
+
+  Future<bool> manageProjectTagGroups(String projectId, List<String> selectedTagIds) async {
+    try {
+      // 🚀 Format list into the required Map: {"id_1": 0, "id_2": 1}
+      final Map<String, int> formattedMap = {};
+      for (int i = 0; i < selectedTagIds.length; i++) {
+        formattedMap[selectedTagIds[i]] = i;
+      }
+
+      final payload = {
+        "project_id": projectId,
+        "tag_group_id_list": formattedMap,
+      };
+
+      final response = await _apiService.post('/projectTagGroup/manage', payload);
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint("Error managing tags: $e");
+      return false;
+    }
+  }
+
+  Future<bool> manageProjectToolGroups(String projectId, List<String> selectedToolIds) async {
+    try {
+      // 🚀 Format list into the required Map: {"id_1": 0, "id_2": 1}
+      final Map<String, int> formattedMap = {};
+      for (int i = 0; i < selectedToolIds.length; i++) {
+        formattedMap[selectedToolIds[i]] = i;
+      }
+
+      final payload = {
+        "project_id": projectId,
+        "custom_tool_group_id_list": formattedMap,
+      };
+
+      final response = await _apiService.post('/projectCustomToolGroup/manage', payload);
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint("Error managing tools: $e");
+      return false;
+    }
+  }
+
+
+  // ----------------------------------------------------------------
+  // FETCH MASTER LISTS FOR SETTINGS
+  // ----------------------------------------------------------------
+  Future<List<Map<String, dynamic>>> getCompanyTagGroups() async {
+    try {
+      final response = await _apiService.get('/tagGroupItem/company');
+      final resData = jsonDecode(response.body);
+
+      if (resData['success'] == true && resData['data'] != null) {
+        return (resData['data'] as List).map((item) => {
+          'id': item['tag_group_id'],
+          'name': item['tag_group_name'],
+        }).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint("Error fetching company tag groups: $e");
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCompanyToolGroups() async {
+    try {
+      final response = await _apiService.get('/customToolGroup/company');
+      final resData = jsonDecode(response.body);
+
+      if (resData['message'] != null && resData['data'] != null) {
+        return (resData['data'] as List).map((item) => {
+          'id': item['id'],
+          'name': item['name'],
+        }).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint("Error fetching company tool groups: $e");
+      return [];
+    }
+  }
 }
 
 final projectController = ProjectController();
