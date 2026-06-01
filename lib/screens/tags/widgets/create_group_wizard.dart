@@ -157,6 +157,7 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
                               label: 'Tag Color',
                               currentColor: _newTagColor,
                               onColorChanged: (c) => setState(() => _newTagColor = c),
+                              showOpacity: false,
                             ),
                           ),
                           const SizedBox(width: 12),

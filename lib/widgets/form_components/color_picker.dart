@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class AppColorPicker extends StatefulWidget {
   final Color initialColor;
   final ValueChanged<Color> onColorChanged;
+  final bool showOpacity; // 🚀 3. Added parameter here
 
   const AppColorPicker({
     super.key,
     required this.initialColor,
     required this.onColorChanged,
+    this.showOpacity = true, // Default is true
   });
 
   @override
@@ -17,7 +19,6 @@ class AppColorPicker extends StatefulWidget {
 class _AppColorPickerState extends State<AppColorPicker> {
   late HSVColor _hsvColor;
 
-  // Standard preset colors (Transparent option removed)
   final List<Color> _presetColors = [
     const Color(0xFFF44336), const Color(0xFFFF9800), const Color(0xFFFFEB3B), const Color(0xFFCDDC39),
     const Color(0xFF4CAF50), const Color(0xFF009688), const Color(0xFF00BCD4), const Color(0xFF03A9F4),
@@ -31,7 +32,6 @@ class _AppColorPickerState extends State<AppColorPicker> {
     _hsvColor = HSVColor.fromColor(widget.initialColor);
   }
 
-  // --- Helpers ---
   String get _hexString {
     final color = _hsvColor.toColor();
     final r = color.red.toRadixString(16).padLeft(2, '0');
@@ -79,7 +79,7 @@ class _AppColorPickerState extends State<AppColorPicker> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 1. HEADER (Preview Circle & Hex Code)
+        // 1. HEADER
         Row(
           children: [
             Container(
@@ -105,7 +105,7 @@ class _AppColorPickerState extends State<AppColorPicker> {
         ),
         const SizedBox(height: 24),
 
-        // 2. SATURATION & VALUE PICKER (The big square)
+        // 2. SATURATION & VALUE PICKER
         LayoutBuilder(
           builder: (context, constraints) {
             final boxSize = Size(constraints.maxWidth, 200);
@@ -145,7 +145,7 @@ class _AppColorPickerState extends State<AppColorPicker> {
         ),
         const SizedBox(height: 20),
 
-        // 3. HUE SLIDER (The rainbow bar)
+        // 3. HUE SLIDER
         LayoutBuilder(
           builder: (context, constraints) {
             final sliderSize = Size(constraints.maxWidth, 24);
@@ -181,60 +181,62 @@ class _AppColorPickerState extends State<AppColorPicker> {
         ),
         const SizedBox(height: 16),
 
-        // 4. OPACITY SLIDER
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text("Opacity", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
-            Text("${(_hsvColor.alpha * 100).toInt()}%", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final sliderSize = Size(constraints.maxWidth, 24);
-            final thumbX = _hsvColor.alpha * sliderSize.width;
+        // 🚀 4. OPACITY SLIDER (CONDITIONALLY RENDERED)
+        if (widget.showOpacity) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Opacity", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey)),
+              Text("${(_hsvColor.alpha * 100).toInt()}%", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final sliderSize = Size(constraints.maxWidth, 24);
+              final thumbX = _hsvColor.alpha * sliderSize.width;
 
-            return GestureDetector(
-              onPanDown: (details) => _handleOpacitySliderInteraction(details.localPosition, sliderSize),
-              onPanUpdate: (details) => _handleOpacitySliderInteraction(details.localPosition, sliderSize),
-              child: SizedBox(
-                width: sliderSize.width, height: sliderSize.height,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: CustomPaint(size: Size(sliderSize.width, 16), painter: _CheckerboardPainter()),
-                    ),
-                    Container(
-                      height: 16,
-                      decoration: BoxDecoration(
+              return GestureDetector(
+                onPanDown: (details) => _handleOpacitySliderInteraction(details.localPosition, sliderSize),
+                onPanUpdate: (details) => _handleOpacitySliderInteraction(details.localPosition, sliderSize),
+                child: SizedBox(
+                  width: sliderSize.width, height: sliderSize.height,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        gradient: LinearGradient(
-                          colors: [_hsvColor.withAlpha(0.0).toColor(), _hsvColor.withAlpha(1.0).toColor()],
-                        ),
+                        child: CustomPaint(size: Size(sliderSize.width, 16), painter: _CheckerboardPainter()),
                       ),
-                    ),
-                    Positioned(
-                      left: thumbX - 12,
-                      child: Container(
-                        width: 24, height: 24,
+                      Container(
+                        height: 16,
                         decoration: BoxDecoration(
-                          color: _hsvColor.toColor(),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          borderRadius: BorderRadius.circular(8),
+                          gradient: LinearGradient(
+                            colors: [_hsvColor.withAlpha(0.0).toColor(), _hsvColor.withAlpha(1.0).toColor()],
+                          ),
                         ),
                       ),
-                    )
-                  ],
+                      Positioned(
+                        left: thumbX - 12,
+                        child: Container(
+                          width: 24, height: 24,
+                          decoration: BoxDecoration(
+                            color: _hsvColor.toColor(),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                          ),
+                        ),
+                      )
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-        ),
-        const SizedBox(height: 24),
+              );
+            }
+          ),
+          const SizedBox(height: 24),
+        ],
 
         // 5. PRESET COLORS
         const Center(child: Text("Preset Colors", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),

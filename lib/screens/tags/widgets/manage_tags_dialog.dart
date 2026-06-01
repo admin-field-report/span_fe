@@ -142,6 +142,7 @@ class _ManageTagsDialogState extends State<ManageTagsDialog> {
                                     label: 'Tag Color',
                                     currentColor: _newTagColor,
                                     onColorChanged: (c) => setState(() => _newTagColor = c),
+                                    showOpacity: false,
                                   ),
                                 ),
                               ),
