@@ -23,13 +23,17 @@ class GroupSelectableItem implements SelectableItem<String> {
 
 class CreateToolScreen extends StatefulWidget {
   final List<ToolGroup> availableGroups;
-  final List<AppTagGroup> availableTagGroups; 
+  final List<AppTagGroup> availableTagGroups;
+  final bool isTagGroupsLoading;
+  final bool isToolGroupsLoading; // 🚀 ADDED: Loading state for tool groups
   final String? initialGroupId;
 
   const CreateToolScreen({
     super.key, 
     required this.availableGroups,
     required this.availableTagGroups,
+    this.isTagGroupsLoading = false,
+    this.isToolGroupsLoading = false, // Default to false
     this.initialGroupId,
   });
 
@@ -51,8 +55,25 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
   @override
   void initState() {
     super.initState();
+    _checkAndSetInitialGroup();
+  }
+
+  // 🚀 FIX: This acts as the "Listener". It fires whenever the parent passes new data.
+  @override
+  void didUpdateWidget(CreateToolScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the available groups list changed (e.g., API finished loading), check again
+    if (widget.availableGroups != oldWidget.availableGroups && _selectedGroupId == null) {
+      _checkAndSetInitialGroup();
+    }
+  }
+
+  // Helper method to set the group safely
+  void _checkAndSetInitialGroup() {
     if (widget.initialGroupId != null && widget.availableGroups.any((g) => g.id == widget.initialGroupId)) {
-      _selectedGroupId = widget.initialGroupId;
+      setState(() {
+        _selectedGroupId = widget.initialGroupId;
+      });
     }
   }
 
@@ -116,7 +137,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // 🚀 Mobile: Pass isExpanded = false
                           _buildCanvasSection(theme, isExpanded: false),
                           const SizedBox(height: 32),
                           formFields,
@@ -133,10 +153,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                 children: [
                   Expanded(
                     flex: 3,
-                    // 🚀 FIX: Removed the SingleChildScrollView here! 
-                    // Padding allows the canvas to stretch to the parent's height.
                     child: Padding(
-                      // padding: const EdgeInsets.all(0.0),
                       padding: const EdgeInsets.fromLTRB(0, 15.0, 0, 0),
                       child: _buildCanvasSection(theme, isExpanded: true),
                     ),
@@ -165,26 +182,18 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  // 🚀 FIX: Added the isExpanded parameter
   Widget _buildCanvasSection(ThemeData theme, {required bool isExpanded}) {
-    
-    // The core canvas container
     Widget canvasContainer = Container(
       width: double.infinity, 
-      height: isExpanded ? null : 500, // 🚀 Fluid on desktop, fixed at 500 on mobile
+      height: isExpanded ? null : 500, 
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        // color: theme.colorScheme.surface,
-        // borderRadius: BorderRadius.circular(12),
-        // border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
+      decoration: const BoxDecoration(),
       child: Canvas(
         key: _canvasKey,
         leftActions: const [], rightActions: const [],
       ),
     );
 
-    // 🚀 Wrap in Expanded ONLY if requested (Desktop)
     if (isExpanded) {
       canvasContainer = Expanded(child: canvasContainer);
     }
@@ -205,7 +214,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        canvasContainer, // 🚀 Render the dynamic container here
+        canvasContainer, 
       ],
     );
   }
@@ -231,36 +240,110 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
 
           const Text("Tool Group *", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          FormControlSelect<String>(
-            value: _selectedGroupId,
-            hintText: "Select a group",
-            prefixIcon: Icons.folder_outlined,
-            items: widget.availableGroups.map((g) => GroupSelectableItem(g)).toList(),
-            onChanged: (val) => setState(() => _selectedGroupId = val),
-            validator: (value) => (value == null || value.isEmpty) ? 'Please select a group' : null,
-          ),
+          
+          // 🚀 SHOW LOADER OR SELECT DROPDOWN FOR TOOL GROUPS
+          if (widget.isToolGroupsLoading)
+            Container(
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18, 
+                    height: 18, 
+                    child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary)
+                  ),
+                  const SizedBox(width: 12),
+                  Text("Loading groups...", style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14)),
+                ],
+              ),
+            )
+          else
+            FormControlSelect<String>(
+              value: _selectedGroupId,
+              hintText: widget.availableGroups.isEmpty ? "No groups found" : "Select a group",
+              prefixIcon: Icons.folder_outlined,
+              items: widget.availableGroups.map((g) => GroupSelectableItem(g)).toList(),
+              onChanged: (val) => setState(() => _selectedGroupId = val),
+              validator: (value) => (value == null || value.isEmpty) ? 'Please select a group' : null,
+            ),
+            
           const SizedBox(height: 32),
 
           const Text("3. Tags (Optional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          
-          ...widget.availableTagGroups.map((tagGroup) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(tagGroup.name, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8, 
-                    runSpacing: 8,
-                    children: tagGroup.tags.map((tag) => _buildColoredTagChip(tag, theme)).toList(),
-                  )
-                ],
+
+          if (widget.isTagGroupsLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
+                ),
               ),
-            );
-          }),
+            )
+          else if (widget.availableTagGroups.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Text(
+                  "No tag groups available.",
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...widget.availableTagGroups.map((tagGroup) {
+              return Container(
+                width: double.infinity, 
+                margin: const EdgeInsets.only(bottom: 16.0), 
+                padding: const EdgeInsets.all(16.0), 
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withOpacity(0.5), 
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(12), 
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tagGroup.name, 
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant, 
+                        fontSize: 13, 
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    tagGroup.tags.isEmpty
+                        ? Text(
+                            "No tags available",
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          )
+                        : Wrap(
+                            spacing: 8, 
+                            runSpacing: 8,
+                            children: tagGroup.tags.map((tag) => _buildColoredTagChip(tag, theme)).toList(),
+                          )
+                  ],
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -268,6 +351,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
 
   Widget _buildColoredTagChip(AppTag tag, ThemeData theme) {
     bool isSelected = _selectedTagIds.contains(tag.id);
+    final Color foregroundColor = isSelected ? Colors.white : tag.color;
 
     return InkWell(
       onTap: () {
@@ -278,26 +362,35 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       borderRadius: BorderRadius.circular(16),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), 
         decoration: BoxDecoration(
-          color: isSelected ? tag.color.withOpacity(0.15) : Colors.transparent,
+          color: isSelected ? tag.color : Colors.transparent,
           border: Border.all(
-            color: isSelected ? tag.color : theme.colorScheme.outlineVariant.withOpacity(0.5),
-            width: isSelected ? 1.5 : 1,
+            color: tag.color, 
+            width: 1.5,
           ),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: tag.color, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
+            isSelected
+                ? Icon(Icons.check, size: 14, color: foregroundColor)
+                : Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: tag.color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+            const SizedBox(width: 6),
             Text(
               tag.name,
               style: TextStyle(
-                color: isSelected ? tag.color : theme.colorScheme.onSurface,
+                color: foregroundColor,
                 fontSize: 13,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600, 
               ),
             ),
           ],
@@ -318,7 +411,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       ),
       child: SafeArea(
         top: false, 
-        // 🚀 Converted to a Row to hold both the Cancel and Save buttons seamlessly
         child: Row(
           children: [
             Button(
@@ -333,7 +425,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                 variant: ButtonVariant.filled,
                 icon: Icons.check,
                 isLoading: _isLoading, 
-                // padding: const EdgeInsets.symmetric(vertical: 16),
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
                 onPressed: _isLoading ? null : _saveTool, 
               ),
@@ -344,6 +435,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 }
+
 
 
 class CreateToolGroupPanel extends StatefulWidget {

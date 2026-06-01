@@ -144,7 +144,7 @@ class _ProjectSettingsManagerState extends State<ProjectSettingsManager> with Si
         children: [
           // --- HEADER ---
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -171,7 +171,7 @@ class _ProjectSettingsManagerState extends State<ProjectSettingsManager> with Si
                     child: TabBar(
                       controller: _tabController,
                       isScrollable: true,
-                      tabAlignment: TabAlignment.center,
+                      tabAlignment: TabAlignment.start,
                       padding: EdgeInsets.zero,
                       labelPadding: const EdgeInsets.only(right: 24), 
                       dividerColor: Colors.transparent, 

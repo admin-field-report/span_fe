@@ -180,26 +180,32 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                         variant: ButtonVariant.outline,
                         icon: Icons.add,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        onPressed: () async {
-                          final didCreate = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CreateToolScreen(
-                                availableGroups: _toolController.toolGroups, 
-                                initialGroupId: activeGroup?.id,
-                                availableTagGroups: _tagController.tagGroups,
-                              ),
-                            ),
-                          );
+                        isLoading: _toolController.isGroupsLoading || _tagController.isGroupsLoading,
+                        // 🚀 Simply disable the button if the controllers are still loading
+                        onPressed: (_toolController.isGroupsLoading || _tagController.isGroupsLoading) 
+                            ? null 
+                            : () async {
+                                final didCreate = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => CreateToolScreen(
+                                      availableGroups: _toolController.toolGroups, 
+                                      isToolGroupsLoading: false, // We know it's false now!
+                                      initialGroupId: activeGroup?.id,
+                                      availableTagGroups: _tagController.tagGroups,
+                                      isTagGroupsLoading: false, // We know it's false now!
+                                    ),
+                                  ),
+                                );
 
-                          if (didCreate == true) {
-                            final currentGroupId = activeGroup?.id;
-                            if (currentGroupId != null) {
-                              _toolController.fetchGroupDetails(currentGroupId);
-                              _toolController.fetchMasterTools();
-                            }
-                          }
-                        },
+                                if (didCreate == true) {
+                                  final currentGroupId = activeGroup?.id;
+                                  if (currentGroupId != null) {
+                                    _toolController.fetchGroupDetails(currentGroupId);
+                                    _toolController.fetchMasterTools();
+                                  }
+                                }
+                              },
                       ),
                     ],
                   ),

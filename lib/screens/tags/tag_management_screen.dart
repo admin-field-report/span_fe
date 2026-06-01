@@ -39,7 +39,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.fetchGroups();
-      // _controller.fetchTags(); // 🚀 Commented out global tags fetch
+      _controller.fetchTags(); // 🚀 Commented out global tags fetch
       _controller.fetchTemplates();
     });
     
@@ -856,7 +856,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tag.color.withOpacity(0.1), border: Border.all(color: tag.color.withOpacity(0.5)), borderRadius: BorderRadius.circular(16),
+        // color: tag.color.withOpacity(0.1),
+        border: Border.all(color: tag.color.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

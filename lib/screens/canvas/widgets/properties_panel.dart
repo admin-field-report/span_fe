@@ -286,19 +286,56 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
 
                   Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  if (widget.availableTags.isEmpty) Text("No tags available.", style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
+                  
+                  if (widget.availableTags.isEmpty) 
+                    Text("No tags available.", style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
+                  
                   Wrap(
-                    spacing: 8, runSpacing: 8,
+                    spacing: 8, 
+                    runSpacing: 8,
                     children: widget.availableTags.map((tag) {
                       final isSelected = tagIds.contains(tag.id);
-                      return FilterChip(
-                        label: Text(tag.name, style: TextStyle(fontSize: 12, color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface)), 
-                        selected: isSelected, 
-                        selectedColor: tag.color, 
-                        checkmarkColor: theme.colorScheme.onPrimary, 
-                        backgroundColor: tag.color.withOpacity(0.1), 
-                        side: BorderSide(color: tag.color.withOpacity(isSelected ? 0.0 : 0.5)), 
-                        onSelected: (_) => _toggleTag(tag.id)
+                      final Color foregroundColor = isSelected ? Colors.white : tag.color;
+
+                      return InkWell(
+                        onTap: () => _toggleTag(tag.id), // 🚀 Using your existing toggle function
+                        borderRadius: BorderRadius.circular(16),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected ? tag.color : Colors.transparent,
+                            border: Border.all(
+                              color: tag.color,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              isSelected
+                                  ? Icon(Icons.check, size: 14, color: foregroundColor)
+                                  : Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: BoxDecoration(
+                                        color: tag.color,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                              const SizedBox(width: 6),
+                              Text(
+                                tag.name,
+                                style: TextStyle(
+                                  color: foregroundColor,
+                                  fontSize: 13,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     }).toList(),
                   ),

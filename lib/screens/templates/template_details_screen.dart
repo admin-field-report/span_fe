@@ -206,8 +206,17 @@ final Set<int> _fetchedTabs = {};
                         itemBuilder: (context, index) {
                           final group = tagGroups[index];
                           
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                          return Container(
+                            width: double.infinity, // Ensures all boxes stretch to the same width
+                            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), // Outer spacing
+                            padding: const EdgeInsets.all(16.0), // Inner spacing
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant, 
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(12), 
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -215,10 +224,17 @@ final Set<int> _fetchedTabs = {};
                                   group.name, 
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 12),
                                 
                                 group.tags.isEmpty
-                                    ? Text("No tags in this group.", style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant))
+                                    ? Text(
+                                        "No tags available", 
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      )
                                     : Wrap(
                                         spacing: 8,
                                         runSpacing: 8,
@@ -342,7 +358,7 @@ final Set<int> _fetchedTabs = {};
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tag.color.withOpacity(0.1), // 🚀 Light background tint
+        // color: tag.color.withOpacity(0.1), // 🚀 Light background tint
         border: Border.all(color: tag.color.withOpacity(0.5)), // 🚀 Outlined border
         borderRadius: BorderRadius.circular(16),
       ),
@@ -412,8 +428,8 @@ final Set<int> _fetchedTabs = {};
                   : Container(
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                        // borderRadius: BorderRadius.circular(8),
+                        // border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
                       ),
                       child: ListView.separated(
                         itemCount: itemCount,
