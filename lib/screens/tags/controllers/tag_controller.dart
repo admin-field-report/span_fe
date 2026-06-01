@@ -192,7 +192,7 @@ class TagController extends ChangeNotifier {
   Future<String?> createTagGroup({  
     required String name,
     required List<String> tagIds,
-    required List<String> templateIds,
+    // required List<String> templateIds,
     required List<Map<String, String>> newTags, // <-- ADD THIS
   }) async {
     notifyListeners();
@@ -201,7 +201,7 @@ class TagController extends ChangeNotifier {
       final payload = {
         "name": name,
         "tag_id_list": tagIds,
-        "template_id_list": templateIds,
+        // "template_id_list": templateIds,
         "new_tag_list": newTags,
       };
 

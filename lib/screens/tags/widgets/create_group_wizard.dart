@@ -5,22 +5,18 @@ import '../../../../widgets/button/button.dart';
 import '../../../../widgets/form_components/color_picker_field.dart';
 import '../controllers/tag_controller.dart';
 import '../../../../models/tag_models.dart';
-import '../../../utils/app_responsive.dart';
+// import '../../../utils/app_responsive.dart';
 import 'inline_selection_filter.dart';
 
-// 🚀 1. Removed the underscore here to make it public!
 class CreateGroupWizard extends StatefulWidget {
   final TagController controller;
   
-  // 🚀 Added super.key for best practices
   const CreateGroupWizard({super.key, required this.controller});
 
   @override
-  // 🚀 2. Updated the State reference here!
   State<CreateGroupWizard> createState() => _CreateGroupWizardState();
 }
 
-// 🚀 3. Updated the State class definition here!
 class _CreateGroupWizardState extends State<CreateGroupWizard> {
   int _currentStep = 0;
   bool _isSubmitting = false;
@@ -34,20 +30,21 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
   String _colorToHex(Color color) => '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
   Color _hexToColor(String hex) => Color(int.parse(hex.replaceFirst('#', 'FF'), radix: 16));
   
-  Set<String> _selectedTagIds = {};
-  Set<String> _selectedTemplateIds = {};
+  final Set<String> _selectedTagIds = {};
+  // final Set<String> _selectedTemplateIds = {}; // 🚀 Commented out
 
   void _onStepContinue() async {
     if (_currentStep == 0 && !(_formKey.currentState?.validate() ?? false)) return;
 
-    if (_currentStep < 2) {
+    // 🚀 Changed from < 2 to < 1 since we only have 2 steps now (0 and 1)
+    if (_currentStep < 1) {
       setState(() => _currentStep += 1);
     } else {
       setState(() => _isSubmitting = true);
       final newGroupId = await widget.controller.createTagGroup(
         name: _nameController.text.trim(), 
         tagIds: _selectedTagIds.toList(), 
-        templateIds: _selectedTemplateIds.toList(),
+        // templateIds: _selectedTemplateIds.toList(), // 🚀 Commented out payload
         newTags: _newlyCreatedTags,
       );
       if (!mounted) return;
@@ -81,12 +78,13 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = AppResponsive.isDesktopScreen(context);
+    // final isDesktop = AppResponsive.isDesktopScreen(context);
 
     return Form(
       key: _formKey,
       child: Stepper(
-        type: isDesktop ? StepperType.horizontal : StepperType.vertical,
+        // 🚀 Forced to vertical to ensure it stays left-aligned
+        type: StepperType.horizontal, 
         currentStep: _currentStep,
         elevation: 0,
         controlsBuilder: (context, details) => Padding(
@@ -101,10 +99,11 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
               ),
               const SizedBox(width: 12),
               Button(
-                label: _currentStep == 2 
+                // 🚀 Changed step check from 2 to 1
+                label: _currentStep == 1 
                     ? (_isSubmitting ? "Creating..." : "Create Group") 
                     : "Continue", 
-                isLoading: _currentStep == 2 && _isSubmitting,
+                isLoading: _currentStep == 1 && _isSubmitting,
                 onPressed: _isSubmitting ? null : _onStepContinue, 
               ),
             ],
@@ -129,7 +128,6 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
             content: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 🚀 1. CREATE NEW TAG INLINE FORM
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -143,7 +141,6 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
                       const Text("Create & Add New Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 12),
                       
-                      // Using a safe stacked layout to ensure the ColorPickerField doesn't get squished
                       FormControlTextField(
                         controller: _newTagNameController,
                         hintText: "New tag name...",
@@ -170,7 +167,6 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
                         ],
                       ),
                       
-                      // 🚀 CHIPS FOR STAGED NEW TAGS
                       if (_newlyCreatedTags.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         const Divider(height: 1),
@@ -198,9 +194,8 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
                 const Text("Select Existing Tags", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(height: 8),
                 
-                // 🚀 2. EXISTING TAG SELECTION (Your original component)
                 SizedBox(
-                  height: 250, // Slightly reduced to balance the screen
+                  height: 250,
                   child: InlineSelectionFilter<AppTag>(
                     allItems: widget.controller.globalTags, 
                     selectedIds: _selectedTagIds, 
@@ -212,6 +207,7 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
               ],
             ),
           ),
+          /* 🚀 COMMENTED OUT TEMPLATES STEP
           Step(
             title: const Text("Templates"), isActive: _currentStep >= 2,
             content: SizedBox(
@@ -222,6 +218,7 @@ class _CreateGroupWizardState extends State<CreateGroupWizard> {
               ),
             ),
           ),
+          */
         ],
       ),
     );
