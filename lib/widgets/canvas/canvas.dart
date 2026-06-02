@@ -270,6 +270,11 @@ class CanvasState extends State<Canvas> {
                     _activeObject = textObj;
                     widget.onSelectionChanged?.call(textObj); 
                   }
+                  // 🚀 Auto-switch to Select tool after adding or editing Text
+                  if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
+                    _selectedTool = 'Select';
+                    widget.onToolChanged?.call('Select');
+                  }
                 });
               }
               Navigator.pop(context);
@@ -575,6 +580,12 @@ class CanvasState extends State<Canvas> {
         _activeObject = _currentPreview;
         _currentPreview = null;
         widget.onSelectionChanged?.call(_activeObject); 
+
+        // 🚀 Auto-switch to Select tool after drawing (except Pencil, Pen, and Eraser)
+        if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
+          _selectedTool = 'Select';
+          widget.onToolChanged?.call('Select');
+        }
       }
       _activeHandle = ResizeHandle.none;
     });
