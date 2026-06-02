@@ -91,7 +91,8 @@ class ProjectController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _apiService.get('/templateDocument/project/$projectId');
+      final response = await _apiService.get('/projectDocument/project/$projectId');
+
       final Map<String, dynamic> responseData = jsonDecode(response.body); 
 
       if (responseData['success'] == true) {

@@ -85,17 +85,15 @@ final router = GoRouter(
                   },
                   routes: [
                     GoRoute(
-                      path: 'canvas/:projectDocumentId', 
+                      path: '/canvas', 
                       builder: (context, state) {
                         final documentId = state.uri.queryParameters['document'] ?? '';
-                        final projectDocumentId = state.pathParameters['projectDocumentId'] ?? '';
                         final page = state.uri.queryParameters['page'] ?? '1';
 
                         return CanvasScreen(
                           projectId: state.pathParameters['id']!, 
                           inspectionId: state.pathParameters['inspectionId']!,
                           documentId: documentId,
-                          projectDocumentId: projectDocumentId,
                           page: page,
                         );
                       },

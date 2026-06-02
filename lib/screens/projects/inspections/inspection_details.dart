@@ -180,14 +180,13 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 final String documentId = doc['id']; 
-                final String projectDocumentId = doc['project_document_id'] ?? '';
 
                 final currentPath = GoRouterState.of(context).uri.path;
                 final cleanPath = currentPath.endsWith('/') 
                     ? currentPath.substring(0, currentPath.length - 1) 
                     : currentPath;
                     
-                final canvasUrl = '$cleanPath/canvas/$projectDocumentId?document=$documentId&page=1';
+                final canvasUrl = '$cleanPath/canvas?document=$documentId&page=1';
                 
                 context.go(
                   canvasUrl,

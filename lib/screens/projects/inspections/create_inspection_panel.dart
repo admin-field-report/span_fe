@@ -34,7 +34,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
     
     try {
       final responses = await Future.wait([
-        _apiService.get('/templateDocument/project/${widget.projectId}'),
+        _apiService.get('/projectDocument/project/${widget.projectId}'),
         _apiService.get('/inspection/project/${widget.projectId}'),
       ]);
 

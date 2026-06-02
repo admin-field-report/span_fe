@@ -16,7 +16,6 @@ import 'widgets/custom_tools_panel.dart';
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
-  final String projectDocumentId;
   final String projectId;
   final String inspectionId;
   final String page;
@@ -31,7 +30,6 @@ class CanvasScreen extends StatefulWidget {
     required this.projectId,
     required this.inspectionId,
     required this.documentId,
-    required this.projectDocumentId,
     this.page = '1',
     this.annotateImageUrl,
     this.annotateImageKey,
@@ -51,6 +49,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isSaving = false;
 
   bool _hasUnsavedChanges = false;
+  bool _hasUnsavedImageChanges = false;
 
   DrawingObject? _selectedCanvasObject;
   List<CustomToolGroup> _customToolGroups = [];
@@ -116,7 +115,7 @@ void _switchPage(String newPage) async {
   
   Future<void> _fetchInspectionAnnotation() async {
     try {
-      final response = await _apiService.get('/inspection/document/annotation/${widget.projectDocumentId}');
+      final response = await _apiService.get('/inspection/document/annotation/${widget.documentId}');
       final resData = jsonDecode(response.body);
 
       if (resData['success'] == true && resData['data'] != null) {
@@ -152,7 +151,7 @@ void _switchPage(String newPage) async {
         ],
         "project_id": widget.projectId,
         "inspection_id": widget.inspectionId,
-        "project_document_id": widget.projectDocumentId,
+        "project_document_id": widget.documentId,
       };
       await _apiService.post('/inspection/document/add-annotation', payload);
     } catch (e) {
@@ -169,7 +168,7 @@ void _switchPage(String newPage) async {
         "content_type": "image/jpeg", 
         "project_id": widget.projectId,
         "inspection_id": widget.inspectionId,
-        "project_document_id": widget.projectDocumentId,
+        "project_document_id": widget.documentId,
       };
       
       final response = await _apiService.post('/inspection/document/image/presigned-url', payload);
@@ -326,7 +325,7 @@ void _switchPage(String newPage) async {
   
   Future<void> _fetchPageList() async {
     try {
-      final response = await _apiService.get('/templateDocumentPage/template-document/${widget.documentId}');
+      final response = await _apiService.get('/projectDocumentPage/project-document/${widget.documentId}');
       final responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
@@ -355,7 +354,7 @@ void _switchPage(String newPage) async {
 
     setState(() => _isPageLoading = true);
     try {
-      final response = await _apiService.get('/templateDocumentPage/pdf/${pageData.pageId}');
+      final response = await _apiService.get('/projectDocumentPage/project-document-page-pdf/${pageData.pageId}');
       final responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
@@ -373,7 +372,7 @@ void _switchPage(String newPage) async {
     if (pageData == null || pageData.hasLoadedAnnotations) return;
 
     try {
-      final String url = '/canvas/jsonDataFromS3?project_id=${widget.projectId}&page_name=${Uri.encodeComponent(pageName)}&template_document_id=${widget.documentId}&template_document_page_id=${pageData.pageId}&inspection_id=${widget.inspectionId}';
+      final String url = '/canvas/jsonDataFromS3?project_id=${widget.projectId}&page_name=${Uri.encodeComponent(pageName)}&project_document_id=${widget.documentId}&project_document_page_id=${pageData.pageId}&inspection_id=${widget.inspectionId}';
       final response = await _apiService.get(url);
       final responseData = jsonDecode(response.body);
 
@@ -510,13 +509,12 @@ void _switchPage(String newPage) async {
             List<Map<String, dynamic>> canvasDataObj = [
               {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
             ];
-
             Map<String, dynamic> payload = {
               "project_id": widget.projectId,
               "page_name": pageName,
               "canvas_data": jsonEncode(canvasDataObj),
-              "template_document_id": widget.documentId,
-              "template_document_page_id": pageData.pageId,
+              "project_document_id": widget.documentId,
+              "project_document_page_id": pageData.pageId,
               "inspection_id": widget.inspectionId
             };
 
@@ -534,6 +532,7 @@ void _switchPage(String newPage) async {
           }
         }
         _hasUnsavedChanges = false;
+        _hasUnsavedImageChanges = false;
         if (mounted) ToastService.show(context, message: "All Annotations saved successfully!", type: ToastType.success);
       }
     } catch (e) {
@@ -830,42 +829,39 @@ void _switchPage(String newPage) async {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    if (_hasUnsavedChanges) {
-      // 🚀 Show popup if there are unsaved changes
+    if (_hasUnsavedImageChanges) {
       await showDialog(
         context: context,
         builder: (context) => ConfirmationDialog(
-          title: "Unsaved Changes",
-          description: "You have unsaved changes on this canvas. Please save them before annotating this image.",
+          title: "Unsaved Images",
+          description: "You have uploaded or deleted images. Please save these changes before annotating.",
           confirmLabel: "Save & Open",
           cancelLabel: "Close",
-          // confirmColor: isDark ? Colors.white : Colors.black, 
           confirmColor: Colors.green,
           onConfirm: () async {
-            // 1. Await the save function
-            await _saveAnnotations();
             
-            // 2. Check if save was successful
-            if (!_hasUnsavedChanges) {
+            await _saveAnnotations(); // Or whatever your save method is called
+            
+            // 🚀 2. Check the specific image flag to see if save was successful
+            if (!_hasUnsavedImageChanges) {
               shouldNavigate = true;
             } else {
-              throw Exception("Failed to save annotations."); 
+              throw Exception("Failed to save images."); 
             }
           },
         ),
       );
     } else {
-      // 🚀 No unsaved changes, safe to navigate immediately
+      // No unsaved image changes, safe to navigate immediately
       shouldNavigate = true;
     }
 
-    // 🚀 Perform the navigation AFTER the dialog has safely closed
+    // Perform the navigation AFTER the dialog has safely closed
     if (shouldNavigate && mounted) {
       Navigator.push(
         context, 
         MaterialPageRoute(
           builder: (context) => CanvasScreen(
-            projectDocumentId: widget.projectDocumentId,
             documentId: widget.documentId, 
             projectId: widget.projectId,
             inspectionId: widget.inspectionId, 
@@ -979,6 +975,9 @@ void _switchPage(String newPage) async {
                 } else {
                   await _uploadInspectionImage(fileName, bytes);
                 }
+                setState(() {
+                  _hasUnsavedImageChanges = true;
+                });
               },
               
               onImageDelete: (s3Key) async {
@@ -987,7 +986,7 @@ void _switchPage(String newPage) async {
                 } else {
                   setState(() {
                     _inspectionImageUrls.remove(s3Key);
-                    _hasUnsavedChanges = true;
+                    _hasUnsavedImageChanges = true;
                   });
                   await _saveInspectionLevelAnnotation(); 
                 }

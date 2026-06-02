@@ -93,20 +93,20 @@ class _UploadDocumentPanelState extends State<UploadDocumentPanel> {
       // ==========================================
       // STEP 3: Save Base Document Record
       // ==========================================      
-      final createPayload = {
-        "document_url": documentKey, 
-        "document_name": _selectedFile!.name,
-      };
+      // final createPayload = {
+      //   "document_url": documentKey, 
+      //   "document_name": _selectedFile!.name,
+      // };
 
-      final createResponse = await _apiService.post('/templateDocument/createTemplateDocument', createPayload);
-      final createData = jsonDecode(createResponse.body);
+      // final createResponse = await _apiService.post('/templateDocument/createTemplateDocument', createPayload);
+      // final createData = jsonDecode(createResponse.body);
 
-      if (createData['success'] != true) {
-        throw Exception(createData['message'] ?? "Database creation failed.");
-      }
+      // if (createData['success'] != true) {
+      //   throw Exception(createData['message'] ?? "Database creation failed.");
+      // }
 
-      // 🚀 Grab the newly created document ID for Step 4!
-      final newTemplateDocumentId = createData['data']['id'];
+      // // 🚀 Grab the newly created document ID for Step 4!
+      // final newTemplateDocumentId = createData['data']['id'];
 
       // ==========================================
       // STEP 4: Link Document to Project
@@ -114,7 +114,9 @@ class _UploadDocumentPanelState extends State<UploadDocumentPanel> {
 
       final linkPayload = {
         "project_id": widget.projectId,
-        "template_document_id": newTemplateDocumentId,
+        // "template_document_id": newTemplateDocumentId,
+        "document_url": documentKey,
+        "document_name": _selectedFile!.name,
       };
 
       final linkResponse = await _apiService.post('/projectDocument/document', linkPayload);
