@@ -86,7 +86,7 @@ class ProjectController extends ChangeNotifier {
     }
   }
 
-  Future<void> getAllDocuments(String projectId) async {
+Future<void> getAllDocuments(String projectId) async {
     _isDocumentsLoading = true;
     notifyListeners();
 
@@ -98,11 +98,15 @@ class ProjectController extends ChangeNotifier {
       if (responseData['success'] == true) {
         final List dataList = responseData['data'] ?? [];
         _documents = dataList.map((item) => ProjectDocument.fromJson(item)).toList();
+
+        _documents.sort((a, b) {
+          if (a.createTime == null || b.createTime == null) return 0;
+          return b.createTime!.compareTo(a.createTime!);
+        });
       }
-      debugPrint("Loaded ${_documents.length} documents for project $projectId");
+      
     } catch (e) {
       _error = e.toString();
-      debugPrint("Error loading documents for project $projectId: $_error");
     } finally {
       _isDocumentsLoading = false;
       notifyListeners();

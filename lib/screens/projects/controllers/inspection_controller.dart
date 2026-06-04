@@ -82,17 +82,24 @@ class InspectionController extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
+Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
     try {
       final response = await _apiService.get('/projectDocument/$inspectionId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
-        return List<Map<String, dynamic>>.from(responseData['data']);
+        final docs = List<Map<String, dynamic>>.from(responseData['data']);
+        
+        docs.sort((a, b) {
+          final timeA = a['create_time']?.toString() ?? '';
+          final timeB = b['create_time']?.toString() ?? '';
+          return timeB.compareTo(timeA);
+        });
+        
+        return docs;
       }
       return [];
     } catch (e) {
-      debugPrint("Doc Fetch Error: $e");
       return [];
     }
   }
