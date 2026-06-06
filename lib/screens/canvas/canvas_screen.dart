@@ -953,30 +953,35 @@ Widget _buildPageSelector(ThemeData theme) {
             customTabContent: CustomToolsPanel(
               groups: _customToolGroups,
               selectedTool: _selectedCustomTool,
-              // 🚀 NEW: Updated logic to split between Native and Stamp drawing behaviors
               onToolSelected: (tool) {
                 setState(() {
-                  _selectedCustomTool = tool;
-
-                  if (tool.toolObjects.length == 1) {
-                    // 🚀 SINGLE OBJECT: Extract props and trigger native drawing mode
-                    final obj = tool.toolObjects.first;
-                    final nativeToolName = _getToolNameFromType(obj.type);
-                    
+                  if (_selectedCustomTool?.toolId == tool.toolId) {
+                    _selectedCustomTool = null;
                     _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      nativeToolName, 
-                      obj.strokeWidth, 
-                      obj.color, 
-                      obj.fillColor ?? Colors.transparent, 
-                      obj.opacity,
+                      'Select', 2.0, Colors.black, Colors.transparent, 1.0,
                     );
                   } else {
-                    // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                      customToolId: tool.toolId,
-                      customToolShapes: tool.toolObjects, 
-                    );
+                    _selectedCustomTool = tool;
+
+                    if (tool.toolObjects.length == 1) {
+                      final obj = tool.toolObjects.first;
+                      final nativeToolName = _getToolNameFromType(obj.type);
+                      
+                      _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                        nativeToolName, 
+                        obj.strokeWidth, 
+                        obj.color, 
+                        obj.fillColor ?? Colors.transparent, 
+                        obj.opacity,
+                      );
+                    } else {
+                      // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
+                      _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                        'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+                        customToolId: tool.toolId,
+                        customToolShapes: tool.toolObjects, 
+                      );
+                    }
                   }
                 });
               },

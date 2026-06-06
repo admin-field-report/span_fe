@@ -60,10 +60,9 @@ class CanvasState extends State<Canvas> {
   final GlobalKey _viewerKey = GlobalKey();
   
   bool _isFullScreen = false;
-  
   bool _showLeftPanel = false; 
 
-  // 🚀 NEW: STATE VARIABLES FOR RESIZABLE PANELS
+  // STATE VARIABLES FOR RESIZABLE PANELS
   double _leftPanelWidth = 250.0;
   double _rightPanelWidth = 320.0;
 
@@ -385,10 +384,10 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
       }
       
-      // 🚀 RESTRICT ARROW & LINE TO ONLY START AND END HANDLES (Ignoring Rect bounding box)
+      // 🚀 RESTRICT ARROW & LINE TO ONLY START AND END HANDLES
       if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-        if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; // Maps to start
-        if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; // Maps to end
+        if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
+        if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
       } else {
         Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
         if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
@@ -406,7 +405,6 @@ class CanvasState extends State<Canvas> {
       }
     }
     
-    // 🚀 INCLUDED ARROW IN THE LINE SEGMENT CHECK FOR EASIER BODY DRAGGING
     if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
       if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
@@ -560,7 +558,6 @@ class CanvasState extends State<Canvas> {
           }
         } else if (_activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.arrow) {
           // 🚀 CUSTOM DRAGGING LOGIC FOR ARROWS AND LINES
-          // This detaches them from the Rect layout so you can directly control endpoints
           final localP = _toLocalSpace(pos, _activeObject!);
           if (_activeHandle == ResizeHandle.topLeft) {
             _activeObject!.start = localP;
@@ -701,7 +698,6 @@ class CanvasState extends State<Canvas> {
 
             String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
             const double squareWidth = 240.0; const double squareHeight = 200.0;
-            // Keep opacity mode-based. Only color pickers that own object opacity show this control.
             final bool showOpacity = (mode == 3 || mode == 6 || mode == 7);
             final bool showNone = showOpacity;
 
@@ -989,12 +985,18 @@ class CanvasState extends State<Canvas> {
               return InkWell(
                 onTap: () {
                   setState(() {
-                    _selectedTool = tool.name;
+                    if (_selectedTool == tool.name) {
+                      _selectedTool = 'Select';
+                    } else {
+                      _selectedTool = tool.name;
+                    }
+                    
                     for (var obj in _drawingObjects) obj.isSelected = false;
                     _activeObject = null;
                     widget.onSelectionChanged?.call(null); 
                   });
-                  widget.onToolChanged?.call(tool.name);
+                  
+                  widget.onToolChanged?.call(_selectedTool); 
                 },
                 child: Container(
                   decoration: BoxDecoration(
@@ -1223,7 +1225,6 @@ class CanvasState extends State<Canvas> {
       ),
     );
   }
-
 
   bool _isFreehandType(DrawingType type) => type == DrawingType.pencil || type == DrawingType.pen;
 
@@ -2081,9 +2082,6 @@ class CanvasState extends State<Canvas> {
               Expanded(
                 child: Stack(
                   children: [
-                    // ==========================================
-                    // 1. BASE LAYER: Canvas + Custom Right Panel
-                    // ==========================================
                     Row(
                       children: [
                         Expanded(
@@ -2214,7 +2212,6 @@ class CanvasState extends State<Canvas> {
                           ),
                         ),
                       ),
-
                   ],
                 ),
               ),
