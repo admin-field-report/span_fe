@@ -870,6 +870,7 @@ class CanvasState extends State<Canvas> {
   Widget _topToolbarButton({
     required ThemeData theme,
     required IconData icon,
+    Color? iconColor,
     required String tooltip,
     required VoidCallback? onTap,
     bool isSelected = false,
@@ -921,7 +922,7 @@ class CanvasState extends State<Canvas> {
               borderRadius: BorderRadius.circular(10),
               border: border,
             ),
-            child: Icon(icon, size: isMobile ? 15 : 17, color: foregroundColor),
+            child: Icon(icon, size: isMobile ? 15 : 17, color: iconColor ?? foregroundColor),
           ),
         ),
       ),
@@ -1156,6 +1157,7 @@ class CanvasState extends State<Canvas> {
         _topToolbarButton(
           theme: theme,
           icon: Icons.delete_outline_rounded,
+          iconColor: Colors.redAccent,
           tooltip: 'Delete selected',
           isDestructive: true,
           onTap: _activeObject != null ? _deleteSelected : null,
