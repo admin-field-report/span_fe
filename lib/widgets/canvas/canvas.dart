@@ -853,19 +853,112 @@ class CanvasState extends State<Canvas> {
   bool _isShapeSelected(String tool) => ['Rect', 'Circle', 'Line', 'Arrow', 'Polygon'].contains(tool);
   bool _isPatternSelected(String tool) => ['Brick', 'Grid', 'Horizontal', 'Vertical', 'Forward', 'Reverse', 'Diamond', 'Weave', 'Dots', 'Herringbone', 'Concrete', 'Shingles', 'Insulation'].contains(tool);
 
-  Widget _utilityIcon(IconData icon, String msg, ThemeData theme, VoidCallback onTap, {bool isDestructive = false, bool isEnabled = true}) {
+  Widget _topToolbarGroup(ThemeData theme, List<Widget> children) {
     final isMobile = AppResponsive.isMobileScreen(context);
-    return IconButton(
-      tooltip: msg,
-      onPressed: isEnabled ? onTap : null, 
-      iconSize: isMobile ? 16 : 20,
-      padding: EdgeInsets.all(isMobile ? 4 : 8),
-      constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-      icon: Icon(icon, color: isEnabled ? (isDestructive ? Colors.red : theme.colorScheme.onSurface) : theme.disabledColor)
+    return Container(
+      height: isMobile ? 30 : 34,
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.28),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.55)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 
-  Widget _vDiv(ThemeData theme) => VerticalDivider(width: 24, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
+  Widget _topToolbarButton({
+    required ThemeData theme,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    bool isSelected = false,
+    bool isDestructive = false,
+    bool isGrouped = false,
+  }) {
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final double size = isMobile ? 26 : 30;
+    final bool isEnabled = onTap != null;
+    final Color foregroundColor = !isEnabled
+        ? theme.disabledColor.withOpacity(0.55)
+        : isDestructive
+            ? theme.colorScheme.error
+            : isSelected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurfaceVariant;
+
+    final Color backgroundColor = isSelected
+        ? theme.colorScheme.primary.withOpacity(0.14)
+        : isGrouped
+            ? Colors.transparent
+            : theme.colorScheme.surfaceVariant.withOpacity(isEnabled ? 0.18 : 0.10);
+
+    final Border? border = isGrouped
+        ? (isSelected ? Border.all(color: theme.colorScheme.primary.withOpacity(0.22)) : null)
+        : Border.all(
+            color: isSelected
+                ? theme.colorScheme.primary.withOpacity(0.26)
+                : theme.colorScheme.outlineVariant.withOpacity(isEnabled ? 0.45 : 0.25),
+          );
+
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 400),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOutCubic,
+            width: size,
+            height: size,
+            margin: isGrouped ? const EdgeInsets.symmetric(horizontal: 1) : EdgeInsets.zero,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(10),
+              border: border,
+            ),
+            child: Icon(icon, size: isMobile ? 15 : 17, color: foregroundColor),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _compactExternalActions(ThemeData theme, List<Widget>? actions) {
+    if (actions == null || actions.isEmpty) return const SizedBox.shrink();
+
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final double size = isMobile ? 28 : 32;
+    final double gap = isMobile ? 4 : 6;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < actions.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceVariant.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.45)),
+            ),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: actions[i],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
     final isMobile = AppResponsive.isMobileScreen(context);
@@ -1002,99 +1095,121 @@ class CanvasState extends State<Canvas> {
 
   Widget _buildTopToolbar(ThemeData theme) {
     final isMobile = AppResponsive.isMobileScreen(context);
-    
+    final double toolbarHeight = isMobile ? 38 : 42;
+    final double itemGap = isMobile ? 4 : 6;
+    final bool hasLeftActions = widget.leftActions != null && widget.leftActions!.isNotEmpty;
+    final bool hasRightActions = widget.rightActions != null && widget.rightActions!.isNotEmpty;
+
+    void activateSelectTool() {
+      setState(() {
+        _selectedTool = 'Select';
+        for (var obj in _drawingObjects) obj.isSelected = false;
+        _activeObject = null;
+        widget.onSelectionChanged?.call(null);
+      });
+      widget.onToolChanged?.call('Select');
+    }
+
+    final leftGroup = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _topToolbarButton(
+          theme: theme,
+          icon: _showLeftPanel ? Icons.handyman : Icons.handyman_outlined,
+          tooltip: _showLeftPanel ? 'Hide tools' : 'Show tools',
+          isSelected: _showLeftPanel,
+          onTap: () => setState(() => _showLeftPanel = !_showLeftPanel),
+        ),
+        SizedBox(width: itemGap),
+        _topToolbarButton(
+          theme: theme,
+          icon: Icons.near_me_outlined,
+          tooltip: 'Select tool',
+          isSelected: _selectedTool == 'Select',
+          onTap: activateSelectTool,
+        ),
+        if (hasLeftActions) ...[
+          SizedBox(width: itemGap),
+          _compactExternalActions(theme, widget.leftActions),
+        ],
+        SizedBox(width: itemGap),
+        _topToolbarGroup(
+          theme,
+          [
+            _topToolbarButton(
+              theme: theme,
+              icon: Icons.undo_rounded,
+              tooltip: 'Undo',
+              onTap: _undoStack.isNotEmpty ? _undo : null,
+              isGrouped: true,
+            ),
+            _topToolbarButton(
+              theme: theme,
+              icon: Icons.redo_rounded,
+              tooltip: 'Redo',
+              onTap: _redoStack.isNotEmpty ? _redo : null,
+              isGrouped: true,
+            ),
+          ],
+        ),
+        SizedBox(width: itemGap),
+        _topToolbarButton(
+          theme: theme,
+          icon: Icons.delete_outline_rounded,
+          tooltip: 'Delete selected',
+          isDestructive: true,
+          onTap: _activeObject != null ? _deleteSelected : null,
+        ),
+      ],
+    );
+
+    final rightGroup = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (hasRightActions) ...widget.rightActions!,
+        
+        if (widget.showCloseButton && !_isFullScreen) ...[
+          if (hasRightActions) SizedBox(width: itemGap),
+          _topToolbarButton(
+            theme: theme,
+            icon: Icons.close_rounded,
+            tooltip: 'Close canvas',
+            onTap: widget.onClosePressed,
+          ),
+        ],
+      ],
+    );
+
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 8.0 : 16.0, vertical: isMobile ? 4.0 : 8.0),
+      height: toolbarHeight,
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 6.0 : 10.0, vertical: 4.0),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+        color: theme.colorScheme.surface.withOpacity(0.96),
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.45))),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  
-                  // --- LEFT ACTIONS GROUP ---
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: _showLeftPanel ? "Hide Tools" : "Show Tools",
-                        icon: Icon(_showLeftPanel ? Icons.handyman : Icons.handyman_outlined),
-                        color: theme.colorScheme.primary,
-                        iconSize: isMobile ? 16 : 20, 
-                        padding: EdgeInsets.all(isMobile ? 4 : 8),
-                        constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-                        onPressed: () => setState(() => _showLeftPanel = !_showLeftPanel),
-                      ),
-                      _vDiv(theme),
-
-                      Container(
-                        decoration: BoxDecoration(
-                          color: _selectedTool == 'Select' ? theme.colorScheme.primary.withOpacity(0.15) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: IconButton(
-                          tooltip: "Select Tool",
-                          iconSize: isMobile ? 16 : 20, 
-                          padding: EdgeInsets.all(isMobile ? 4 : 8),
-                          constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-                          icon: Icon(Icons.near_me, color: _selectedTool == 'Select' ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-                          onPressed: () {
-                            setState(() {
-                              _selectedTool = 'Select';
-                              for (var obj in _drawingObjects) obj.isSelected = false;
-                              _activeObject = null;
-                              widget.onSelectionChanged?.call(null); 
-                            });
-                            widget.onToolChanged?.call('Select'); 
-                          },
-                        ),
-                      ),
-                      _vDiv(theme),
-
-                      if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
-                        ...widget.leftActions!,
-
-                      _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
-                      _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
-                      _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
-                    ],
-                  ),
-
-                  // --- RIGHT ACTIONS GROUP ---
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(width: 16), 
-
-                      if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
-                        ...widget.rightActions!,
-
-                      if (widget.showCloseButton && !_isFullScreen) ...[
-                        const SizedBox(width: 8), 
-                        Container(
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-                            shape: BoxShape.circle,
-                          ),
-                          child: IconButton(
-                            icon: const Icon(Icons.close, size: 20),
-                            color: theme.colorScheme.onSurface,
-                            tooltip: "Close Canvas",
-                            onPressed: widget.onClosePressed,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-
+                  leftGroup,
+                  if (hasRightActions || (widget.showCloseButton && !_isFullScreen)) ...[
+                    SizedBox(width: isMobile ? 12 : 18),
+                    rightGroup,
+                  ],
                 ],
               ),
             ),

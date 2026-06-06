@@ -13,6 +13,7 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/confirmation/confirmation_remove.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
+import 'widgets/custom_action_button.dart';
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
@@ -1045,11 +1046,11 @@ Widget _buildPageSelector(ThemeData theme) {
             rightActions: [
               if (widget.annotateImageKey == null) _buildPageSelector(theme),
               const SizedBox(width: 12),
-              
-              // if (_isSaving)
-              //   Container(margin: const EdgeInsets.symmetric(horizontal: 12), width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: theme.colorScheme.primary))
-              // else
-              IconButton(tooltip: "Save Annotations", icon: const Icon(Icons.save_outlined), color: theme.colorScheme.primary, onPressed: _saveAnnotations),
+              CanvasToolbarActionButton(
+                tooltip: "Save Annotations",
+                icon: Icons.save_outlined,
+                onTap: _saveAnnotations,
+              ),
               
               const SizedBox(width: 8),
             ],

@@ -9,11 +9,13 @@ class MainScaffold extends StatefulWidget {
   final Widget child;
   final bool isScrollable;
   final bool removePadding;
+  final bool isFullScreen;
 
   const MainScaffold({
     required this.child,
     this.isScrollable = true,
     this.removePadding = false,
+    this.isFullScreen = false,
     super.key
   });
 
@@ -38,6 +40,18 @@ class _MainScaffoldState extends State<MainScaffold> {
         final bool isTabletRange = AppResponsive.isTabletScreen(context);
 
         bool effectiveCollapsed = isMobile ? false : (isTabletRange ? !_isCollapsed : _isCollapsed);
+
+        if (widget.isFullScreen) {
+          return Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            // body: widget.child, // Full-screen content without SafeArea or padding
+            body: SafeArea(
+              // If you want the canvas to go completely edge-to-edge (even under the notch),
+              // you can remove the SafeArea here.
+              child: widget.child, 
+            ),
+          );
+        }
 
         return Scaffold(
           key: _scaffoldKey,

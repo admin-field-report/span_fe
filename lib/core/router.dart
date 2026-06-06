@@ -51,6 +51,7 @@ final router = GoRouter(
         return MainScaffold(
           isScrollable: !isCanvasRoute,
           removePadding: removePadding,
+          isFullScreen: isCanvasRoute,
           child: child,
         );
       },
