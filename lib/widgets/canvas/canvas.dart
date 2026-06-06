@@ -5,7 +5,6 @@ import 'package:universal_html/html.dart' as html;
 
 import 'models/canvas_models.dart';
 import 'widgets/canvas_painter.dart';
-import 'widgets/property_panel.dart';
 import '../../utils/app_responsive.dart'; 
 
 // Helper class for the left sidebar tools
@@ -63,12 +62,10 @@ class CanvasState extends State<Canvas> {
   bool _isFullScreen = false;
   
   bool _showLeftPanel = false; 
-  bool _showPropertiesPanel = false; 
 
   // 🚀 NEW: STATE VARIABLES FOR RESIZABLE PANELS
   double _leftPanelWidth = 250.0;
   double _rightPanelWidth = 320.0;
-  double _propertiesPanelWidth = 260.0;
 
   String _selectedTool = 'Select';
 
@@ -701,8 +698,9 @@ class CanvasState extends State<Canvas> {
 
             String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
             const double squareWidth = 240.0; const double squareHeight = 200.0;
-            bool showOpacity = (mode == 3 || mode == 6 || mode == 7); 
-            bool showNone = (mode == 2 || mode == 3 || mode == 5 || mode == 6 || mode == 7); 
+            // Keep opacity mode-based. Only color pickers that own object opacity show this control.
+            final bool showOpacity = (mode == 3 || mode == 6 || mode == 7);
+            final bool showNone = showOpacity;
 
             return AlertDialog(
               contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
@@ -769,13 +767,23 @@ class CanvasState extends State<Canvas> {
                         value: localOpacity, min: 0.0, max: 1.0,
                         onChanged: (v) {
                           setDialogState(() => localOpacity = v);
-                            setState(() { 
-                              if (mode == 3) { 
-                                _shapeOpacity = v; 
-                                if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.diamond, DrawingType.reverseDiag, DrawingType.weave].contains(_activeObject!.type)) _activeObject!.opacity = v; 
+                          setState(() {
+                            if (mode == 3) {
+                              _shapeOpacity = v;
+                              if (_activeObject != null && _isStyledShapeType(_activeObject!.type)) {
+                                _activeObject!.opacity = v;
                               }
-                              else if (mode == 6) { _textOpacity = v; if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v; } 
-                              else if (mode == 7) { _pencilOpacity = v; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.opacity = v; }
+                            } else if (mode == 6) {
+                              _textOpacity = v;
+                              if (_activeObject?.type == DrawingType.text) {
+                                _activeObject!.opacity = v;
+                              }
+                            } else if (mode == 7) {
+                              _pencilOpacity = v;
+                              if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) {
+                                _activeObject!.opacity = v;
+                              }
+                            }
                           });
                         },
                       ),
@@ -857,221 +865,7 @@ class CanvasState extends State<Canvas> {
     );
   }
 
-  Widget _colorButton(String label, Color color, int mode) {
-    final isMobile = AppResponsive.isMobileScreen(context);
-    return GestureDetector(
-      onTap: () => _showColorPicker(mode),
-      child: Column(children: [
-        CircleAvatar(
-          radius: isMobile ? 12 : 14, 
-          backgroundColor: color == Colors.transparent ? Colors.grey[200] : color, 
-          child: color == Colors.transparent ? Icon(Icons.block, size: isMobile ? 10 : 12, color: Colors.red) : null
-        ),
-        const SizedBox(height: 4), 
-        Text(label, style: TextStyle(fontSize: isMobile ? 8 : 9)),
-      ]),
-    );
-  }
-
-  Widget _formatToggle(IconData icon, bool isActive, VoidCallback onTap, ThemeData theme) {
-    final isMobile = AppResponsive.isMobileScreen(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2), 
-        padding: EdgeInsets.all(isMobile ? 2 : 4),
-        decoration: BoxDecoration(color: isActive ? theme.colorScheme.primary.withOpacity(0.2) : Colors.transparent, borderRadius: BorderRadius.circular(4)),
-        child: Icon(icon, size: isMobile ? 14 : 16, color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-      ),
-    );
-  }
-
-  Widget _buildCompactSlider({
-    required String label, 
-    required String valueLabel, 
-    required double value, 
-    required double min, 
-    required double max, 
-    int? divisions,
-    required ValueChanged<double> onChanged
-  }) {
-    return SizedBox(
-      width: double.infinity, 
-      height: 32,
-      child: Row(children: [
-        SizedBox(width: 32, child: Text(valueLabel, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2.0,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
-            ),
-            child: Slider(
-              value: value, min: min, max: max, divisions: divisions,
-              onChanged: onChanged
-            )
-          )
-        ),
-      ]),
-    );
-  }
-
-  Widget _buildTextSizeSlider(ThemeData theme) {
-    return _buildCompactSlider(
-      label: "Size", valueLabel: "${_textSize.toInt()}px", value: _textSize, min: 10, max: 120, 
-      onChanged: (v) => setState(() { _textSize = v; if (_activeObject?.type == DrawingType.text) _activeObject!.fontSize = v; })
-    );
-  }
-
-  Widget _buildStrokeSlider(ThemeData theme, int mode) {
-    double currentWidth;
-    if (_activeObject != null) {
-      currentWidth = _activeObject!.strokeWidth;
-    } else {
-      switch (mode) { 
-        case 0: currentWidth = _pencilStrokeWidth; break; 
-        case 1: currentWidth = _shapeStrokeWidth; break; 
-        case 2: currentWidth = _textStrokeWidth; break; 
-        default: currentWidth = 2.0; 
-      }
-    }
-    currentWidth = currentWidth.clamp(1.0, 20.0);
-
-    return _buildCompactSlider(
-      label: "Width", valueLabel: "${currentWidth.toInt()}px", value: currentWidth, min: 1, max: 20, 
-      onChanged: (v) => setState(() {
-        if (mode == 0) { _pencilStrokeWidth = v; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.strokeWidth = v; } 
-        else if (mode == 1) { _shapeStrokeWidth = v; if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) { _activeObject!.strokeWidth = v; } }
-        else if (mode == 2) { _textStrokeWidth = v; if (_activeObject?.type == DrawingType.text) _activeObject!.strokeWidth = v; }
-      })
-    );
-  }
-
-  Widget _buildDensitySlider() {
-    double currentDensity = (_activeObject?.type == DrawingType.dots) ? _activeObject!.patternDensity : _patternDensity;
-    return _buildCompactSlider(
-      label: "Density", valueLabel: "${currentDensity.toInt()}%", value: currentDensity, min: 5, max: 100, divisions: 19,
-      onChanged: (v) => setState(() { _patternDensity = v; if (_activeObject?.type == DrawingType.dots) _activeObject!.patternDensity = v; })
-    );
-  }
-
   Widget _vDiv(ThemeData theme) => VerticalDivider(width: 24, indent: 10, endIndent: 10, color: theme.colorScheme.outlineVariant);
-
-  Widget _buildPropSection(ThemeData theme, String title, IconData icon, Widget content) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 12, color: theme.colorScheme.primary),
-            const SizedBox(width: 4), 
-            Text(title, style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: theme.colorScheme.primary, letterSpacing: 0.5)),
-          ],
-        ),
-        const SizedBox(height: 4), 
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(6), border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
-          child: content,
-        ),
-        const SizedBox(height: 8), 
-      ],
-    );
-  }
-
-  Widget _buildPanelContent(ThemeData theme) {
-    DrawingType? type = _activeObject?.type;
-    
-    if (_selectedTool == 'Pencil' || _selectedTool == 'Pen' || type == DrawingType.pencil || type == DrawingType.pen) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(theme, "STROKE THICKNESS", Icons.line_weight, _buildStrokeSlider(theme, 0)),
-          _buildPropSection(theme, "APPEARANCE", Icons.color_lens_outlined, Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_colorButton("Line", _activeObject?.color ?? _pencilColor, 0), _colorButton("Fill", _activeObject?.fillColor ?? _penFillColor, 7)])),
-        ],
-      );
-    }
-
-    if (_isShapeSelected(_selectedTool) || _isPatternSelected(_selectedTool) || (type != null && [DrawingType.rect, DrawingType.circle, DrawingType.line, DrawingType.arrow, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(type))) {  
-      bool isLineOrArrow = _selectedTool == 'Line' || _selectedTool == 'Arrow' || type == DrawingType.line || type == DrawingType.arrow;
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(theme, "THICKNESS", Icons.border_style, _buildStrokeSlider(theme, 1)),
-          if (_selectedTool == 'Dots' || _activeObject?.type == DrawingType.dots)
-            _buildPropSection(theme, "DENSITY", Icons.blur_on, _buildDensitySlider()),
-          _buildPropSection(
-            theme, "APPEARANCE", Icons.palette_outlined,
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: isLineOrArrow 
-                  ? [_colorButton("Line", _activeObject?.color ?? _shapeLineColor, 1)]
-                  : [_colorButton("Border", _activeObject?.color ?? _shapeBorderColor, 2), _colorButton("Fill", _activeObject?.fillColor ?? _shapeFillColor, 3)],
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note' || type == DrawingType.text) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPropSection(
-            theme, "TYPOGRAPHY", Icons.text_fields,
-            Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _formatToggle(Icons.format_bold, _activeObject?.isBold ?? _textIsBold, () => setState(() { _textIsBold = !_textIsBold; if (_activeObject != null) _activeObject!.isBold = _textIsBold; }), theme),
-                    _formatToggle(Icons.format_italic, _activeObject?.isItalic ?? _textIsItalic, () => setState(() { _textIsItalic = !_textIsItalic; if (_activeObject != null) _activeObject!.isItalic = _textIsItalic; }), theme),
-                    _formatToggle(Icons.format_underlined, _activeObject?.isUnderline ?? _textIsUnderline, () => setState(() { _textIsUnderline = !_textIsUnderline; if (_activeObject != null) _activeObject!.isUnderline = _textIsUnderline; }), theme),
-                    _formatToggle(Icons.format_strikethrough, _activeObject?.isStrikethrough ?? _textIsStrikethrough, () => setState(() { _textIsStrikethrough = !_textIsStrikethrough; if (_activeObject != null) _activeObject!.isStrikethrough = _textIsStrikethrough; }), theme),
-                  ],
-                ),
-                const SizedBox(height: 8), 
-                _buildTextSizeSlider(theme),
-              ],
-            ),
-          ),
-          _buildPropSection(theme, "OUTLINE WIDTH", Icons.border_outer, _buildStrokeSlider(theme, 2)),
-          _buildPropSection(
-            theme, "COLORS", Icons.format_color_fill,
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _colorButton("Text", _activeObject?.color ?? _textColor, 4),
-                _colorButton("Border", _activeObject?.borderColor ?? _textBorderColor, 5),
-                _colorButton("Fill", _activeObject?.fillColor ?? _textFillColor, 6),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 40.0, left: 16, right: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.tune, size: 48, color: theme.colorScheme.onSurface.withOpacity(0.2)),
-            const SizedBox(height: 16),
-            Text(
-              "Select an annotation or tool to view and edit its properties.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5), height: 1.5, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
     final isMobile = AppResponsive.isMobileScreen(context);
@@ -1268,9 +1062,6 @@ class CanvasState extends State<Canvas> {
                       if (widget.leftActions != null && widget.leftActions!.isNotEmpty)
                         ...widget.leftActions!,
 
-                      _utilityIcon(Icons.copy, "Copy", theme, _copySelected, isEnabled: _activeObject != null),
-                      _utilityIcon(Icons.paste, "Paste", theme, _pasteFromClipboard, isEnabled: _clipboard != null),
-                      _vDiv(theme),
                       _utilityIcon(Icons.undo, "Undo", theme, _undo, isEnabled: _undoStack.isNotEmpty),
                       _utilityIcon(Icons.redo, "Redo", theme, _redo, isEnabled: _redoStack.isNotEmpty),
                       _utilityIcon(Icons.delete_outline, "Delete", theme, _deleteSelected, isDestructive: true, isEnabled: _activeObject != null),
@@ -1285,16 +1076,6 @@ class CanvasState extends State<Canvas> {
 
                       if (widget.rightActions != null && widget.rightActions!.isNotEmpty)
                         ...widget.rightActions!,
-                        
-                      IconButton(
-                        tooltip: _showPropertiesPanel ? "Hide Styling" : "Show Styling",
-                        icon: Icon(_showPropertiesPanel ? Icons.palette : Icons.palette_outlined),
-                        color: theme.colorScheme.primary,
-                        iconSize: isMobile ? 16 : 20, 
-                        padding: EdgeInsets.all(isMobile ? 4 : 8),
-                        constraints: isMobile ? const BoxConstraints(minWidth: 32, minHeight: 32) : const BoxConstraints(minWidth: 40, minHeight: 40),
-                        onPressed: () => setState(() => _showPropertiesPanel = !_showPropertiesPanel),
-                      ),
 
                       if (widget.showCloseButton && !_isFullScreen) ...[
                         const SizedBox(width: 8), 
@@ -1323,13 +1104,835 @@ class CanvasState extends State<Canvas> {
     );
   }
 
+
+  bool _isFreehandType(DrawingType type) => type == DrawingType.pencil || type == DrawingType.pen;
+
+  bool _isLineType(DrawingType type) => type == DrawingType.line || type == DrawingType.arrow;
+
+  bool _isStyledShapeType(DrawingType type) => [
+    DrawingType.rect,
+    DrawingType.circle,
+    DrawingType.polygon,
+    DrawingType.brick,
+    DrawingType.grid,
+    DrawingType.horizontal,
+    DrawingType.vertical,
+    DrawingType.forwardDiag,
+    DrawingType.reverseDiag,
+    DrawingType.diamond,
+    DrawingType.weave,
+    DrawingType.dots,
+    DrawingType.herringbone,
+    DrawingType.concrete,
+    DrawingType.shingles,
+    DrawingType.insulation,
+  ].contains(type);
+
+  bool _usesShapeStyle(DrawingType type) => _isStyledShapeType(type) || _isLineType(type);
+
+  String _selectedObjectLabel(DrawingType type) {
+    switch (type) {
+      case DrawingType.pencil:
+        return 'Pencil';
+      case DrawingType.pen:
+        return 'Pen';
+      case DrawingType.rect:
+        return 'Rect';
+      case DrawingType.circle:
+        return 'Circle';
+      case DrawingType.polygon:
+        return 'Polygon';
+      case DrawingType.line:
+        return 'Line';
+      case DrawingType.arrow:
+        return 'Arrow';
+      case DrawingType.text:
+        return _activeObject?.isCallout == true ? 'Callout' : 'Text';
+      case DrawingType.pin:
+        return 'Pin';
+      case DrawingType.customTool:
+        return 'Custom';
+      default:
+        return 'Shape';
+    }
+  }
+
+  IconData _selectedObjectIcon(DrawingType type) {
+    switch (type) {
+      case DrawingType.pencil:
+        return Icons.edit;
+      case DrawingType.pen:
+        return Icons.polyline;
+      case DrawingType.rect:
+        return Icons.crop_square;
+      case DrawingType.circle:
+        return Icons.panorama_fish_eye;
+      case DrawingType.polygon:
+        return Icons.change_history;
+      case DrawingType.line:
+        return Icons.show_chart;
+      case DrawingType.arrow:
+        return Icons.arrow_outward;
+      case DrawingType.text:
+        return Icons.title;
+      case DrawingType.pin:
+        return Icons.place;
+      case DrawingType.customTool:
+        return Icons.widgets_outlined;
+      default:
+        return Icons.category_outlined;
+    }
+  }
+
+  double _currentStrokeWidth(int mode) {
+    final value = _activeObject?.strokeWidth ?? (mode == 0 ? _pencilStrokeWidth : mode == 2 ? _textStrokeWidth : _shapeStrokeWidth);
+    return value.clamp(1.0, 20.0).toDouble();
+  }
+
+  void _setStrokeWidthForMode(int mode, double value) {
+    setState(() {
+      if (mode == 0) {
+        _pencilStrokeWidth = value;
+        if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) {
+          _activeObject!.strokeWidth = value;
+        }
+      } else if (mode == 1) {
+        _shapeStrokeWidth = value;
+        if (_activeObject != null && _usesShapeStyle(_activeObject!.type)) {
+          _activeObject!.strokeWidth = value;
+        }
+      } else if (mode == 2) {
+        _textStrokeWidth = value;
+        if (_activeObject?.type == DrawingType.text) {
+          _activeObject!.strokeWidth = value;
+        }
+      }
+    });
+  }
+
+  double _currentTextSize() {
+    final value = _activeObject?.fontSize ?? _textSize;
+    return value.clamp(10.0, 120.0).toDouble();
+  }
+
+  void _setTextSize(double value) {
+    setState(() {
+      _textSize = value;
+      if (_activeObject?.type == DrawingType.text) {
+        _activeObject!.fontSize = value;
+      }
+    });
+  }
+
+  double _currentDensity() {
+    final value = _activeObject?.type == DrawingType.dots ? _activeObject!.patternDensity : _patternDensity;
+    return value.clamp(5.0, 100.0).toDouble();
+  }
+
+  void _setDensity(double value) {
+    setState(() {
+      _patternDensity = value;
+      if (_activeObject?.type == DrawingType.dots) {
+        _activeObject!.patternDensity = value;
+      }
+    });
+  }
+
+  void _setTextBold(bool value) {
+    setState(() {
+      _textIsBold = value;
+      if (_activeObject?.type == DrawingType.text) _activeObject!.isBold = value;
+    });
+  }
+
+  void _setTextItalic(bool value) {
+    setState(() {
+      _textIsItalic = value;
+      if (_activeObject?.type == DrawingType.text) _activeObject!.isItalic = value;
+    });
+  }
+
+  void _setTextUnderline(bool value) {
+    setState(() {
+      _textIsUnderline = value;
+      if (_activeObject?.type == DrawingType.text) _activeObject!.isUnderline = value;
+    });
+  }
+
+  void _setTextStrikethrough(bool value) {
+    setState(() {
+      _textIsStrikethrough = value;
+      if (_activeObject?.type == DrawingType.text) _activeObject!.isStrikethrough = value;
+    });
+  }
+
+  void _duplicateSelected() {
+    if (_activeObject == null) return;
+    _saveSnapshot();
+    setState(() {
+      final duplicated = _activeObject!.copy();
+      const shift = Offset(20, 20);
+      duplicated.start += shift;
+      duplicated.end += shift;
+      if (duplicated.points != null) {
+        duplicated.points = duplicated.points!.map((point) => point + shift).toList();
+      }
+      for (final obj in _drawingObjects) {
+        obj.isSelected = false;
+      }
+      duplicated.isSelected = true;
+      _drawingObjects.add(duplicated);
+      _activeObject = duplicated;
+      widget.onSelectionChanged?.call(duplicated);
+    });
+  }
+
+  Future<void> _showToolbarPopover({
+    required GlobalKey anchorKey,
+    required ThemeData theme,
+    required String title,
+    required IconData icon,
+    required Widget Function(StateSetter setPopoverState) builder,
+    double width = 232,
+  }) async {
+    if (_activeObject != null) _saveSnapshot();
+
+    final anchorContext = anchorKey.currentContext;
+    if (anchorContext == null || !mounted) return;
+
+    final renderObject = anchorContext.findRenderObject();
+    final overlayState = Overlay.of(context, rootOverlay: true);
+    final overlayObject = overlayState.context.findRenderObject();
+    if (renderObject is! RenderBox || overlayObject is! RenderBox) return;
+
+    final overlaySize = overlayObject.size;
+    final targetOffset = renderObject.localToGlobal(Offset.zero, ancestor: overlayObject);
+    final targetSize = renderObject.size;
+    final targetCenterX = targetOffset.dx + targetSize.width / 2;
+
+    final popoverWidth = math.min(width, math.max(180.0, overlaySize.width - 16.0)).toDouble();
+    final maxLeft = math.max(8.0, overlaySize.width - popoverWidth - 8.0);
+    final left = (targetCenterX - popoverWidth / 2).clamp(8.0, maxLeft).toDouble();
+    final arrowLeft = (targetCenterX - left - 6).clamp(18.0, popoverWidth - 18.0).toDouble();
+
+    // Anchor above the exact toolbar button. The small arrow extends toward the button.
+    final bottom = (overlaySize.height - targetOffset.dy + 8)
+        .clamp(8.0, math.max(8.0, overlaySize.height - 8.0))
+        .toDouble();
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 120),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              bottom: bottom,
+              child: Material(
+                type: MaterialType.transparency,
+                child: StatefulBuilder(
+                  builder: (context, setPopoverState) {
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: popoverWidth,
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.16),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(icon, size: 16, color: theme.colorScheme.primary),
+                                  const SizedBox(width: 7),
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurface,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: () => Navigator.of(dialogContext, rootNavigator: true).pop(),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(3),
+                                      child: Icon(Icons.close, size: 15, color: theme.colorScheme.onSurfaceVariant),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              builder(setPopoverState),
+                            ],
+                          ),
+                        ),
+                        Positioned(
+                          left: arrowLeft,
+                          bottom: -5,
+                          child: Transform.rotate(
+                            angle: math.pi / 4,
+                            child: Container(
+                              width: 11,
+                              height: 11,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                border: Border(
+                                  right: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
+                                  bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+            alignment: Alignment.bottomCenter,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPopoverSlider({
+    required ThemeData theme,
+    required double value,
+    required double min,
+    required double max,
+    int? divisions,
+    required String valueLabel,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Value', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+            Text(valueLabel, style: TextStyle(fontSize: 12, color: theme.colorScheme.primary, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showStrokePopover(GlobalKey anchorKey, ThemeData theme, int mode) {
+    _showToolbarPopover(
+      anchorKey: anchorKey,
+      theme: theme,
+      title: mode == 2 ? 'Outline width' : 'Thickness',
+      icon: Icons.line_weight,
+      builder: (setPopoverState) {
+        final value = _currentStrokeWidth(mode);
+        return _buildPopoverSlider(
+          theme: theme,
+          value: value,
+          min: 1,
+          max: 20,
+          divisions: 19,
+          valueLabel: '${value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1)} px',
+          onChanged: (newValue) {
+            _setStrokeWidthForMode(mode, newValue);
+            setPopoverState(() {});
+          },
+        );
+      },
+    );
+  }
+
+  void _showTextSizePopover(GlobalKey anchorKey, ThemeData theme) {
+    _showToolbarPopover(
+      anchorKey: anchorKey,
+      theme: theme,
+      title: 'Text size',
+      icon: Icons.format_size,
+      builder: (setPopoverState) {
+        final value = _currentTextSize();
+        return _buildPopoverSlider(
+          theme: theme,
+          value: value,
+          min: 10,
+          max: 120,
+          divisions: 110,
+          valueLabel: '${value.toInt()} px',
+          onChanged: (newValue) {
+            _setTextSize(newValue);
+            setPopoverState(() {});
+          },
+        );
+      },
+    );
+  }
+
+  void _showDensityPopover(GlobalKey anchorKey, ThemeData theme) {
+    _showToolbarPopover(
+      anchorKey: anchorKey,
+      theme: theme,
+      title: 'Dot density',
+      icon: Icons.blur_on,
+      builder: (setPopoverState) {
+        final value = _currentDensity();
+        return _buildPopoverSlider(
+          theme: theme,
+          value: value,
+          min: 5,
+          max: 100,
+          divisions: 19,
+          valueLabel: '${value.toInt()}%',
+          onChanged: (newValue) {
+            _setDensity(newValue);
+            setPopoverState(() {});
+          },
+        );
+      },
+    );
+  }
+
+  Widget _textStyleToggleButton({
+    required ThemeData theme,
+    required IconData icon,
+    required String tooltip,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 34,
+          decoration: BoxDecoration(
+            color: selected ? theme.colorScheme.primaryContainer.withOpacity(0.8) : theme.colorScheme.surfaceVariant.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: selected ? theme.colorScheme.primary.withOpacity(0.55) : theme.colorScheme.outlineVariant.withOpacity(0.45),
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 17,
+            color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTextStylePopover(GlobalKey anchorKey, ThemeData theme) {
+    _showToolbarPopover(
+      anchorKey: anchorKey,
+      theme: theme,
+      title: 'Text style',
+      icon: Icons.text_format,
+      width: 214,
+      builder: (setPopoverState) {
+        final isBold = _activeObject?.isBold ?? _textIsBold;
+        final isItalic = _activeObject?.isItalic ?? _textIsItalic;
+        final isUnderline = _activeObject?.isUnderline ?? _textIsUnderline;
+        final isStrikethrough = _activeObject?.isStrikethrough ?? _textIsStrikethrough;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _textStyleToggleButton(
+              theme: theme,
+              icon: Icons.format_bold,
+              tooltip: 'Bold',
+              selected: isBold,
+              onTap: () {
+                _setTextBold(!isBold);
+                setPopoverState(() {});
+              },
+            ),
+            _textStyleToggleButton(
+              theme: theme,
+              icon: Icons.format_italic,
+              tooltip: 'Italic',
+              selected: isItalic,
+              onTap: () {
+                _setTextItalic(!isItalic);
+                setPopoverState(() {});
+              },
+            ),
+            _textStyleToggleButton(
+              theme: theme,
+              icon: Icons.format_underlined,
+              tooltip: 'Underline',
+              selected: isUnderline,
+              onTap: () {
+                _setTextUnderline(!isUnderline);
+                setPopoverState(() {});
+              },
+            ),
+            _textStyleToggleButton(
+              theme: theme,
+              icon: Icons.format_strikethrough,
+              tooltip: 'Strikethrough',
+              selected: isStrikethrough,
+              onTap: () {
+                _setTextStrikethrough(!isStrikethrough);
+                setPopoverState(() {});
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  bool _isFreehandToolName(String tool) => tool == 'Pencil' || tool == 'Pen';
+
+  bool _isLineToolName(String tool) => tool == 'Line' || tool == 'Arrow';
+
+  bool _isTextToolName(String tool) => tool == 'Text' || tool == 'Callout' || tool == 'Note';
+
+  bool _isFilledShapeToolName(String tool) =>
+      (tool == 'Rect' || tool == 'Circle' || tool == 'Polygon') || _isPatternSelected(tool);
+
+  bool _hasSelectedToolOptions() =>
+      _isFreehandToolName(_selectedTool) ||
+      _isLineToolName(_selectedTool) ||
+      _isFilledShapeToolName(_selectedTool) ||
+      _isTextToolName(_selectedTool);
+
+  String _contextToolbarLabel() {
+    if (_activeObject != null) return _selectedObjectLabel(_activeObject!.type);
+    return _selectedTool;
+  }
+
+  IconData _contextToolbarIcon() {
+    if (_activeObject != null) return _selectedObjectIcon(_activeObject!.type);
+    switch (_selectedTool) {
+      case 'Pencil':
+        return Icons.edit;
+      case 'Pen':
+        return Icons.polyline;
+      case 'Rect':
+        return Icons.crop_square;
+      case 'Circle':
+        return Icons.panorama_fish_eye;
+      case 'Polygon':
+        return Icons.change_history;
+      case 'Line':
+        return Icons.show_chart;
+      case 'Arrow':
+        return Icons.arrow_outward;
+      case 'Text':
+        return Icons.title;
+      case 'Callout':
+        return Icons.chat_bubble_outline;
+      case 'Note':
+        return Icons.sticky_note_2;
+      case 'Dots':
+        return Icons.scatter_plot;
+      case 'Grid':
+        return Icons.grid_on;
+      case 'Brick':
+        return Icons.view_module;
+      case 'Horizontal':
+        return Icons.notes;
+      case 'Vertical':
+        return Icons.view_column;
+      case 'Forward':
+        return Icons.trending_up;
+      case 'Reverse':
+        return Icons.trending_down;
+      case 'Diamond':
+        return Icons.grid_4x4;
+      case 'Weave':
+        return Icons.grid_goldenratio;
+      case 'Herringbone':
+        return Icons.view_quilt;
+      case 'Concrete':
+        return Icons.grain;
+      case 'Shingles':
+        return Icons.roofing;
+      case 'Insulation':
+        return Icons.waves;
+      default:
+        return Icons.tune;
+    }
+  }
+
+  Widget _toolbarDivider(ThemeData theme) {
+    return Container(
+      width: 1,
+      height: 20,
+      margin: const EdgeInsets.symmetric(horizontal: 3),
+      color: theme.colorScheme.outlineVariant.withOpacity(0.65),
+    );
+  }
+
+  Widget _toolbarAction({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    required void Function(GlobalKey anchorKey) onTap,
+    Color? swatch,
+    bool destructive = false,
+  }) {
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final actionKey = GlobalKey();
+    final size = isMobile ? 32.0 : 34.0;
+    final iconSize = isMobile ? 16.0 : 17.0;
+    final baseColor = destructive ? Colors.red : theme.colorScheme.onSurfaceVariant;
+
+    return Tooltip(
+      message: label,
+      waitDuration: const Duration(milliseconds: 350),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => onTap(actionKey),
+          child: Container(
+            key: actionKey,
+            width: size,
+            height: size,
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, size: iconSize, color: baseColor),
+                if (swatch != null)
+                  Positioned(
+                    right: 5,
+                    bottom: 5,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: swatch == Colors.transparent ? theme.colorScheme.surfaceVariant : swatch,
+                        border: Border.all(color: theme.colorScheme.surface, width: 1.4),
+                      ),
+                      child: swatch == Colors.transparent
+                          ? const Icon(Icons.block, size: 6, color: Colors.red)
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contextBadge(ThemeData theme) {
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final label = _contextToolbarLabel();
+    final size = isMobile ? 32.0 : 34.0;
+
+    return Tooltip(
+      message: label,
+      child: Container(
+        width: size,
+        height: size,
+        margin: const EdgeInsets.only(right: 2),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withOpacity(0.72),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.20)),
+        ),
+        child: Icon(_contextToolbarIcon(), size: isMobile ? 16 : 17, color: theme.colorScheme.primary),
+      ),
+    );
+  }
+
+  List<Widget> _buildToolbarActionsForContext(ThemeData theme) {
+    final actions = <Widget>[];
+    final object = _activeObject;
+
+    if (object != null) {
+      if (_isFreehandType(object.type)) {
+        actions.addAll([
+          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 0)),
+          _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: object.color, onTap: (_) => _showColorPicker(0)),
+          if (object.type == DrawingType.pen)
+            _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(7)),
+        ]);
+      } else if (_isLineType(object.type)) {
+        actions.addAll([
+          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
+          _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: object.color, onTap: (_) => _showColorPicker(1)),
+        ]);
+      } else if (_isStyledShapeType(object.type)) {
+        actions.addAll([
+          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
+          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.color, onTap: (_) => _showColorPicker(2)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(3)),
+          if (object.type == DrawingType.dots)
+            _toolbarAction(theme: theme, icon: Icons.blur_on, label: 'Dot density', onTap: (anchor) => _showDensityPopover(anchor, theme)),
+        ]);
+      } else if (object.type == DrawingType.text) {
+        actions.addAll([
+          _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
+          _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
+          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: object.color, onTap: (_) => _showColorPicker(4)),
+          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.borderColor, onTap: (_) => _showColorPicker(5)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(6)),
+        ]);
+      }
+
+      if (actions.isNotEmpty) actions.add(_toolbarDivider(theme));
+      actions.addAll([
+        _toolbarAction(theme: theme, icon: Icons.copy_all_outlined, label: 'Duplicate', onTap: (_) => _duplicateSelected()),
+        _toolbarAction(theme: theme, icon: Icons.delete_outline, label: 'Delete', destructive: true, onTap: (_) => _deleteSelected()),
+      ]);
+
+      return actions;
+    }
+
+    if (_isFreehandToolName(_selectedTool)) {
+      actions.addAll([
+        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 0)),
+        _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: _pencilColor, onTap: (_) => _showColorPicker(0)),
+        if (_selectedTool == 'Pen')
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _penFillColor, onTap: (_) => _showColorPicker(7)),
+      ]);
+    } else if (_isLineToolName(_selectedTool)) {
+      actions.addAll([
+        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
+        _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: _shapeLineColor, onTap: (_) => _showColorPicker(1)),
+      ]);
+    } else if (_isFilledShapeToolName(_selectedTool)) {
+      actions.addAll([
+        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
+        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _shapeBorderColor, onTap: (_) => _showColorPicker(2)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _shapeFillColor, onTap: (_) => _showColorPicker(3)),
+        if (_selectedTool == 'Dots')
+          _toolbarAction(theme: theme, icon: Icons.blur_on, label: 'Dot density', onTap: (anchor) => _showDensityPopover(anchor, theme)),
+      ]);
+    } else if (_isTextToolName(_selectedTool)) {
+      actions.addAll([
+        _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
+        _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
+        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: _textColor, onTap: (_) => _showColorPicker(4)),
+        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _textBorderColor, onTap: (_) => _showColorPicker(5)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _textFillColor, onTap: (_) => _showColorPicker(6)),
+      ]);
+    }
+
+    return actions;
+  }
+
+  Widget _buildContextualToolbar(ThemeData theme) {
+    if (_activeObject == null && !_hasSelectedToolOptions()) return const SizedBox.shrink();
+
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableWidth = math.max(160.0, screenWidth - 24.0);
+    final maxToolbarWidth = isMobile ? availableWidth : math.min(availableWidth, 560.0);
+    final actions = _buildToolbarActionsForContext(theme);
+    if (actions.isEmpty) return const SizedBox.shrink();
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxToolbarWidth),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withOpacity(0.97),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.62)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _contextBadge(theme),
+                _toolbarDivider(theme),
+                ...actions,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobileDevice = AppResponsive.isAndroid || AppResponsive.isIOS;
     
     // Safety clamp logic to prevent crashing on tiny screens
-    final double maxPanelWidth = math.max(200.0, MediaQuery.of(context).size.width * 0.5);
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double maxPanelWidth = math.max(200.0, screenWidth * 0.5);
+    final double toolbarLeftInset = (_showLeftPanel && screenWidth > 720) ? _leftPanelWidth + 20 : 12;
+    final double toolbarRightInset = (widget.customRightPanel != null && screenWidth > 720) ? _rightPanelWidth + 20 : 12;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -1477,42 +2080,21 @@ class CanvasState extends State<Canvas> {
                       ],
                     ),
 
-                    // ==========================================
-                    // 🌟 2. FLOATING OVERLAY: Styling Panel 🌟
-                    // ==========================================
-                    if (_showPropertiesPanel && !_isFullScreen)
+                    if (_activeObject != null || _hasSelectedToolOptions())
                       Positioned(
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Row(
-                          children: [
-                            // 🚀 DRAG HANDLE (STYLING)
-                            _buildResizer(
-                              isLeft: false,
-                              onPanUpdate: (dx) => setState(() => _propertiesPanelWidth = (_propertiesPanelWidth - dx).clamp(200.0, maxPanelWidth))
-                            ),
-                            Container(
-                              width: _propertiesPanelWidth, 
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surface,
-                                boxShadow: [
-                                  BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(-5, 0))
-                                ]
-                              ),
-                              child: PropertiesPanel(
-                                title: _activeObject != null 
-                                    ? "EDIT ANNOTATION" 
-                                    : (_selectedTool != 'Select' && _selectedTool != 'Eraser' && _selectedTool != 'Pin' 
-                                        ? "${_selectedTool.toUpperCase()} SETTINGS" 
-                                        : "STYLING"),
-                                content: _buildPanelContent(theme),
-                                onClose: () => setState(() => _showPropertiesPanel = false),
-                              ),
-                            ),
-                          ],
+                        left: toolbarLeftInset,
+                        right: toolbarRightInset,
+                        bottom: 10,
+                        child: SafeArea(
+                          top: false,
+                          minimum: const EdgeInsets.only(bottom: 4),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: _buildContextualToolbar(theme),
+                          ),
                         ),
                       ),
+
                   ],
                 ),
               ),
