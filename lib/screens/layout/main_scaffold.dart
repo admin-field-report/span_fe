@@ -93,13 +93,13 @@ class _MainScaffoldState extends State<MainScaffold> {
                             color: theme.scaffoldBackgroundColor,
                             border: Border(
                               right: BorderSide(
-                                color: theme.dividerColor.withOpacity(isDark ? 0.2 : 0.12), 
+                                color: theme.dividerColor.withOpacity(0.8), 
                                 width: 1,
                               ),
                             ),
                             boxShadow: isDark ? null : [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
+                                color: Colors.black.withOpacity(0.04),
                                 blurRadius: 10,
                                 offset: const Offset(4, 0),
                               ),
@@ -200,7 +200,7 @@ class _MainScaffoldState extends State<MainScaffold> {
           decoration: BoxDecoration(
             color: theme.scaffoldBackgroundColor,
             shape: BoxShape.circle,
-            border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+            border: Border.all(color: theme.dividerColor),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
