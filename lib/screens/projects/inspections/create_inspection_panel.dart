@@ -225,7 +225,38 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                               const SizedBox(height: 16),
                               
                               if (_documents.isEmpty)
-                                Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
+                                // Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.description_outlined, 
+                                      size: 48, 
+                                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3)
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      "No template documents available.", 
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold, 
+                                        color: theme.colorScheme.onSurfaceVariant
+                                      )
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                                      child: Text(
+                                        "Please upload a document from Project Documents to create an inspection.",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 13, 
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
                               else
                                 ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme)),
 
