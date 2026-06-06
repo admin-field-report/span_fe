@@ -474,27 +474,36 @@ class MainPainter extends CustomPainter {
       if (!isInternal && obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
-        
-        Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
-        canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
-        canvas.drawCircle(rotPos, 12, wP);
-        canvas.drawCircle(rotPos, 10, hP);
 
-        final rotIcon = TextPainter(
-          text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
-          textDirection: TextDirection.ltr,
-        );
-        rotIcon.layout();
-        rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
-
-        if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
-          final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
-          for (var p in points) { 
-            canvas.drawCircle(p, 7, wP); 
-            canvas.drawCircle(p, 5, hP); 
-          }
+        // 🚀 THE FIX: Isolate Arrows and Lines to only draw Start/End dots
+        if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
+          canvas.drawCircle(obj.start, 7, wP);
+          canvas.drawCircle(obj.start, 5, hP);
+          canvas.drawCircle(obj.end, 7, wP);
+          canvas.drawCircle(obj.end, 5, hP);
         } else {
-          canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
+          // 🚀 Original logic for all other shapes (Rects, Circles, Patterns, Text)
+          Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
+          canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
+          canvas.drawCircle(rotPos, 12, wP);
+          canvas.drawCircle(rotPos, 10, hP);
+
+          final rotIcon = TextPainter(
+            text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
+            textDirection: TextDirection.ltr,
+          );
+          rotIcon.layout();
+          rotIcon.paint(canvas, rotPos - Offset(rotIcon.width / 2, rotIcon.height / 2));
+
+          if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
+            final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
+            for (var p in points) { 
+              canvas.drawCircle(p, 7, wP); 
+              canvas.drawCircle(p, 5, hP); 
+            }
+          } else {
+            canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
+          }
         }
       }
       canvas.restore();

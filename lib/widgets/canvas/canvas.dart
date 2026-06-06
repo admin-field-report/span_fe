@@ -270,7 +270,8 @@ class CanvasState extends State<Canvas> {
                     _activeObject = textObj;
                     widget.onSelectionChanged?.call(textObj); 
                   }
-                  // 🚀 Auto-switch to Select tool after adding or editing Text
+
+                  // 🚀 Auto-switch to Select tool after drawing
                   if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
                     _selectedTool = 'Select';
                     widget.onToolChanged?.call('Select');
@@ -383,22 +384,30 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
       }
-      Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
-      if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
+      
+      // 🚀 RESTRICT ARROW & LINE TO ONLY START AND END HANDLES (Ignoring Rect bounding box)
+      if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
+        if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; // Maps to start
+        if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; // Maps to end
+      } else {
+        Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
+        if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
-      if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
-        if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
-        if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
-        if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
-        if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
-        if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
-        if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
-        if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
-        if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+        if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
+          if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
+          if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
+          if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
+          if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
+          if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
+          if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
+          if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
+          if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+        }
       }
     }
     
-    if (obj.type == DrawingType.line) {
+    // 🚀 INCLUDED ARROW IN THE LINE SEGMENT CHECK FOR EASIER BODY DRAGGING
+    if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
       if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
       for (int i = 0; i < obj.points!.length - 1; i++) {
@@ -549,6 +558,15 @@ class CanvasState extends State<Canvas> {
           if (_activeObject!.type == DrawingType.text && _activeObject!.isCallout && _activeObject!.points != null) {
             _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
           }
+        } else if (_activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.arrow) {
+          // 🚀 CUSTOM DRAGGING LOGIC FOR ARROWS AND LINES
+          // This detaches them from the Rect layout so you can directly control endpoints
+          final localP = _toLocalSpace(pos, _activeObject!);
+          if (_activeHandle == ResizeHandle.topLeft) {
+            _activeObject!.start = localP;
+          } else if (_activeHandle == ResizeHandle.bottomRight) {
+            _activeObject!.end = localP;
+          }
         } else {
           final localP = _toLocalSpace(pos, _activeObject!);
           Rect r = _activeObject!.rect;
@@ -581,7 +599,7 @@ class CanvasState extends State<Canvas> {
         _currentPreview = null;
         widget.onSelectionChanged?.call(_activeObject); 
 
-        // 🚀 Auto-switch to Select tool after drawing (except Pencil, Pen, and Eraser)
+        // 🚀 Auto-switch to Select tool after drawing
         if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
           _selectedTool = 'Select';
           widget.onToolChanged?.call('Select');
@@ -794,7 +812,6 @@ class CanvasState extends State<Canvas> {
   // UI BUILDING HELPERS
   // ==========================================
 
-  // 🚀 4. NEW: REUSABLE DRAG HANDLE COMPONENT
   Widget _buildResizer({required bool isLeft, required Function(double) onPanUpdate}) {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
@@ -1115,12 +1132,10 @@ class CanvasState extends State<Canvas> {
   Widget _buildLeftToolsPanel(ThemeData theme) {
     final bool hasCustomTab = widget.customTabContent != null;
 
-    // 🚀 REMOVED THE HARDCODED WIDTH HERE, NOW INJECTED BY THE STATE
     return Container(
       width: _leftPanelWidth, 
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        // Removed the right border because the Drag Handle has it!
       ),
       child: DefaultTabController(
         length: hasCustomTab ? 2 : 1,
