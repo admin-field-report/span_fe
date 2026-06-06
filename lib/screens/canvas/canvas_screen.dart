@@ -719,8 +719,9 @@ void _switchPage(String newPage) async {
     }
   }
 
-  Widget _buildPageSelector(ThemeData theme) {
+Widget _buildPageSelector(ThemeData theme) {
     if (_pages.isEmpty) return const SizedBox.shrink();
+    
     if (_pages.length <= 1) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -728,18 +729,55 @@ void _switchPage(String newPage) async {
         child: Text(_currentPage, style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
       );
     }
+
+    // Calculate current index to manage arrow states
+    int currentIndex = _pages.indexOf(_currentPage);
+    bool hasPrevious = currentIndex > 0;
+    bool hasNext = currentIndex < _pages.length - 1;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), // Adjusted for the icon buttons
       decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _currentPage,
-          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
-          style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
-          borderRadius: BorderRadius.circular(8),
-          items: _pages.map((page) => DropdownMenuItem(value: page, child: Text(page))).toList(),
-          onChanged: (v) => v != null ? _switchPage(v) : null,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 🚀 Previous Page Arrow
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded),
+            iconSize: 20,
+            color: hasPrevious ? theme.colorScheme.primary : theme.disabledColor,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            splashRadius: 16,
+            onPressed: hasPrevious ? () => _switchPage(_pages[currentIndex - 1]) : null,
+          ),
+          
+          // 🚀 Existing Dropdown
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _currentPage,
+                icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
+                style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                borderRadius: BorderRadius.circular(8),
+                items: _pages.map((page) => DropdownMenuItem(value: page, child: Text(page))).toList(),
+                onChanged: (v) => v != null ? _switchPage(v) : null,
+              ),
+            ),
+          ),
+
+          // 🚀 Next Page Arrow
+          IconButton(
+            icon: const Icon(Icons.chevron_right_rounded),
+            iconSize: 20,
+            color: hasNext ? theme.colorScheme.primary : theme.disabledColor,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            splashRadius: 16,
+            onPressed: hasNext ? () => _switchPage(_pages[currentIndex + 1]) : null,
+          ),
+        ],
       ),
     );
   }
