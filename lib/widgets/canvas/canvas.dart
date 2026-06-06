@@ -117,6 +117,9 @@ class CanvasState extends State<Canvas> {
   @override
   void initState() {
     super.initState();
+
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    
     _drawingObjects = List.from(widget.initialObjects);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
