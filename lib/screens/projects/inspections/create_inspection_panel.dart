@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'package:field_report_fe/screens/auth/controllers/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api_service.dart';
 import '../../../widgets/button/button.dart';
 import '../../../services/toast_service.dart';
+import '../../auth/controllers/auth_controller.dart';
 
 class CreateInspectionPanel extends StatefulWidget {
   final String projectId;
@@ -82,7 +84,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
 
     try {
       final payload = {
-        "project_id": widget.projectId
+        "project_id": widget.projectId,
+        "name": authController.user != null ? "${authController.user!.firstName} ${authController.user!.lastName}" : "",
       };
 
       final response = await _apiService.post('/inspection/create', payload);
