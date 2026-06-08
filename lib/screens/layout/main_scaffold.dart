@@ -4,6 +4,7 @@ import 'app_menu_content.dart';
 import '../settings/settings_screen.dart';
 import '../../utils/utils.dart';
 import '../../screens/auth/controllers/auth_controller.dart';
+import '../../widgets/app_logo/app_logo.dart';
 
 class MainScaffold extends StatefulWidget {
   final Widget child;
@@ -270,12 +271,13 @@ class _MainScaffoldState extends State<MainScaffold> {
   Widget _buildSidebarHeader(bool collapsed, ColorScheme colorScheme) {
     return Container(
       height: 100,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       alignment: collapsed ? Alignment.center : Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
+          // Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
+          AppLogo(size: 50, padding: 5),
           if (!collapsed) ...[
             const SizedBox(width: 12),
             const Flexible(

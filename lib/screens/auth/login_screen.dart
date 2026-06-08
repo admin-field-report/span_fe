@@ -5,6 +5,7 @@ import 'widgets/login_form.dart';
 import 'widgets/signup_form.dart';
 import 'widgets/early_access_form.dart';
 import 'widgets/branding_panel.dart';
+import '../../widgets/app_logo/app_logo.dart';
 import '../../utils/app_responsive.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -111,11 +112,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 constraints: const BoxConstraints(maxWidth: 450),
                                 child: Column(
                                   children: [
-                                    const Icon(
-                                      Icons.analytics_rounded, 
-                                      size: 64, 
-                                      color: emeraldAccent,
-                                    ),
+                                    // const Icon(
+                                    //   Icons.analytics_rounded, 
+                                    //   size: 64, 
+                                    //   color: emeraldAccent,
+                                    // ),
+                                    AppLogo(size: 70, padding: 6, color: emeraldAccent),
                                     const SizedBox(height: 8),
                                     const Text(
                                       "Span Inspect",
@@ -126,7 +128,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         fontSize: 24,
                                       ),
                                     ),
-                                    const SizedBox(height: 40),
+                                    const SizedBox(height: 25),
                                     Container(
                                       padding: const EdgeInsets.all(32),
                                       decoration: BoxDecoration(

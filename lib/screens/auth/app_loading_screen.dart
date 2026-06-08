@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/app_logo/app_logo.dart';
 
 class AppLoadingScreen extends StatelessWidget {
   const AppLoadingScreen({super.key});
@@ -18,14 +19,15 @@ class AppLoadingScreen extends StatelessWidget {
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.1),
+                // color: colorScheme.primary.withOpacity(1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.analytics_rounded,
-                size: 60,
-                color: colorScheme.primary,
-              ),
+              // child: Icon(
+              //   Icons.analytics_rounded,
+              //   size: 60,
+              //   color: colorScheme.primary,
+              // ),
+              child: AppLogo(size: 60, padding: 10),
             ),
             const SizedBox(height: 32),
             Text(
