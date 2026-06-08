@@ -13,6 +13,8 @@ void main() async {
   await StorageService.init();
 
   usePathUrlStrategy();
+
+  await themeController.loadPreferences();
   
   runApp(const FieldReportApp());
   

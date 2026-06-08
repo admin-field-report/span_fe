@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final themeController = ThemeController();
 
@@ -14,13 +15,72 @@ class ThemeController extends ChangeNotifier {
   String get fontFamily => _fontFamily;
   double get fontSize => _fontSize;
 
-  void setThemeMode(ThemeMode mode) => { _themeMode = mode, notifyListeners() };
-  void setTargetColor(Color color) => { _targetColor = color, notifyListeners() };
-  void setFontFamily(String family) => { _fontFamily = family, notifyListeners() };
-  void setFontSize(double size) => { _fontSize = size, notifyListeners() };
+  // --- 🚀 NEW: Load Preferences on Startup ---
+  Future<void> loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Load Theme Mode (saved as string)
+    final savedTheme = prefs.getString('themeMode');
+    if (savedTheme != null) {
+      _themeMode = ThemeMode.values.firstWhere(
+        (e) => e.toString() == savedTheme,
+        orElse: () => ThemeMode.dark,
+      );
+    }
 
+    // Load Color (saved as int)
+    final savedColor = prefs.getInt('targetColor');
+    if (savedColor != null) {
+      _targetColor = Color(savedColor);
+    }
+
+    // Load Font Family
+    final savedFont = prefs.getString('fontFamily');
+    if (savedFont != null) {
+      _fontFamily = savedFont;
+    }
+
+    // Load Font Size
+    final savedFontSize = prefs.getDouble('fontSize');
+    if (savedFontSize != null) {
+      _fontSize = savedFontSize;
+    }
+
+    notifyListeners();
+  }
+
+  // --- 🚀 UPDATED: Save to Storage when Changed ---
+  
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('themeMode', mode.toString());
+  }
+
+  Future<void> setTargetColor(Color color) async {
+    _targetColor = color;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('targetColor', color.value);
+  }
+
+  Future<void> setFontFamily(String family) async {
+    _fontFamily = family;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('fontFamily', family);
+  }
+
+  Future<void> setFontSize(double size) async {
+    _fontSize = size;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('fontSize', size);
+  }
+
+  // --- YOUR EXISTING THEME LOGIC ---
   ThemeData getTheme(Brightness brightness) {
-
     final isDark = brightness == Brightness.dark;
 
     // Exact background and surface colors from your dashboard images
@@ -63,6 +123,7 @@ class ThemeController extends ChangeNotifier {
       textTheme: GoogleFonts.getTextTheme(_fontFamily).apply(
         bodyColor: colorScheme.onSurface,
         displayColor: colorScheme.onSurface,
+        fontSizeFactor: _fontSize / 15.0, // Scale font size globally based on default
       ),
       scaffoldBackgroundColor: customBg,
       
