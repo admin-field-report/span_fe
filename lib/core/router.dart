@@ -15,6 +15,7 @@ import '../screens/tags/tag_management_screen.dart';
 import '../screens/ai_data/ai_data_screen.dart';
 import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
+import '../screens/reports/reports_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -116,6 +117,10 @@ final router = GoRouter(
         GoRoute(
           path: '/templates/tools',
           builder: (context, state) => const ToolsManagerScreen(),
+        ),
+        GoRoute(
+          path: '/templates/reports',
+          builder: (context, state) => const ReportsScreen(),
         ),
         GoRoute(
           path: '/ai',

@@ -260,7 +260,7 @@ class _ProjectReportsState extends State<ProjectReports> {
             icon: Icons.add,
             onPressed: () async {
               // Push the new screen and wait for it to return true
-              final didCreate = await Navigator.push(
+              final bool? didCreate = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
               );

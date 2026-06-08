@@ -147,6 +147,7 @@ class AppMenuContent extends StatelessWidget {
           _NavTile(icon: Icons.assignment_outlined, label: "Project Templates", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/projects'), onTap: () => _navigate(context, '/templates/projects')),
           _NavTile(icon: Icons.build_outlined, label: "Tools", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tools'), onTap: () => _navigate(context, '/templates/tools')),
           _NavTile(icon: Icons.label_outlined, label: "Tags", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tags'), onTap: () => _navigate(context, '/templates/tags')),
+          _NavTile(icon: Icons.assessment_outlined, label: "Reports", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/reports'), onTap: () => _navigate(context, '/templates/reports')),
         ],
       ),
     );

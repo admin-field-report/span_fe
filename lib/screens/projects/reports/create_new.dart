@@ -37,12 +37,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   // Step 3: Clarification Questions
   List<dynamic> _clarificationQuestions = [];
   final Map<int, TextEditingController> _questionAnswers = {};
+  String? _summarizeJobId;
 
   @override
   void initState() {
     super.initState();
     _fetchInspections();
-    _fetchReportTemplates();
+    _fetchReportTemplates(); 
   }
 
   @override
@@ -79,7 +80,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
- Future<void> _fetchReportTemplates() async {
+  // --- 🚀 NEW STEP 2 LOGIC (FETCH TEMPLATES) ---
+  Future<void> _fetchReportTemplates() async {
     try {
       final response = await _apiService.get('/reportTemplate/getByCompanyId/company_1776759102636_g55i7odi');
       final responseData = jsonDecode(response.body);
@@ -107,7 +109,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  // 🚀 THE HEAVY LIFTING: Merge Existing + Upload New -> Register Template -> Trigger AI
+  // 🚀 UPDATED THE HEAVY LIFTING: No more S3 uploads! Just trigger AI with the template ID.
   Future<void> _processDocumentsAndAnalyze() async {
     setState(() {
       _isProcessing = true;
@@ -116,6 +118,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
     try {
       // 1. TRIGGER SKILL GENERATION
+      // final genPayload = {
+      //   "inspection_ids": _selectedInspectionIds,
+      //   "report_template_id": _selectedReportTemplate['id'],
+      // };
+
       final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
       final genData = jsonDecode(genRes.body);
 
@@ -184,103 +191,77 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   Future<void> _submitFinalReport() async {
     setState(() {
       _isProcessing = true;
-      _loadingMessage = "Finalizing Report Formatting...";
+      _loadingMessage = "Applying answers & generating report...";
     });
     
     try {
-      // 1. APPLY CLARIFICATIONS
-
-      final Map<String, String> answersPayload = {};
+      // // 1. APPLY CLARIFICATIONS
+      // final Map<String, String> answers = {};
+      // for (int i = 0; i < _clarificationQuestions.length; i++) {
+      //   answers[_clarificationQuestions[i]['question']] = _questionAnswers[i]?.text ?? "";
+      // }
       
+      // await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications', 
+      //     {'clarification_answers': answers});
+
+      // 1. APPLY CLARIFICATIONS
+      final Map<String, String> answers = {};
       for (int i = 0; i < _clarificationQuestions.length; i++) {
-        final qText = _clarificationQuestions[i]['question'];
-        final aText = _questionAnswers[i]?.text.trim() ?? "";
+        final answer = _questionAnswers[i]?.text.trim() ?? "";
         
-        if (aText.isNotEmpty) {
-          answersPayload[qText] = aText;
+        // 🚀 THE FIX: Only add to the map if the answer is not empty
+        if (answer.isNotEmpty) {
+          answers[_clarificationQuestions[i]['question']] = answer;
         }
       }
+      
+      // Only call the API if there are answers to apply
+      if (answers.isNotEmpty) {
+        final responseClarification = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications', 
+            {'clarification_answers': answers});
+        final dataClarification = jsonDecode(responseClarification.body);
 
-      if (answersPayload.isEmpty) {
+        final String statusEndpoint = dataClarification['status_endpoint'].toString().replaceFirst('/v1', '');
 
-        final templateDetails = await _apiService.get('/reportTemplate/getById/${_selectedReportTemplate['id']}');
-        final templateData = jsonDecode(templateDetails.body);
-
-        final bool? didCreateReport = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReportSkillPreviewScreen(
-              projectId: widget.projectId,
-              reportTemplateId: _selectedReportTemplate['id'],
-              initialContent: templateData['data']['skill_content'] ?? "",
-              inspectionIds: [..._selectedInspectionIds],
-            ),
-          ),
-        );
-
-        if (!context.mounted) return;
-        if (didCreateReport == true) {
-          Navigator.pop(context, true);
-        }
-      } else {
-        // Proceed with the payload (it might be an empty map {}, which is perfectly fine)
-        final finalizeRes = await _apiService.post(
-          '/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications',
-          {'clarification_answers': answersPayload}
-        );
-        
-        final finalizeData = jsonDecode(finalizeRes.body);
-
-        final String rawEndpoint = finalizeData['status_endpoint'];
-        final String statusEndpoint = rawEndpoint.startsWith('/v1') 
-            ? rawEndpoint.replaceFirst('/v1', '') 
-            : rawEndpoint;
-
-        bool isComplete = false;
-        int attempts = 0;
-        final int maxAttempts = 30;
-
-        while (!isComplete && attempts < maxAttempts) {
+        bool isCompleteClarification = false;
+        while (!isCompleteClarification) {
           await Future.delayed(const Duration(seconds: 3));
-          attempts++;
-
           final pollRes = await _apiService.get(statusEndpoint);
           final pollData = jsonDecode(pollRes.body);
-
-          if (pollData['status'] == 'completed') {
-            isComplete = true;
-            
-            if (!mounted) return;
-            
-            final skillContent = pollData['result']['skill_content'];
-            // final skillId = pollData['result']['skill']['id'];
-
-            ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
-            
-            final bool? didCreateReport = await Navigator.push<bool>(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ReportSkillPreviewScreen(
-                  projectId: widget.projectId,
-                  // skillId: 'skillId',
-                  reportTemplateId: _selectedReportTemplate['id'],
-                  initialContent: skillContent,
-                  inspectionIds: [..._selectedInspectionIds],
-                ),
-              ),
-            );
-            if (!context.mounted) return;
-            if (didCreateReport == true) {
-              Navigator.pop(context, true);
-            }
-            
-          } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
-            throw Exception("Finalization failed on server.");
-          }
+          if (pollData['status'] == 'completed') isCompleteClarification = true;
         }
-
-        if (!isComplete) throw Exception("Finalization timed out.");
       }
+
+      // 2. GENERATE REPORT
+      final genRes = await _apiService.post('/inspection/report/generate', {
+        "report_template_id": _selectedReportTemplate['id'],
+        "project_id": widget.projectId,
+        "inspection_ids": _selectedInspectionIds,
+      });
+      final genData = jsonDecode(genRes.body);
+      
+      final String statusEndpoint = genData['status_endpoint'].toString().replaceFirst('/v1', '');
+
+      // 3. POLL FOR FINAL HTML
+      bool isComplete = false;
+      String reportHtml = "";
+      while (!isComplete) {
+        await Future.delayed(const Duration(seconds: 3));
+        final pollRes = await _apiService.get(statusEndpoint);
+        final pollData = jsonDecode(pollRes.body);
+        if (pollData['status'] == 'completed') {
+           isComplete = true;
+           reportHtml = pollData['result']['data']['report_html'] ?? "";
+        }
+      }
+
+      // 4. SAVE REPORT
+      await _apiService.post('/report/create', {
+        "project_id": widget.projectId,
+        "report_body": reportHtml
+      });
+
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
     } finally {
@@ -374,14 +355,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                     onChanged: (val) => setState(() { 
                                       val == true ? _selectedInspectionIds.add(id) : _selectedInspectionIds.remove(id); 
                                     }),
-                                    title: Text(insp['name'] ?? "Inspection", style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    title: Text("$date", style: const TextStyle(fontWeight: FontWeight.w600)),
                                     subtitle: Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            "Created: $date", 
+                                            "Created By: ${insp['name']}", 
                                             maxLines: 2, 
                                             overflow: TextOverflow.ellipsis, 
                                             style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)
