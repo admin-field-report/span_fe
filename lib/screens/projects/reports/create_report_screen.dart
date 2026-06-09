@@ -81,7 +81,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
  Future<void> _fetchReportTemplates() async {
     try {
-      final response = await _apiService.get('/reportTemplate/getByCompanyId/company_1776759102636_g55i7odi');
+      final response = await _apiService.get('/reportTemplate/getByCompanyId');
       final responseData = jsonDecode(response.body);
 
       if (!mounted) return;

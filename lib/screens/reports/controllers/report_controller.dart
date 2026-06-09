@@ -55,7 +55,7 @@ class ReportController extends ChangeNotifier {
 
     try {
       // Hardcoded for now as requested
-      final response = await _apiService.get('/reportTemplate/getByCompanyId/company_1776759102636_g55i7odi');
+      final response = await _apiService.get('/reportTemplate/getByCompanyId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
 
       if (responseData['data'] != null) {
