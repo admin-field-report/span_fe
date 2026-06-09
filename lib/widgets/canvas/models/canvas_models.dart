@@ -38,7 +38,7 @@ class DrawingObject {
 
   String? description;
   List<String>? tagIds;
-  List<String>? imageUrls;
+  List<dynamic>? imageUrls;
 
   String? toolId;
 
@@ -193,6 +193,7 @@ class DrawingObject {
       parsedPoints = (json['points'] as List).map((p) => parseOffset(p)).toList();
     }
 
+    final dynamic rawImages = json['imageUrl'] ?? json['imageUrls'];
     var obj = DrawingObject(
       type: parseType(json['type']),
       start: parseOffset(json['start']),
@@ -213,7 +214,7 @@ class DrawingObject {
       isCallout: json['isCallout'] ?? false,
       description: json['description'],
       tagIds: json['tagIds'] != null ? List<String>.from(json['tagIds']) : null,
-      imageUrls: json['imageUrls'] != null ? List<String>.from(json['imageUrls']) : null,
+      imageUrls: rawImages != null ? List<dynamic>.from(rawImages) : null,
       base64Image: json['base64Image'],
       toolId: json['toolId'],
     );

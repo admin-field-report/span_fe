@@ -20,8 +20,7 @@ class CanvasScreen extends StatefulWidget {
   final String projectId;
   final String inspectionId;
   final String page;
-
-  final String? annotateImageUrl; 
+ 
   final String? annotateImageKey;
 
   final bool isInspectionImage;
@@ -32,7 +31,6 @@ class CanvasScreen extends StatefulWidget {
     required this.inspectionId,
     required this.documentId,
     this.page = '1',
-    this.annotateImageUrl,
     this.annotateImageKey,
     this.isInspectionImage = false,
   });
@@ -398,7 +396,7 @@ void _switchPage(String newPage) async {
                 } catch(e) {} 
               }
             }
-
+            
             loadedObjects.add(DrawingObject(
               type: parsedType,
               toolId: savedToolId,
@@ -409,7 +407,7 @@ void _switchPage(String newPage) async {
               text: item['text']?.isEmpty == true ? null : item['text'],
               description: item['description'],
               tagIds: List<String>.from(item['tagIds'] ?? []),
-              imageUrls: List<String>.from(item['imageUrl'] ?? []),
+              imageUrls: item['imageUrl'] != null ? List<dynamic>.from(item['imageUrl']) : null,
               color: item['color'] != null ? Color(item['color']) : Colors.red[800]!,
               fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
               borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
@@ -501,37 +499,56 @@ void _switchPage(String newPage) async {
         }
       } 
       else {
-        List<Future<http.Response>> saveTasks = [];
+        List<Future<void>> saveTasks = [];
 
         for (String pageName in _pages) {
           final pageData = _pageDataMap[pageName];
           if (pageData != null && pageData.hasLoadedAnnotations) {
-            final itemsList = _serializeObjects(pageData.objects);
-            List<Map<String, dynamic>> canvasDataObj = [
-              {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
-            ];
-            Map<String, dynamic> payload = {
-              "project_id": widget.projectId,
-              "page_name": pageName,
-              "canvas_data": jsonEncode(canvasDataObj),
-              "project_document_id": widget.documentId,
-              "project_document_page_id": pageData.pageId,
-              "inspection_id": widget.inspectionId
-            };
-
-            saveTasks.add(_apiService.post('/canvas/json/s3', payload));
+            
+            // Add an asynchronous task to the list for parallel processing
+            saveTasks.add(() async {
+              final itemsList = _serializeObjects(pageData.objects);
+              List<Map<String, dynamic>> canvasDataObj = [
+                {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
+              ];
+              
+              // 1. Get Pre-signed URL
+              final queryParams = {
+                "project_id": widget.projectId,
+                "inspection_id": widget.inspectionId,
+                "project_document_id": widget.documentId,
+                "page_id": pageData.pageId,
+              };
+              
+              final queryString = Uri(queryParameters: queryParams).query;
+              final presignResponse = await _apiService.get('/canvas/pre-sign/page?$queryString');
+              final presignData = jsonDecode(presignResponse.body);
+              
+              if (presignData['success'] != true || presignData['data'] == null || presignData['data']['signedUrl'] == null) {
+                throw Exception(presignData['message'] ?? "Failed to get upload URL for $pageName");
+              }
+              
+              final String signedUrl = presignData['data']['signedUrl'];
+              
+              // 2. Upload the JSON array directly to S3
+              final uploadResponse = await http.put(
+                Uri.parse(signedUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(canvasDataObj),
+              );
+              
+              if (uploadResponse.statusCode != 200 && uploadResponse.statusCode != 201) {
+                throw Exception("Failed to upload canvas data for $pageName");
+              }
+            }()); // <-- Immediately invoke the anonymous async function
           }
         }
 
+        // Wait for all pages to finish uploading in parallel
         if (saveTasks.isNotEmpty) {
-          final responses = await Future.wait(saveTasks);
-          for (var response in responses) {
-            final resData = jsonDecode(response.body);
-            if (resData['success'] != true) {
-              throw Exception(resData['message'] ?? 'Failed to save a page');
-            }
-          }
+          await Future.wait(saveTasks);
         }
+        
         _hasUnsavedChanges = false;
         _hasUnsavedImageChanges = false;
         if (mounted) ToastService.show(context, message: "All Annotations saved successfully!", type: ToastType.success);
@@ -553,41 +570,81 @@ void _switchPage(String newPage) async {
         final String signedUrl = responseData['signedUrl'];
         final String s3Key = responseData['key'];
         
+        // 1. Upload to S3
         final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
         
         if (uploadResponse.statusCode == 200) {
-           setState((){
-              if (_selectedCanvasObject != null) {
-                _selectedCanvasObject!.imageUrls ??= [];
-                _selectedCanvasObject!.imageUrls!.add(s3Key);
-                _getCurrentCanvasKey().currentState?.refreshCanvas(); 
+          
+          // 🚀 2. Strict Polling: Max 5 attempts, 2-sec delay, ONLY on 404
+          final encodedKey = Uri.encodeComponent(s3Key);
+          
+          String previewBase64 = "";
+          bool isPreviewReady = false;
+          int attempts = 0;
+          const int maxAttempts = 5; 
+
+          while (!isPreviewReady && attempts < maxAttempts) {
+            attempts++;
+            
+            final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
+            
+            if (previewResponse.statusCode == 200) {
+              final previewData = jsonDecode(previewResponse.body);
+              
+              if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
+                previewBase64 = previewData['data']['compressed_base64']; 
+                isPreviewReady = true;
+              } else {
+                throw Exception("Invalid 200 response: Missing base64 data");
               }
-           });
+            } 
+            else if (previewResponse.statusCode == 404) {
+              // 🚀 If 404, wait 2 seconds and try again (unless limit reached)
+              if (attempts < maxAttempts) {
+                await Future.delayed(const Duration(seconds: 2));
+              }
+            } 
+            else {
+              // 🚀 Any other error code (500, 400, etc.) immediately aborts
+              throw Exception("API returned error code: ${previewResponse.statusCode}");
+            }
+          }
+
+          // 🚀 If the loop finished and it's still not ready, the limit was reached
+          if (!isPreviewReady) {
+            throw Exception("Timeout: Image compression took too long (Limit Over)");
+          }
+
+          // 3. Save as an Array of Objects
+          setState(() {
+            if (_selectedCanvasObject != null) {
+              _selectedCanvasObject!.imageUrls ??= [];
+              
+              _selectedCanvasObject!.imageUrls!.add({
+                "key": s3Key,
+                "preview_image": previewBase64 
+              });
+              
+              _getCurrentCanvasKey().currentState?.refreshCanvas(); 
+            }
+          });
         } else {
            throw Exception("Object S3 upload failed with status: ${uploadResponse.statusCode}");
         }
       }
     } catch(e) {
-      if (mounted) ToastService.show(context, message: "Failed to upload image.", type: ToastType.error);
+      // 🚀 THE FIX: Exact requested toast message for any failure in the chain
+      if (mounted) ToastService.show(context, message: "Image upload failed", type: ToastType.error);
     }
   }
 
   Future<void> _deleteImageForObject(String s3Key) async {
-    try {
-      final response = await _apiService.delete('/customTool/tool/Image/$s3Key');
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        setState(() {
-          if (_selectedCanvasObject != null && _selectedCanvasObject!.imageUrls != null) {
-            _selectedCanvasObject!.imageUrls!.remove(s3Key);
-            _getCurrentCanvasKey().currentState?.refreshCanvas(); 
-          }
-        });
-      } else {
-        throw Exception("Object Delete failed with status: ${response.statusCode}");
+    setState(() {
+      if (_selectedCanvasObject != null && _selectedCanvasObject!.imageUrls != null) {
+        _selectedCanvasObject!.imageUrls!.remove(s3Key);
+        _getCurrentCanvasKey().currentState?.refreshCanvas(); 
       }
-    } catch (e) {
-      if (mounted) ToastService.show(context, message: "Failed to delete image.", type: ToastType.error);
-    }
+    });
   }
 
   Future<void> _fetchCustomTools() async {
@@ -863,7 +920,7 @@ Widget _buildPageSelector(ThemeData theme) {
   }
 
 
-  Future<void> _handleImageTap(String s3Key, String url) async {
+  Future<void> _handleImageTap(String s3Key) async {
     bool shouldNavigate = false;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -903,8 +960,7 @@ Widget _buildPageSelector(ThemeData theme) {
           builder: (context) => CanvasScreen(
             documentId: widget.documentId, 
             projectId: widget.projectId,
-            inspectionId: widget.inspectionId, 
-            annotateImageUrl: url, 
+            inspectionId: widget.inspectionId,
             annotateImageKey: s3Key,
             isInspectionImage: _selectedCanvasObject == null, 
           ),
@@ -1031,8 +1087,7 @@ Widget _buildPageSelector(ThemeData theme) {
                   setState(() {
                     _inspectionImageUrls.remove(s3Key);
                     _hasUnsavedImageChanges = true;
-                  });
-                  await _saveInspectionLevelAnnotation(); 
+                  }); 
                 }
               },
               

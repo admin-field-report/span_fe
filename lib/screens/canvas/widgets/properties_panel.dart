@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data'; 
+import 'dart:convert';
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
 
@@ -12,7 +13,7 @@ class PropertiesPanel extends StatefulWidget {
   
   final String? inspectionDescription;
   final List<String>? inspectionTagIds;
-  final List<String>? inspectionImageUrls;
+  final List<dynamic>? inspectionImageUrls;
   
   final ValueChanged<String>? onInspectionDescriptionChanged;
   final ValueChanged<List<String>>? onInspectionTagsChanged;
@@ -21,7 +22,7 @@ class PropertiesPanel extends StatefulWidget {
   final VoidCallback onClose;
   final Future<void> Function(String fileName, Uint8List bytes) onImageUpload; 
   final Future<void> Function(String s3Key) onImageDelete;
-  final Function(String s3Key, String imageUrl) onImageTap;
+  final Function(String s3Key) onImageTap;
 
   final bool allowImageUpload;
    
@@ -63,7 +64,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       ? (widget.activeObject!.tagIds ?? []) 
       : (widget.inspectionTagIds ?? []);
 
-  List<String> get _currentImageUrls => widget.activeObject != null 
+  List<dynamic> get _currentImageUrls => widget.activeObject != null 
       ? (widget.activeObject!.imageUrls ?? []) 
       : (widget.inspectionImageUrls ?? []);
 
@@ -224,9 +225,40 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
 
   Future<void> _handleDeleteImage(String s3Key) async {
     setState(() => _deletingKeys.add(s3Key));
-    await widget.onImageDelete(s3Key);
-    if (mounted) setState(() => _deletingKeys.remove(s3Key));
-    widget.onUpdate();
+    try {
+      await widget.onImageDelete(s3Key);
+      
+      // Remove from local list after successful backend deletion
+      if (widget.activeObject != null && widget.activeObject!.imageUrls != null) {
+        widget.activeObject!.imageUrls!.removeWhere((item) {
+          if (item is String) return item == s3Key;
+          if (item is Map) return item['key'] == s3Key;
+          return false;
+        });
+      }
+      
+      widget.onUpdate();
+    } catch (e) {
+      debugPrint("Error deleting image: $e");
+    } finally {
+      if (mounted) setState(() => _deletingKeys.remove(s3Key));
+    }
+  }
+
+  // Helper for when base64 previews are missing or fail to decode
+  Widget _buildFallbackIcon(ThemeData theme) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.image, color: theme.colorScheme.primary.withOpacity(0.5), size: 36),
+        const SizedBox(height: 8),
+        Text(
+          "Image\nAttached", 
+          textAlign: TextAlign.center, 
+          style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500)
+        ),
+      ],
+    );
   }
 
   @override
@@ -253,7 +285,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       );
     }
 
-    final imageUrls = _currentImageUrls; 
+    final imageUrls = _currentImageUrls;
     final tagIds = _currentTagIds;       
 
     return Container(
@@ -374,10 +406,19 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       ),
                       itemCount: imageUrls.length,
                       itemBuilder: (context, index) {
-                        final String s3Key = imageUrls[index];
+                        final dynamic imgData = imageUrls[index];
+                        String s3Key = '';
+                        String? base64Preview;
+
+                        // 🚀 Safely handle both legacy strings and new Map objects
+                        if (imgData is String) {
+                          s3Key = imgData;
+                        } else if (imgData is Map) {
+                          s3Key = imgData['key'] ?? '';
+                          base64Preview = imgData['preview_image'];
+                        }
+
                         final bool isDeleting = _deletingKeys.contains(s3Key);
-                        
-                        final String imageUrl = "https://dev-field-report-canvas-tool-image.s3.us-east-1.amazonaws.com/$s3Key";
 
                         return Container(
                           decoration: BoxDecoration(
@@ -392,18 +433,17 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                                 cursor: SystemMouseCursors.click,
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque, 
-                                  onTap: () => widget.onImageTap(s3Key, imageUrl), 
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.image, color: theme.colorScheme.primary.withOpacity(0.5), size: 36),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        "Image\nAttached", 
-                                        textAlign: TextAlign.center, 
-                                        style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500)
-                                      ),
-                                    ],
+                                  onTap: () => widget.onImageTap(s3Key), 
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(7),
+                                    child: (base64Preview != null && base64Preview.isNotEmpty)
+                                      // 🚀 Shows the actual compressed preview!
+                                      ? Image.memory(
+                                          base64Decode(base64Preview.contains(',') ? base64Preview.split(',').last : base64Preview),
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(theme),
+                                        )
+                                      : _buildFallbackIcon(theme),
                                   ),
                                 ),
                               ),
