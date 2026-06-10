@@ -575,13 +575,13 @@ void _switchPage(String newPage) async {
         
         if (uploadResponse.statusCode == 200) {
           
-          // 🚀 2. Strict Polling: Max 5 attempts, 2-sec delay, ONLY on 404
+          // 🚀 2. Strict Polling: Max 10 attempts, 2-sec delay, ONLY on 404
           final encodedKey = Uri.encodeComponent(s3Key);
           
           String previewBase64 = "";
           bool isPreviewReady = false;
           int attempts = 0;
-          const int maxAttempts = 5; 
+          const int maxAttempts = 10; 
 
           while (!isPreviewReady && attempts < maxAttempts) {
             attempts++;
