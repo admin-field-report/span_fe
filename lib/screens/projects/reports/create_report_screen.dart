@@ -374,16 +374,16 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                     onChanged: (val) => setState(() { 
                                       val == true ? _selectedInspectionIds.add(id) : _selectedInspectionIds.remove(id); 
                                     }),
-                                    title: Text(insp['name'] ?? "Inspection", style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    title: Text(date, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     subtitle: Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            "Created: $date", 
-                                            maxLines: 2, 
-                                            overflow: TextOverflow.ellipsis, 
+                                            "Created By: ${insp['name'] ?? 'Unknown'}",
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)
                                           ),
                                         ],
@@ -424,11 +424,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                               separatorBuilder: (_, __) => const Divider(height: 1),
                               itemBuilder: (context, index) {
                                 final template = _reportTemplates[index];
-                                
-                                final dateStr = template['create_time'];
-                                final date = dateStr != null 
-                                  ? DateFormat('dd MMM yyyy').format(DateTime.parse(dateStr)) 
-                                  : "Unknown Date";
+                                final bool hasDocuments = template['documents'] == true;
 
                                 return RadioListTile<dynamic>(
                                   value: template,
@@ -438,17 +434,27 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                     template['name'] ?? "Unnamed Template", 
                                     maxLines: 1, 
                                     overflow: TextOverflow.ellipsis, 
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600, 
+                                      fontSize: 14,
+                                      // Optional: Dim the title text slightly if it's disabled
+                                      color: hasDocuments ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.5),
+                                    )
                                   ),
-                                  subtitle: Text(
-                                    "Created: $date",
-                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-                                  ),
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _selectedReportTemplate = val;
-                                    });
-                                  },
+                                  subtitle: hasDocuments
+                                      ? null
+                                      : Text(
+                                          "No documents available for this template",
+                                          style: TextStyle(fontSize: 12, color: colorScheme.error.withOpacity(0.8)), 
+                                        ),
+                                  // Setting onChanged to null automatically disables the entire tile
+                                  onChanged: hasDocuments 
+                                      ? (val) {
+                                          setState(() {
+                                            _selectedReportTemplate = val;
+                                          });
+                                        }
+                                      : null, 
                                 );
                               },
                             ),

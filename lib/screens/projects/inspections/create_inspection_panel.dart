@@ -367,8 +367,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       ),
       child: ListTile(
         leading: Icon(Icons.history, color: colorScheme.primary),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text("Created: $formattedDate", style: const TextStyle(fontSize: 12)),
+        title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.w500)),
+        subtitle: Text("Created By: $name", style: const TextStyle(fontSize: 12)),
         
         // 🚀 2. CALL THE NEW METHOD HERE
         trailing: Button(
