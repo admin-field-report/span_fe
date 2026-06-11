@@ -235,10 +235,15 @@ class PageData {
   List<List<DrawingObject>> undoStack = [];
   List<List<DrawingObject>> redoStack = [];
 
+  double width;   
+  double height;
+
   PageData({
     required this.pageId,
     this.backgroundImageBytes,
     this.hasLoadedAnnotations = false,
+    this.width = 816.0,  // Fallback default
+    this.height = 1056.0, // Fallback default
   }); 
 }
 

@@ -10,6 +10,7 @@ import '../../../widgets/form_components/text_area_field.dart';
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
   final List<ProjectTag> availableTags;
+  final bool isLoadingTags;
   
   final String? inspectionDescription;
   final List<String>? inspectionTagIds;
@@ -30,7 +31,7 @@ class PropertiesPanel extends StatefulWidget {
     super.key,
     required this.activeObject,
     required this.availableTags,
-    
+    required this.isLoadingTags,
     this.inspectionDescription,
     this.inspectionTagIds,
     this.inspectionImageUrls,
@@ -319,8 +320,11 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   
-                  if (widget.availableTags.isEmpty) 
+                  if (widget.availableTags.isEmpty && !widget.isLoadingTags) 
                     Text("No tags available.", style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
+
+                  if (widget.isLoadingTags) 
+                    const Center(child: CircularProgressIndicator()),
                   
                   Wrap(
                     spacing: 8, 

@@ -21,6 +21,10 @@ class Canvas extends StatefulWidget {
   final List<DrawingObject> initialObjects;
   final ValueChanged<DrawingObject?>? onSelectionChanged;
   final ValueChanged<String>? onToolChanged;
+  
+  // 🚀 NEW: Accept dynamic dimensions
+  final double width;
+  final double height;
 
   final List<Widget>? leftActions;
   final List<Widget>? rightActions;
@@ -38,6 +42,8 @@ class Canvas extends StatefulWidget {
     this.canvasKey,
     this.initialBackgroundImage,
     this.initialObjects = const [],
+    this.width = 816.0,  // Fallback default
+    this.height = 1056.0, // Fallback default
     this.onSelectionChanged,
     this.onToolChanged,
     this.leftActions,
@@ -61,6 +67,9 @@ class CanvasState extends State<Canvas> {
   
   bool _isFullScreen = false;
   bool _showLeftPanel = false; 
+
+  double _minScale = 0.1;
+  double _maxScale = 5.0;
 
   // STATE VARIABLES FOR RESIZABLE PANELS
   double _leftPanelWidth = 250.0;
@@ -137,14 +146,23 @@ class CanvasState extends State<Canvas> {
     final size = renderBox.size;
 
     double initialScale = 1.0;
-    if (size.width < 816 || size.height < 1056) {
-      final scaleX = (size.width - 40) / 816;
-      final scaleY = (size.height - 40) / 1056;
+    
+    if (size.width < widget.width || size.height < widget.height) {
+      final scaleX = (size.width - 40) / widget.width;
+      final scaleY = (size.height - 40) / widget.height;
       initialScale = math.min(scaleX, scaleY);
     }
 
-    final double dx = (size.width - (816 * initialScale)) / 2;
-    final double dy = (size.height - (1056 * initialScale)) / 2;
+    final double dx = (size.width - (widget.width * initialScale)) / 2;
+    final double dy = (size.height - (widget.height * initialScale)) / 2;
+
+    // 🚀 THE FIX: Dynamically set the zoom boundaries!
+    // Min scale lets them zoom out a tiny bit further than the "fit to screen" size
+    // Max scale gives them massive zoom-in capabilities (up to 20x the initial zoom)
+    setState(() {
+      _minScale = initialScale * 0.5; 
+      _maxScale = math.max(5.0, initialScale * 20.0); 
+    });
 
     _transformationController.value = Matrix4.identity()
       ..translate(dx, dy)
@@ -270,7 +288,6 @@ class CanvasState extends State<Canvas> {
                     widget.onSelectionChanged?.call(textObj); 
                   }
 
-                  // 🚀 Auto-switch to Select tool after drawing
                   if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
                     _selectedTool = 'Select';
                     widget.onToolChanged?.call('Select');
@@ -384,7 +401,6 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
       }
       
-      // 🚀 RESTRICT ARROW & LINE TO ONLY START AND END HANDLES
       if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
         if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
         if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
@@ -545,19 +561,43 @@ class CanvasState extends State<Canvas> {
         } else if (_activeHandle == ResizeHandle.calloutTip) {
           _activeObject!.points![1] = pos; 
         } else if (_activeHandle == ResizeHandle.body) {
-          Offset delta = _activeObject!.end - _activeObject!.start;
-          Offset moveDelta = (pos - _dragOffset) - _activeObject!.start;
-          _activeObject!.start = pos - _dragOffset;
-          _activeObject!.end = _activeObject!.start + delta;
+          
+          // 🚀 THE FIX: Calculate raw movement delta
+          Offset rawMoveDelta = (pos - _dragOffset) - _activeObject!.start;
+          
+          // 🚀 THE FIX: Check the object's bounding box and clamp the delta
+          Rect r = _activeObject!.rect;
+          double dx = rawMoveDelta.dx;
+          double dy = rawMoveDelta.dy;
+
+          // Prevent moving past the Left or Right edges
+          if (r.left + dx < 0) {
+            dx = -r.left;
+          } else if (r.right + dx > widget.width) {
+            dx = widget.width - r.right;
+          }
+
+          // Prevent moving past the Top or Bottom edges
+          if (r.top + dy < 0) {
+            dy = -r.top;
+          } else if (r.bottom + dy > widget.height) {
+            dy = widget.height - r.bottom;
+          }
+
+          Offset clampedDelta = Offset(dx, dy);
+
+          // Apply the safely clamped delta to the object
+          _activeObject!.start += clampedDelta;
+          _activeObject!.end += clampedDelta;
           
           if (_activeObject!.type == DrawingType.pencil || _activeObject!.type == DrawingType.pen) {
-            _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
+            _activeObject!.points = _activeObject!.points!.map((p) => p + clampedDelta).toList();
           }
           if (_activeObject!.type == DrawingType.text && _activeObject!.isCallout && _activeObject!.points != null) {
-            _activeObject!.points = _activeObject!.points!.map((p) => p + moveDelta).toList();
+            _activeObject!.points = _activeObject!.points!.map((p) => p + clampedDelta).toList();
           }
+
         } else if (_activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.arrow) {
-          // 🚀 CUSTOM DRAGGING LOGIC FOR ARROWS AND LINES
           final localP = _toLocalSpace(pos, _activeObject!);
           if (_activeHandle == ResizeHandle.topLeft) {
             _activeObject!.start = localP;
@@ -596,7 +636,6 @@ class CanvasState extends State<Canvas> {
         _currentPreview = null;
         widget.onSelectionChanged?.call(_activeObject); 
 
-        // 🚀 Auto-switch to Select tool after drawing
         if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
           _selectedTool = 'Select';
           widget.onToolChanged?.call('Select');
@@ -607,9 +646,10 @@ class CanvasState extends State<Canvas> {
   }
 
   Offset _clampToCanvas(Offset pos) {
+    // 🚀 THE FIX: Use dynamic width and height instead of 816/1056
     return Offset(
-      pos.dx.clamp(0.0, 816.0),
-      pos.dy.clamp(0.0, 1056.0),
+      pos.dx.clamp(0.0, widget.width),
+      pos.dy.clamp(0.0, widget.height),
     );
   }
 
@@ -1436,7 +1476,6 @@ class CanvasState extends State<Canvas> {
     final left = (targetCenterX - popoverWidth / 2).clamp(8.0, maxLeft).toDouble();
     final arrowLeft = (targetCenterX - left - 6).clamp(18.0, popoverWidth - 18.0).toDouble();
 
-    // Anchor above the exact toolbar button. The small arrow extends toward the button.
     final bottom = (overlaySize.height - targetOffset.dy + 8)
         .clamp(8.0, math.max(8.0, overlaySize.height - 8.0))
         .toDouble();
@@ -2096,8 +2135,8 @@ class CanvasState extends State<Canvas> {
                                     transformationController: _transformationController,
                                     panEnabled: _selectedTool == 'Select' && _activeHandle == ResizeHandle.none,
                                     scaleEnabled: true, 
-                                    minScale: 0.4,     
-                                    maxScale: 3.5,     
+                                    minScale: _minScale,     
+                                    maxScale: _maxScale, 
                                     boundaryMargin: const EdgeInsets.all(double.infinity),
                                     constrained: false, 
                                     child: MouseRegion(
@@ -2121,8 +2160,9 @@ class CanvasState extends State<Canvas> {
                                           onPointerUp: _handlePointerUp,
                                           
                                           child: Container(
-                                            width: 816,  
-                                            height: 1056, 
+                                            // 🚀 THE FIX: Dynamic dimensions instead of hardcoded 816x1056
+                                            width: widget.width,  
+                                            height: widget.height, 
                                             decoration: BoxDecoration(
                                               color: Colors.white,
                                               boxShadow: [
@@ -2132,7 +2172,10 @@ class CanvasState extends State<Canvas> {
                                             child: CanvasPaper(
                                               objects: _drawingObjects, 
                                               preview: _currentPreview,
-                                              backgroundImageBytes: widget.initialBackgroundImage,                                         
+                                              backgroundImageBytes: widget.initialBackgroundImage,
+                                              // 🚀 THE FIX: Pass dynamic dimensions to CanvasPaper
+                                              width: widget.width,
+                                              height: widget.height,                                         
                                             ),
                                           ),
                                         ),

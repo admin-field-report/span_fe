@@ -9,24 +9,43 @@ class CanvasPaper extends StatelessWidget {
   final DrawingObject? preview;
   final Uint8List? backgroundImageBytes;
 
-  const CanvasPaper({super.key, required this.objects, this.preview, this.backgroundImageBytes});
+  // 🚀 NEW: Accept dynamic dimensions
+  final double width;
+  final double height;
+
+  const CanvasPaper({
+    super.key, 
+    required this.objects, 
+    this.preview, 
+    this.backgroundImageBytes,
+    this.width = 816.0,  // Fallback A4 width
+    this.height = 1056.0 // Fallback A4 height
+  });
+
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (backgroundImageBytes != null)
-          Image.memory(
-            backgroundImageBytes!,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stack) => const Center(
-                child: Icon(Icons.broken_image_rounded, color: Colors.grey)),
-          ),
-        Positioned.fill(
-          child: CustomPaint(painter: MainPainter(context, objects, preview)),
+    // 🚀 THE FIX: Center the canvas and force it to be the EXACT aspect ratio of the image
+    return Center(
+      child: AspectRatio(
+        aspectRatio: width / height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (backgroundImageBytes != null)
+              Image.memory(
+                backgroundImageBytes!,
+                // 🚀 Changed from contain to fill, because AspectRatio already guarantees the perfect shape!
+                fit: BoxFit.fill, 
+                errorBuilder: (context, error, stack) => const Center(
+                    child: Icon(Icons.broken_image_rounded, color: Colors.grey)),
+              ),
+            Positioned.fill(
+              child: CustomPaint(painter: MainPainter(context, objects, preview)),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

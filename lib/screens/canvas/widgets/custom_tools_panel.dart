@@ -8,18 +8,152 @@ class CustomToolsPanel extends StatelessWidget {
   final CustomTool? selectedTool;
   final Function(CustomTool) onToolSelected;
   final VoidCallback onClose;
+  final bool isLoading;
 
   const CustomToolsPanel({
     super.key,
     required this.groups,
+    required this.isLoading,
     required this.selectedTool,
     required this.onToolSelected,
     required this.onClose,
   });
 
+  // 🚀 1. Extracted Loading State
+  Widget _buildLoadingState(ThemeData theme) {
+    return Center(
+      child: CircularProgressIndicator(color: theme.colorScheme.primary),
+    );
+  }
+
+  // 🚀 2. Extracted Empty State
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.handyman_outlined, 
+              size: 48, 
+              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5)
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "No Custom Tools",
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "There are no custom tools available for this project.",
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🚀 3. Extracted Content State
+  Widget _buildContentState(ThemeData theme) {
+    return ListView.builder(
+      itemCount: groups.length,
+      itemBuilder: (context, index) {
+        final group = groups[index];
+        return ExpansionTile(
+          title: Text(group.toolGroup, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          initiallyExpanded: index == 0,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.0,
+                ),
+                itemCount: group.tools.length,
+                itemBuilder: (context, toolIndex) {
+                  final tool = group.tools[toolIndex];
+                  final isSelected = selectedTool?.toolId == tool.toolId;                              
+
+                  return InkWell(
+                    onTap: () => onToolSelected(tool),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant, 
+                          width: isSelected ? 2 : 1
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // 🌟 USING THE CENTERED PREVIEW PAINTER 🌟
+                          Expanded(
+                            child: tool.toolObjects.isNotEmpty 
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Container(
+                                      color: Colors.white, // Clean background for the thumbnail
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      child: CustomPaint(
+                                        painter: CenteredPreviewPainter(context, tool.toolObjects),
+                                      ),
+                                    ),
+                                  )
+                                : const Center(
+                                    child: Icon(Icons.extension_outlined, size: 20, color: Colors.grey)
+                                  ),
+                          ),
+                          
+                          const SizedBox(height: 4),
+                          Text(
+                            tool.toolName, 
+                            style: const TextStyle(fontSize: 9), 
+                            textAlign: TextAlign.center, 
+                            maxLines: 1, 
+                            overflow: TextOverflow.ellipsis
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            )
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    Widget bodyContent;
+    if (isLoading) {
+      bodyContent = _buildLoadingState(theme);
+    } else if (groups.isEmpty) {
+      bodyContent = _buildEmptyState(theme);
+    } else {
+      bodyContent = _buildContentState(theme);
+    }
 
     return Container(
       width: 300,
@@ -29,103 +163,8 @@ class CustomToolsPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Header
-          // Container(
-          //   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          //   decoration: BoxDecoration(
-          //     color: theme.colorScheme.surfaceContainer,
-          //     border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant)),
-          //   ),
-          //   child: Row(
-          //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //     children: [
-          //       Text("Custom Tools", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          //       IconButton(icon: const Icon(Icons.close, size: 20), onPressed: onClose, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-          //     ],
-          //   ),
-          // ),
-          
-          // Tool Groups List
           Expanded(
-            child: groups.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    itemCount: groups.length,
-                    itemBuilder: (context, index) {
-                      final group = groups[index];
-                      return ExpansionTile(
-                        title: Text(group.toolGroup, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        initiallyExpanded: index == 0,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 1.0,
-                              ),
-                              itemCount: group.tools.length,
-                              itemBuilder: (context, toolIndex) {
-                                final tool = group.tools[toolIndex];
-                                final isSelected = selectedTool?.toolId == tool.toolId;                              
-
-                                return InkWell(
-                                  onTap: () => onToolSelected(tool),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant, 
-                                        width: isSelected ? 2 : 1
-                                      ),
-                                      borderRadius: BorderRadius.circular(8),
-                                      color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
-                                    ),
-                                    padding: const EdgeInsets.all(4),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        // 🌟 USING THE CENTERED PREVIEW PAINTER 🌟
-                                        Expanded(
-                                          child: tool.toolObjects.isNotEmpty 
-                                              ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  child: Container(
-                                                    color: Colors.white, // Clean background for the thumbnail
-                                                    width: double.infinity,
-                                                    height: double.infinity,
-                                                    child: CustomPaint(
-                                                      painter: CenteredPreviewPainter(context, tool.toolObjects),
-                                                    ),
-                                                  ),
-                                                )
-                                              : const Center(
-                                                  child: Icon(Icons.extension_outlined, size: 20, color: Colors.grey)
-                                                ),
-                                        ),
-                                        
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          tool.toolName, 
-                                          style: const TextStyle(fontSize: 9), 
-                                          textAlign: TextAlign.center, 
-                                          maxLines: 1, 
-                                          overflow: TextOverflow.ellipsis
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          )
-                        ],
-                      );
-                    },
-                  ),
+            child: bodyContent,
           ),
         ],
       ),

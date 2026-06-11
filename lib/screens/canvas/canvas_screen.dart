@@ -52,12 +52,14 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   DrawingObject? _selectedCanvasObject;
   List<CustomToolGroup> _customToolGroups = [];
+  bool _isLoadingCustomTools = true;
   CustomTool? _selectedCustomTool;
 
   List<String> _pages = [];
   String _currentPage = ''; 
   Map<String, PageData> _pageDataMap = {};
   List<ProjectTag> _availableTags = [];
+  bool _isLoadingTags = false;
 
   // 🌟 NEW: INSPECTION LEVEL STATE 🌟
   String _inspectionDescription = "";
@@ -199,6 +201,7 @@ void _switchPage(String newPage) async {
 
   Future<void> _fetchAvailableTags() async {
     try {
+      setState(() => _isLoadingTags = true);
       final response = await _apiService.get('/project/tags/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
@@ -210,13 +213,14 @@ void _switchPage(String newPage) async {
         });
       }
     } catch (e) { debugPrint("Error fetching tags: $e"); }
+    finally { setState(() => _isLoadingTags = false); }
   }
 
   Future<void> _initializeCanvas() async {
     setState(() => _isLoadingDocument = true);
     
-    await _fetchAvailableTags(); 
-    await _fetchCustomTools(); 
+    _fetchAvailableTags(); 
+    _fetchCustomTools(); 
     await _fetchInspectionAnnotation(); 
     
     if (widget.annotateImageKey != null) {
@@ -248,9 +252,15 @@ void _switchPage(String newPage) async {
           if (jsonResp['success'] == true && jsonResp['data'] != null) {
             String b64 = jsonResp['data'];
             if (b64.contains(',')) b64 = b64.split(',').last;
+            final ui.Image decodedImage = await _decodeBase64Image(b64);
             
             _pageDataMap = {
-              'Attached Image': PageData(pageId: widget.annotateImageKey!, backgroundImageBytes: base64Decode(b64))
+              'Attached Image': PageData(
+                pageId: widget.annotateImageKey!,
+                backgroundImageBytes: base64Decode(b64),
+                width: decodedImage.width.toDouble(),
+                height: decodedImage.height.toDouble()
+              )
             };
           }
         }
@@ -360,6 +370,9 @@ void _switchPage(String newPage) async {
         final String base64String = responseData['data']['image'] ?? '';
         if (base64String.isNotEmpty) {
           pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
+          final ui.Image decodedImage = await _decodeBase64Image(base64String);
+          pageData.width = decodedImage.width.toDouble();
+          pageData.height = decodedImage.height.toDouble();
         }
       }
     } catch (e) { debugPrint("Error loading page image: $e"); } 
@@ -396,13 +409,16 @@ void _switchPage(String newPage) async {
                 } catch(e) {} 
               }
             }
+
+            final double pWidth = pageData.width;
+            final double pHeight = pageData.height;
             
             loadedObjects.add(DrawingObject(
               type: parsedType,
               toolId: savedToolId,
               internalShapes: matchedInternalShapes, 
-              start: Offset((item['start']['dx'] ?? 0.0) * 816.0, (item['start']['dy'] ?? 0.0) * 1056.0),
-              end: Offset((item['end']['dx'] ?? 0.0) * 816.0, (item['end']['dy'] ?? 0.0) * 1056.0),
+              start: Offset((item['start']['dx'] ?? 0.0) * pWidth, (item['start']['dy'] ?? 0.0) * pHeight),
+              end: Offset((item['end']['dx'] ?? 0.0) * pWidth, (item['end']['dy'] ?? 0.0) * pHeight),
               strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
               text: item['text']?.isEmpty == true ? null : item['text'],
               description: item['description'],
@@ -429,14 +445,15 @@ void _switchPage(String newPage) async {
     } catch (e) { debugPrint("Error loading saved annotations: $e"); }
   }
 
-  List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects) {
+  // List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects) {
+  List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects, double pWidth, double pHeight) {
     List<Map<String, dynamic>> itemsList = [];
     
     for (var obj in objects) {
       Map<String, dynamic> item = {
         "type": _getDrawingTypeString(obj.type),
-        "start": {"dx": obj.start.dx / 816.0, "dy": obj.start.dy / 1056.0},
-        "end": {"dx": obj.end.dx / 816.0, "dy": obj.end.dy / 1056.0},
+        "start": {"dx": obj.start.dx / pWidth, "dy": obj.start.dy / pHeight},
+        "end": {"dx": obj.end.dx / pWidth, "dy": obj.end.dy / pHeight},
         if (obj.type == DrawingType.customTool) "toolId": obj.toolId, 
         "text": obj.text ?? "",
         "description": obj.description ?? "",
@@ -457,7 +474,7 @@ void _switchPage(String newPage) async {
       };
 
       if (obj.points != null && obj.points!.isNotEmpty) {
-        item["points"] = obj.points!.map((p) => {"dx": p.dx / 816.0, "dy": p.dy / 1056.0}).toList();
+        item["points"] = obj.points!.map((p) => {"dx": p.dx / pWidth, "dy": p.dy / pHeight}).toList();
       }
       itemsList.add(item);
     }
@@ -477,7 +494,7 @@ void _switchPage(String newPage) async {
         final pageData = _pageDataMap['Attached Image'];
         if (pageData == null) return;
 
-        final itemsList = _serializeObjects(pageData.objects);
+        final itemsList = _serializeObjects(pageData.objects, pageData.width, pageData.height);
         List<Map<String, dynamic>> wrapperArray = [{"page_name": "Image Preview", "sort_order": 0, "items": itemsList}];
         Map<String, dynamic> payload = {"imageS3": widget.annotateImageKey, "imageJsonData": jsonEncode(wrapperArray)};
         
@@ -507,7 +524,7 @@ void _switchPage(String newPage) async {
             
             // Add an asynchronous task to the list for parallel processing
             saveTasks.add(() async {
-              final itemsList = _serializeObjects(pageData.objects);
+              final itemsList = _serializeObjects(pageData.objects, pageData.width, pageData.height);
               List<Map<String, dynamic>> canvasDataObj = [
                 {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
               ];
@@ -649,6 +666,7 @@ void _switchPage(String newPage) async {
 
   Future<void> _fetchCustomTools() async {
     try {
+      setState(() => _isLoadingCustomTools = true);
       final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
@@ -685,6 +703,8 @@ void _switchPage(String newPage) async {
       }
     } catch (e) { 
       debugPrint("Error fetching custom tools: $e"); 
+    } finally {
+      setState(() => _isLoadingCustomTools = false);
     }
   }
 
@@ -777,7 +797,7 @@ void _switchPage(String newPage) async {
     }
   }
 
-Widget _buildPageSelector(ThemeData theme) {
+  Widget _buildPageSelector(ThemeData theme) {
     if (_pages.isEmpty) return const SizedBox.shrink();
     
     if (_pages.length <= 1) {
@@ -1000,6 +1020,10 @@ Widget _buildPageSelector(ThemeData theme) {
             key: _getCurrentCanvasKey(),
             initialBackgroundImage: _pageDataMap[_currentPage]?.backgroundImageBytes,
             initialObjects: _pageDataMap[_currentPage]?.objects ?? [],
+
+            width: _pageDataMap[_currentPage]?.width ?? 816.0,
+            height: _pageDataMap[_currentPage]?.height ?? 1056.0,
+
             onToolChanged: (toolName) {
               if (toolName != 'CustomTool' && _selectedCustomTool != null) {
                 setState(() => _selectedCustomTool = null);
@@ -1008,6 +1032,7 @@ Widget _buildPageSelector(ThemeData theme) {
             customTabLabel: "Custom Tools",
             customTabContent: CustomToolsPanel(
               groups: _customToolGroups,
+              isLoading: _isLoadingCustomTools,
               selectedTool: _selectedCustomTool,
               onToolSelected: (tool) {
                 setState(() {
@@ -1050,7 +1075,7 @@ Widget _buildPageSelector(ThemeData theme) {
             customRightPanel: PropertiesPanel(
               activeObject: _selectedCanvasObject, 
               availableTags: _availableTags,
-              
+              isLoadingTags: _isLoadingTags,
               inspectionDescription: _inspectionDescription,
               inspectionTagIds: _inspectionTagIds,
               inspectionImageUrls: _inspectionImageUrls,
