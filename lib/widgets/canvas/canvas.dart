@@ -374,24 +374,77 @@ class CanvasState extends State<Canvas> {
     final double dy = point.dy - obj.center.dy;
     return Offset(cos * dx - sin * dy + obj.center.dx, sin * dx + cos * dy + obj.center.dy);
   }
-
+  
   MouseCursor _getCursor(ResizeHandle handle) {
     if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
-    if (_selectedTool == 'Text') return SystemMouseCursors.text;
+    if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note') return SystemMouseCursors.text;
+    
+    if (handle == ResizeHandle.none) return SystemMouseCursors.basic;
+    if (handle == ResizeHandle.body) return SystemMouseCursors.move;
+    if (handle == ResizeHandle.rotation) return SystemMouseCursors.grab;
+    if (handle == ResizeHandle.calloutKnee || handle == ResizeHandle.calloutTip) return SystemMouseCursors.move;
+
+    // 🚀 THE FIX: Calculate true angle based on the handle's geometry + object rotation
+    double rotation = _activeObject?.rotation ?? 0.0;
+    double baseAngle = 0.0;
+
+    // 1. Assign the true geometric angle of each handle (0 is Horizontal Right)
     switch (handle) {
-      case ResizeHandle.topLeft: case ResizeHandle.bottomRight: return SystemMouseCursors.resizeUpLeftDownRight;
-      case ResizeHandle.topRight: case ResizeHandle.bottomLeft: return SystemMouseCursors.resizeUpRightDownLeft;
-      case ResizeHandle.topCenter: case ResizeHandle.bottomCenter: return SystemMouseCursors.resizeUpDown;
-      case ResizeHandle.centerLeft: case ResizeHandle.centerRight: return SystemMouseCursors.resizeLeftRight;
-      case ResizeHandle.rotation: return SystemMouseCursors.grab;
-      case ResizeHandle.body: return SystemMouseCursors.move;
-      case ResizeHandle.calloutKnee: case ResizeHandle.calloutTip: return SystemMouseCursors.move;
-      default: return SystemMouseCursors.basic;
+      case ResizeHandle.centerLeft:
+      case ResizeHandle.centerRight:
+        baseAngle = 0.0; // Horizontal axis (-)
+        break;
+      case ResizeHandle.topLeft:
+      case ResizeHandle.bottomRight:
+        baseAngle = math.pi / 4; // 45 degrees (\ axis)
+        break;
+      case ResizeHandle.topCenter:
+      case ResizeHandle.bottomCenter:
+        baseAngle = math.pi / 2; // 90 degrees (| axis)
+        break;
+      case ResizeHandle.topRight:
+      case ResizeHandle.bottomLeft:
+        baseAngle = 3 * math.pi / 4; // 135 degrees (/ axis)
+        break;
+      default:
+        return SystemMouseCursors.basic;
+    }
+
+    // 2. Combine base angle with object's rotation (wrap safely inside 0 to pi)
+    double effectiveAngle = (baseAngle + rotation) % math.pi;
+    if (effectiveAngle < 0) effectiveAngle += math.pi;
+
+    // 3. Convert to degrees for clean mathematical snapping
+    double degrees = effectiveAngle * 180 / math.pi;
+    
+    // 4. Snap to the nearest 45-degree increment (0, 45, 90, 135)
+    // For example: 46 degrees snaps to 45. 70 degrees snaps to 90.
+    int snapped = ((degrees + 22.5) / 45).floor() * 45;
+    snapped = snapped % 180;
+
+    // 5. Output the strictly correct Flutter cursor for that angle
+    switch (snapped) {
+      case 0:
+        return SystemMouseCursors.resizeLeftRight;
+      case 45:
+        return SystemMouseCursors.resizeUpLeftDownRight;
+      case 90:
+        return SystemMouseCursors.resizeUpDown;
+      case 135:
+        return SystemMouseCursors.resizeUpRightDownLeft;
+      default:
+        return SystemMouseCursors.basic;
     }
   }
-
+  
   ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    const double hSize = 25.0; 
+    // 🚀 THE FIX: Calculate scale factor based on document size compared to standard A4 (1056px)
+    double scaleFactor = math.max(widget.width, widget.height) / 1056.0;
+    if (scaleFactor < 1.0) scaleFactor = 1.0;
+
+    // 🚀 Multiply the base 25px size by the scale factor
+    final double hSize = 25.0 * scaleFactor; 
+    
     final localP = _toLocalSpace(p, obj);
     final r = obj.rect;
 
@@ -405,7 +458,8 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
         if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
       } else {
-        Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - 40);
+        // 🚀 Multiply the rotation offset (40px) by the scale factor
+        Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - (40 * scaleFactor));
         if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
         if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
@@ -421,15 +475,16 @@ class CanvasState extends State<Canvas> {
       }
     }
     
+    // 🚀 Scale the body grab-distances as well
     if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-      if (_distToSegment(localP, obj.start, obj.end) < 15) return ResizeHandle.body;
+      if (_distToSegment(localP, obj.start, obj.end) < (15 * scaleFactor)) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
       for (int i = 0; i < obj.points!.length - 1; i++) {
-        if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < 15) return ResizeHandle.body;
+        if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < (15 * scaleFactor)) return ResizeHandle.body;
       }
       if (obj.fillColor != Colors.transparent && r.contains(localP)) return ResizeHandle.body;
     } else {
-      if (r.inflate(5).contains(localP)) return ResizeHandle.body;
+      if (r.inflate(5 * scaleFactor).contains(localP)) return ResizeHandle.body;
     }
     return ResizeHandle.none;
   }
@@ -544,6 +599,7 @@ class CanvasState extends State<Canvas> {
   
   void _handlePointerMove(PointerMoveEvent details, BoxConstraints constraints) {
     final pos = _clampToCanvas(details.localPosition);
+    
     setState(() {
       if (_selectedTool == 'Eraser') {
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
@@ -562,31 +618,20 @@ class CanvasState extends State<Canvas> {
           _activeObject!.points![1] = pos; 
         } else if (_activeHandle == ResizeHandle.body) {
           
-          // 🚀 THE FIX: Calculate raw movement delta
           Offset rawMoveDelta = (pos - _dragOffset) - _activeObject!.start;
           
-          // 🚀 THE FIX: Check the object's bounding box and clamp the delta
           Rect r = _activeObject!.rect;
           double dx = rawMoveDelta.dx;
           double dy = rawMoveDelta.dy;
 
-          // Prevent moving past the Left or Right edges
-          if (r.left + dx < 0) {
-            dx = -r.left;
-          } else if (r.right + dx > widget.width) {
-            dx = widget.width - r.right;
-          }
+          if (r.left + dx < 0) dx = -r.left;
+          else if (r.right + dx > widget.width) dx = widget.width - r.right;
 
-          // Prevent moving past the Top or Bottom edges
-          if (r.top + dy < 0) {
-            dy = -r.top;
-          } else if (r.bottom + dy > widget.height) {
-            dy = widget.height - r.bottom;
-          }
+          if (r.top + dy < 0) dy = -r.top;
+          else if (r.bottom + dy > widget.height) dy = widget.height - r.bottom;
 
           Offset clampedDelta = Offset(dx, dy);
 
-          // Apply the safely clamped delta to the object
           _activeObject!.start += clampedDelta;
           _activeObject!.end += clampedDelta;
           
@@ -598,16 +643,41 @@ class CanvasState extends State<Canvas> {
           }
 
         } else if (_activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.arrow) {
+          // 🚀 THE FIX FOR ROTATED LINES
+          final oldCenter = _activeObject!.center;
           final localP = _toLocalSpace(pos, _activeObject!);
-          if (_activeHandle == ResizeHandle.topLeft) {
-            _activeObject!.start = localP;
-          } else if (_activeHandle == ResizeHandle.bottomRight) {
-            _activeObject!.end = localP;
-          }
+          
+          Offset newStart = _activeObject!.start;
+          Offset newEnd = _activeObject!.end;
+          
+          if (_activeHandle == ResizeHandle.topLeft) newStart = localP;
+          else if (_activeHandle == ResizeHandle.bottomRight) newEnd = localP;
+          
+          Offset newLocalCenter = Offset((newStart.dx + newEnd.dx) / 2, (newStart.dy + newEnd.dy) / 2);
+          
+          final double cosA = math.cos(_activeObject!.rotation);
+          final double sinA = math.sin(_activeObject!.rotation);
+          final double dcx = newLocalCenter.dx - oldCenter.dx;
+          final double dcy = newLocalCenter.dy - oldCenter.dy;
+          
+          Offset newGlobalCenter = Offset(
+            oldCenter.dx + (cosA * dcx - sinA * dcy),
+            oldCenter.dy + (sinA * dcx + cosA * dcy)
+          );
+          
+          Offset halfSize = Offset((newEnd.dx - newStart.dx) / 2, (newEnd.dy - newStart.dy) / 2);
+          
+          _activeObject!.start = newGlobalCenter - halfSize;
+          _activeObject!.end = newGlobalCenter + halfSize;
+          
         } else {
+          // 🚀 THE FIX FOR ALL ROTATED SHAPES
+          final oldCenter = _activeObject!.center;
           final localP = _toLocalSpace(pos, _activeObject!);
+          
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+          
           switch (_activeHandle) {
             case ResizeHandle.topLeft: left = localP.dx; top = localP.dy; break;
             case ResizeHandle.topCenter: top = localP.dy; break;
@@ -619,8 +689,39 @@ class CanvasState extends State<Canvas> {
             case ResizeHandle.bottomRight: right = localP.dx; bottom = localP.dy; break;
             default: break;
           }
-          _activeObject!.start = Offset(left, top);
-          _activeObject!.end = Offset(right, bottom);
+
+          double newWidth = right - left;
+          double newHeight = bottom - top;
+
+          // Prevent negative/inverted sizes which break rendering
+          if (newWidth < 10) {
+            newWidth = 10;
+            if (_activeHandle == ResizeHandle.topLeft || _activeHandle == ResizeHandle.bottomLeft || _activeHandle == ResizeHandle.centerLeft) left = right - 10;
+            else right = left + 10;
+          }
+          if (newHeight < 10) {
+            newHeight = 10;
+            if (_activeHandle == ResizeHandle.topLeft || _activeHandle == ResizeHandle.topRight || _activeHandle == ResizeHandle.topCenter) top = bottom - 10;
+            else bottom = top + 10;
+          }
+
+          // 1. Find where the new center is in the local unrotated space
+          Offset newLocalCenter = Offset(left + newWidth / 2, top + newHeight / 2);
+
+          // 2. Rotate that new local center back into the true Global space
+          final double cosA = math.cos(_activeObject!.rotation);
+          final double sinA = math.sin(_activeObject!.rotation);
+          final double dcx = newLocalCenter.dx - oldCenter.dx;
+          final double dcy = newLocalCenter.dy - oldCenter.dy;
+          
+          Offset newGlobalCenter = Offset(
+            oldCenter.dx + (cosA * dcx - sinA * dcy),
+            oldCenter.dy + (sinA * dcx + cosA * dcy)
+          );
+
+          // 3. Assign the final dimensions around the new true pivot point!
+          _activeObject!.start = newGlobalCenter - Offset(newWidth / 2, newHeight / 2);
+          _activeObject!.end = newGlobalCenter + Offset(newWidth / 2, newHeight / 2);
         }
       }
     });

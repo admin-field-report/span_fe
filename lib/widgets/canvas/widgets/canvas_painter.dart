@@ -57,7 +57,6 @@ class MainPainter extends CustomPainter {
   
   MainPainter(this.context, this.objects, this.preview);
 
-  // 🚀 THE FIX: Helper method to find the true original size of the JSON shapes!
   Rect _calculateInternalBounds(List<DrawingObject> shapes) {
     double minX = double.infinity;
     double minY = double.infinity;
@@ -94,6 +93,20 @@ class MainPainter extends CustomPainter {
     final gridPaint = Paint()..color = theme.colorScheme.onSurface.withOpacity(0.05);
     for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
     for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
+
+    // 🚀 THE FIX: Calculate scale factor based on standard A4 height (1056)
+    double scaleFactor = math.max(size.width, size.height) / 1056.0;
+    if (scaleFactor < 1.0) scaleFactor = 1.0;
+
+    // 🚀 THE FIX: Dynamically scale all visual handle variables
+    final double dotOuter = 7.0 * scaleFactor;
+    final double dotInner = 5.0 * scaleFactor;
+    final double rotLineLength = 40.0 * scaleFactor;
+    final double rotOuter = 12.0 * scaleFactor;
+    final double rotInner = 10.0 * scaleFactor;
+    final double rotIconFontSize = 16.0 * scaleFactor;
+    final double selectionStroke = 1.0 * scaleFactor;
+    final double inflatePencilSize = 4.0 * scaleFactor;
 
     void drawShape(DrawingObject obj, {bool isInternal = false}) {
       canvas.save();
@@ -176,8 +189,9 @@ class MainPainter extends CustomPainter {
         if (!isInternal && obj.isSelected && obj.isCallout && obj.points != null) {
           Paint hP = Paint()..color = Colors.blue; 
           Paint wP = Paint()..color = Colors.white; 
-          canvas.drawCircle(obj.points![0], 7, wP); canvas.drawCircle(obj.points![0], 5, hP);
-          canvas.drawCircle(obj.points![1], 7, wP); canvas.drawCircle(obj.points![1], 5, hP);
+          // 🚀 Used scaled dots
+          canvas.drawCircle(obj.points![0], dotOuter, wP); canvas.drawCircle(obj.points![0], dotInner, hP);
+          canvas.drawCircle(obj.points![1], dotOuter, wP); canvas.drawCircle(obj.points![1], dotInner, hP);
         }
       
       } else if (obj.type == DrawingType.pin) {
@@ -208,28 +222,21 @@ class MainPainter extends CustomPainter {
       } else if (obj.type == DrawingType.customTool) {
           
           if (obj.internalShapes != null && obj.internalShapes!.isNotEmpty) {
-             // 🚀 THE FIX: Calculate the exact original bounds of the JSON shapes
              Rect originalBounds = _calculateInternalBounds(obj.internalShapes!);
              
-             // Failsafe in case it's a single pixel dot
              if (originalBounds.width == 0 || originalBounds.height == 0) {
                originalBounds = originalBounds.inflate(50);
              }
 
              canvas.save();
              
-             // 🚀 THE FIX: Calculate scale multipliers so it fits your mouse drag exactly
              double scaleX = rect.width / originalBounds.width;
              double scaleY = rect.height / originalBounds.height;
 
-             // Move canvas origin to the top-left of the user's dragged box
              canvas.translate(rect.left, rect.top);
-             // Apply the squish/stretch
              canvas.scale(scaleX, scaleY);
-             // Pull the shapes backwards by their S3 coordinates so they align to (0,0)
              canvas.translate(-originalBounds.left, -originalBounds.top);
 
-             // Now draw the shapes. They will perfectly fill the 'rect' bounding box!
              for (var child in obj.internalShapes!) {
                drawShape(child, isInternal: true); 
              }
@@ -447,8 +454,9 @@ class MainPainter extends CustomPainter {
           
           canvas.drawPath(path, strokePaint);
 
+          // 🚀 Scaled pen preview dot
           if (!isInternal && obj == preview && obj.type == DrawingType.pen) {
-            canvas.drawCircle(obj.points![0], 6, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2);
+            canvas.drawCircle(obj.points![0], 6 * scaleFactor, Paint()..color = Colors.blue..style = PaintingStyle.stroke..strokeWidth = 2 * scaleFactor);
           }
         } else if (obj.type == DrawingType.line) {
           canvas.drawLine(obj.start, obj.end, strokePaint);
@@ -494,21 +502,22 @@ class MainPainter extends CustomPainter {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
 
-        // 🚀 THE FIX: Isolate Arrows and Lines to only draw Start/End dots
         if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-          canvas.drawCircle(obj.start, 7, wP);
-          canvas.drawCircle(obj.start, 5, hP);
-          canvas.drawCircle(obj.end, 7, wP);
-          canvas.drawCircle(obj.end, 5, hP);
+          // 🚀 Used scaled dots
+          canvas.drawCircle(obj.start, dotOuter, wP);
+          canvas.drawCircle(obj.start, dotInner, hP);
+          canvas.drawCircle(obj.end, dotOuter, wP);
+          canvas.drawCircle(obj.end, dotInner, hP);
         } else {
-          // 🚀 Original logic for all other shapes (Rects, Circles, Patterns, Text)
-          Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - 40);
-          canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = 1);
-          canvas.drawCircle(rotPos, 12, wP);
-          canvas.drawCircle(rotPos, 10, hP);
+          // 🚀 Used scaled rotation line and dots
+          Offset rotPos = Offset(rect.topCenter.dx, rect.topCenter.dy - rotLineLength);
+          canvas.drawLine(rect.topCenter, rotPos, hP..strokeWidth = selectionStroke);
+          canvas.drawCircle(rotPos, rotOuter, wP);
+          canvas.drawCircle(rotPos, rotInner, hP);
 
+          // 🚀 Used scaled icon font size
           final rotIcon = TextPainter(
-            text: const TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
+            text: TextSpan(text: '\u21BB', style: TextStyle(color: Colors.white, fontSize: rotIconFontSize, fontWeight: FontWeight.bold, fontFamily: 'MaterialIcons')),
             textDirection: TextDirection.ltr,
           );
           rotIcon.layout();
@@ -517,11 +526,13 @@ class MainPainter extends CustomPainter {
           if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
             final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
             for (var p in points) { 
-              canvas.drawCircle(p, 7, wP); 
-              canvas.drawCircle(p, 5, hP); 
+              // 🚀 Used scaled dots
+              canvas.drawCircle(p, dotOuter, wP); 
+              canvas.drawCircle(p, dotInner, hP); 
             }
           } else {
-            canvas.drawRect(rect.inflate(4), hP..style = PaintingStyle.stroke..strokeWidth = 1);
+            // 🚀 Used scaled inflation and stroke width
+            canvas.drawRect(rect.inflate(inflatePencilSize), hP..style = PaintingStyle.stroke..strokeWidth = selectionStroke);
           }
         }
       }
