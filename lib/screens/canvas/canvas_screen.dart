@@ -271,6 +271,9 @@ void _switchPage(String newPage) async {
              List<DrawingObject> loadedObjects = [];
              final List items = annData['data'][0]['items'] ?? [];
              
+             final double pWidth = _pageDataMap['Attached Image']!.width;
+             final double pHeight = _pageDataMap['Attached Image']!.height;
+
              for (var item in items) {
                 DrawingType parsedType = _parseDrawingType(item['type']);
                 String? savedToolId = item['toolId'];
@@ -291,14 +294,16 @@ void _switchPage(String newPage) async {
                   type: parsedType,
                   toolId: savedToolId,
                   internalShapes: matchedInternalShapes,
-                  start: Offset(item['start']['dx'] * 816.0, item['start']['dy'] * 1056.0),
-                  end: Offset(item['end']['dx'] * 816.0, item['end']['dy'] * 1056.0),
+                  // 🚀 THE FIX: Use pWidth and pHeight instead of 816 / 1056
+                  start: Offset(item['start']['dx'] * pWidth, item['start']['dy'] * pHeight),
+                  end: Offset(item['end']['dx'] * pWidth, item['end']['dy'] * pHeight),
                   text: item['text'],
                   description: item['description'],
                   strokeWidth: (item['strokeWidth'] ?? 2.0).toDouble(),
                   tagIds: item['tagIds'] != null ? List<String>.from(item['tagIds']) : null,
                   imageUrls: item['imageUrl'] != null ? List<String>.from(item['imageUrl']) : null,
-                  points: (item['points'] as List?)?.map((p) => Offset(p['dx'] * 816.0, p['dy'] * 1056.0)).toList(),
+                  // 🚀 THE FIX: Use pWidth and pHeight for the points array as well
+                  points: (item['points'] as List?)?.map((p) => Offset(p['dx'] * pWidth, p['dy'] * pHeight)).toList(),
                   color: item['color'] != null ? Color(item['color']) : Colors.red,
                   fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
                   borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
@@ -435,7 +440,7 @@ void _switchPage(String newPage) async {
               isUnderline: item['isUnderline'] ?? false,
               isStrikethrough: item['isStrikethrough'] ?? false,
               isCallout: item['isCallout'] ?? false,
-              points: item['points'] != null ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * 816.0, (p['dy'] ?? 0.0) * 1056.0)).toList() : null,
+              points: item['points'] != null ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * pWidth, (p['dy'] ?? 0.0) * pHeight)).toList() : null,
             ));
           }
           setState(() { pageData.objects = loadedObjects; });

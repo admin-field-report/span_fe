@@ -379,16 +379,22 @@ class CanvasState extends State<Canvas> {
     if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
     if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note') return SystemMouseCursors.text;
     
-    if (handle == ResizeHandle.none) return SystemMouseCursors.basic;
+    // 🚀 THE FIX: If not hovering over a handle, show the crosshair for drawing tools!
+    if (handle == ResizeHandle.none) {
+      return _selectedTool == 'Select' 
+          ? SystemMouseCursors.basic 
+          : SystemMouseCursors.precise; // Shows a precise crosshair (+) for drawing
+    }
+
+    // Standard handle cursors
     if (handle == ResizeHandle.body) return SystemMouseCursors.move;
     if (handle == ResizeHandle.rotation) return SystemMouseCursors.grab;
     if (handle == ResizeHandle.calloutKnee || handle == ResizeHandle.calloutTip) return SystemMouseCursors.move;
 
-    // 🚀 THE FIX: Calculate true angle based on the handle's geometry + object rotation
+    // Calculate true angle based on the handle's geometry + object rotation
     double rotation = _activeObject?.rotation ?? 0.0;
     double baseAngle = 0.0;
 
-    // 1. Assign the true geometric angle of each handle (0 is Horizontal Right)
     switch (handle) {
       case ResizeHandle.centerLeft:
       case ResizeHandle.centerRight:
@@ -410,19 +416,14 @@ class CanvasState extends State<Canvas> {
         return SystemMouseCursors.basic;
     }
 
-    // 2. Combine base angle with object's rotation (wrap safely inside 0 to pi)
     double effectiveAngle = (baseAngle + rotation) % math.pi;
     if (effectiveAngle < 0) effectiveAngle += math.pi;
 
-    // 3. Convert to degrees for clean mathematical snapping
     double degrees = effectiveAngle * 180 / math.pi;
     
-    // 4. Snap to the nearest 45-degree increment (0, 45, 90, 135)
-    // For example: 46 degrees snaps to 45. 70 degrees snaps to 90.
     int snapped = ((degrees + 22.5) / 45).floor() * 45;
     snapped = snapped % 180;
 
-    // 5. Output the strictly correct Flutter cursor for that angle
     switch (snapped) {
       case 0:
         return SystemMouseCursors.resizeLeftRight;
