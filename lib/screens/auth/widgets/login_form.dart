@@ -3,8 +3,14 @@ import '../controllers/auth_controller.dart';
 import 'emerald_textfield.dart';
 
 class LoginForm extends StatefulWidget {
-  final VoidCallback onSwitch;
-  const LoginForm({super.key, required this.onSwitch});
+  final VoidCallback onSwitchToSignup;
+  final VoidCallback onForgotPassword;
+
+  const LoginForm({
+    super.key, 
+    required this.onSwitchToSignup,
+    required this.onForgotPassword,
+  });
 
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -15,8 +21,6 @@ class _LoginFormState extends State<LoginForm> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   
-
-  // Hardcoded Emerald and UI colors
   static const Color emerald = Color(0xFF00AB55);
   static const Color inactiveText = Color(0xFF919EAB);
 
@@ -45,11 +49,7 @@ class _LoginFormState extends State<LoginForm> {
         children: [
           const Text(
             "Welcome back",
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 22,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -89,20 +89,15 @@ class _LoginFormState extends State<LoginForm> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () {},
+              onPressed: widget.onForgotPassword, // 🚀 Hooked up callback
               child: const Text(
                 "Forgot password?",
-                style: TextStyle(
-                  color: emerald,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(color: emerald, fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
           ),
           const SizedBox(height: 24),
 
-          // Sign In Button
           ListenableBuilder(
             listenable: AuthController.instance,
             builder: (context, _) {
@@ -123,19 +118,9 @@ class _LoginFormState extends State<LoginForm> {
                     ? const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          SizedBox(
-                            height: 20, 
-                            width: 20, 
-                            child: CircularProgressIndicator(
-                              color: Colors.white, 
-                              strokeWidth: 2,
-                            ),
-                          ),
+                          SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
                           SizedBox(width: 12),
-                          Text(
-                            "Signing in...", 
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
+                          Text("Signing in...", style: TextStyle(fontWeight: FontWeight.bold)),
                         ],
                       ) 
                     : const Text("Sign In", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -166,15 +151,8 @@ class _LoginFormState extends State<LoginForm> {
               MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
-                  onTap: widget.onSwitch,
-                  child: const Text(
-                    "Sign up",
-                    style: TextStyle(
-                      color: emerald, 
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 13,
-                    ),
-                  ),
+                  onTap: widget.onSwitchToSignup, // 🚀 Hooked up callback
+                  child: const Text("Sign up", style: TextStyle(color: emerald, fontWeight: FontWeight.bold, fontSize: 13)),
                 ),
               )
             ],

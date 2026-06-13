@@ -24,6 +24,8 @@ class AuthController extends ChangeNotifier {
   String? _targetPath;
   bool _resetingPassword = false;
   String? _errorMessageResetingPassword;
+  bool _forgotPasswordLoading = false;
+  String? _forgotPasswordErrorMessage;
 
   // --- Getters ---
   bool get isInitialized => _isInitialized;
@@ -36,6 +38,8 @@ class AuthController extends ChangeNotifier {
   String get targetPath => _targetPath ?? '/';
   bool get resetingPassword => _resetingPassword;
   String? get errorMessageResetingPassword => _errorMessageResetingPassword;
+  bool get forgotPasswordLoading => _forgotPasswordLoading;
+  String? get forgotPasswordErrorMessage => _forgotPasswordErrorMessage;
 
   bool _isExplicitLogout = false;
   bool get isExplicitLogout => _isExplicitLogout;
@@ -326,6 +330,60 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> forgotPassword(String email) async {
+    _forgotPasswordLoading = true;
+    _forgotPasswordErrorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await apiService.post('/user/forgot-password', {
+        "email": email,
+      });
+      
+      if (response.statusCode == 200 ) {
+        _forgotPasswordLoading = false;
+        notifyListeners();
+        return true; // Success
+      } else {
+        final resData = jsonDecode(response.body);
+        throw Exception(resData['message'] ?? 'Failed to send reset code.');
+      }
+    } catch (e) {
+      _forgotPasswordErrorMessage = e.toString().replaceAll("Exception: ", "");
+      _forgotPasswordLoading = false;
+      notifyListeners();
+      return false; // Failure
+    }
+  }
+
+  Future<bool> resetForgotPassword(String email, String code, String newPassword) async {
+    _forgotPasswordLoading = true;
+    _forgotPasswordErrorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await apiService.post('/user/reset-password', {
+        "email": email,
+        "code": code,
+        "newPassword": newPassword,
+      });
+      
+      if (response.statusCode == 200) {
+        _forgotPasswordLoading = false;
+        notifyListeners();
+        return true; // Success
+      } else {
+        final resData = jsonDecode(response.body);
+        throw Exception(resData['message'] ?? 'Failed to reset password.');
+      }
+    } catch (e) {
+      _forgotPasswordErrorMessage = e.toString().replaceAll("Exception: ", "");
+      _forgotPasswordLoading = false;
+      notifyListeners();
+      return false; // Failure
+    }
+  }
+
   Future<void> logout() async {
     _isExplicitLogout = true;
     
@@ -336,6 +394,11 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     
     Future.microtask(() => _isExplicitLogout = false);
+  }
+
+  Future<void> resetForgotPasswordState() async {
+    _forgotPasswordErrorMessage = null;
+    notifyListeners();
   }
 }
 
