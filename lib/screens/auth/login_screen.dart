@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import 'widgets/login_form.dart';
 import 'widgets/signup_form.dart';
 import 'widgets/early_access_form.dart';
@@ -55,6 +57,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     
     context.go(newUri.toString());
+  }
+
+  Future<void> _launchUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint('Could not launch $url');
+    }
   }
 
   @override
@@ -171,13 +180,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   TextButton(
-                                    onPressed: () {}, 
+                                    onPressed: () => _launchUrl('https://spaninspect.com/privacy-policy'),
                                     child: const Text("Privacy Notice", style: TextStyle(color: Colors.grey, fontSize: 12)),
                                   ),
                                   const Text("|", style: TextStyle(color: Colors.white10)),
                                   TextButton(
-                                    onPressed: () {}, 
-                                    child: const Text("Terms Of Use", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                    onPressed: () => _launchUrl('https://spaninspect.com/terms-of-service'),
+                                    child: const Text("Terms Of Service", style: TextStyle(color: Colors.grey, fontSize: 12)),
                                   ),
                                 ],
                               ),
