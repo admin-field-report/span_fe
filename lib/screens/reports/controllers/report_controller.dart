@@ -99,7 +99,7 @@ class ReportController extends ChangeNotifier {
         }).toList()
       };
       
-      final presignResponse = await _apiService.post('/reportTemplatee/$reportId/documents/presigned-urls', presignPayload);
+      final presignResponse = await _apiService.post('/reportTemplate/$reportId/documents/presigned-urls', presignPayload);
       final presignData = jsonDecode(presignResponse.body);
       
       if (presignData['uploads'] == null) return CreateReportStatus.partialSuccess;
