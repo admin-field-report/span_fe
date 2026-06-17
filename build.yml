@@ -5,11 +5,12 @@ phases:
     runtime-versions:
       nodejs: 20
     commands:
-      - echo Installing Flutter SDK
-      - git clone https://github.com/flutter/flutter.git -b stable
-      - export PATH="$PATH:`pwd`/flutter/bin"
+      # - echo Installing Flutter SDK
+      # - git clone https://github.com/flutter/flutter.git -b stable
+      # - export PATH="$PATH:`pwd`/flutter/bin"
       - echo $STACK_ENV
       - echo $SPAN_FE_WEB_BUCKET_NAME
+      
 
   pre_build:
     commands:
@@ -29,5 +30,5 @@ phases:
       - echo "Removing the web build"
       - rm -rf web_build
       - echo "Creating CloudFront invalidation"
-      - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+      - aws cloudfront create-invalidation --distribution-id E3FNXIM11E9RFO --paths "/*"
       - echo Deployment completed at `date`
