@@ -1,19 +1,8 @@
 import 'package:flutter/material.dart';
-import './controllers/auth_controller.dart';
+import '../../widgets/app_logo/app_logo.dart';
 
-class AppLoadingScreen extends StatefulWidget {
+class AppLoadingScreen extends StatelessWidget {
   const AppLoadingScreen({super.key});
-
-  @override
-  State<AppLoadingScreen> createState() => _AppLoadingScreenState();
-}
-
-class _AppLoadingScreenState extends State<AppLoadingScreen> {
-  @override
-  void initState() {
-    super.initState();
-    authController.fetchUserDetails();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,23 +15,21 @@ class _AppLoadingScreenState extends State<AppLoadingScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 1. LOGO CONTAINER
             Container(
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.1),
+                // color: colorScheme.primary.withOpacity(1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.analytics_rounded,
-                size: 60,
-                color: colorScheme.primary,
-              ),
+              // child: Icon(
+              //   Icons.analytics_rounded,
+              //   size: 60,
+              //   color: colorScheme.primary,
+              // ),
+              child: AppLogo(size: 60, padding: 10),
             ),
             const SizedBox(height: 32),
-            
-            // 2. COMPANY NAME (Using Theme TextStyles)
             Text(
               "SPAN INSPECT",
               style: theme.textTheme.headlineMedium?.copyWith(
@@ -59,17 +46,12 @@ class _AppLoadingScreenState extends State<AppLoadingScreen> {
                 letterSpacing: 0.5,
               ),
             ),
-            
             const SizedBox(height: 64),
-            
-            // 3. THEMED LOADER
             CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
               strokeWidth: 3,
             ),
             const SizedBox(height: 24),
-            
-            // 4. STATUS TEXT
             Text(
               "Loading...",
               style: theme.textTheme.labelSmall?.copyWith(

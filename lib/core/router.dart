@@ -15,28 +15,46 @@ import '../screens/tags/tag_management_screen.dart';
 import '../screens/ai_data/ai_data_screen.dart';
 import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
+import '../screens/reports/reports_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final router = GoRouter(
-  navigatorKey: rootNavigatorKey,
-  refreshListenable: authController,
   initialLocation: '/',
+  refreshListenable: authController,
+  navigatorKey: rootNavigatorKey,
   errorBuilder: (context, state) => const NotFoundScreen(),
   routes: [
     // --- PUBLIC ROUTES ---
-    GoRoute(
+GoRoute(
       path: '/login',
       builder: (context, state) {
         final isBeta = state.uri.queryParameters['beta'] == 'true';
-        return LoginScreen(showBetaLogin: isBeta, isLoginMode: true);
+        return LoginScreen(
+          showBetaLogin: isBeta, 
+          authMode: AuthMode.login, // 🚀 Updated to use enum
+        );
       },
     ),
     GoRoute(
       path: '/signup',
       builder: (context, state) {
         final isBeta = state.uri.queryParameters['beta'] == 'true';
-        return LoginScreen(showBetaLogin: isBeta, isLoginMode: false);
+        return LoginScreen(
+          showBetaLogin: isBeta, 
+          authMode: AuthMode.signup, // 🚀 Updated to use enum
+        );
+      },
+    ),
+    // 🚀 NEW: Added the forgot password route
+    GoRoute(
+      path: '/forgot-password',
+      builder: (context, state) {
+        final isBeta = state.uri.queryParameters['beta'] == 'true';
+        return LoginScreen(
+          showBetaLogin: isBeta, 
+          authMode: AuthMode.forgotPassword, 
+        );
       },
     ),
     GoRoute(
@@ -47,8 +65,11 @@ final router = GoRouter(
     ShellRoute(
       builder: (context, state, child) {
         final bool isCanvasRoute = state.uri.path.contains('/canvas');
+        final bool removePadding = state.uri.path.contains('/canvas');
         return MainScaffold(
-          isScrollable: !isCanvasRoute, 
+          isScrollable: !isCanvasRoute,
+          removePadding: removePadding,
+          isFullScreen: isCanvasRoute,
           child: child,
         );
       },
@@ -83,7 +104,7 @@ final router = GoRouter(
                   },
                   routes: [
                     GoRoute(
-                      path: 'canvas', 
+                      path: '/canvas', 
                       builder: (context, state) {
                         final documentId = state.uri.queryParameters['document'] ?? '';
                         final page = state.uri.queryParameters['page'] ?? '1';
@@ -115,6 +136,10 @@ final router = GoRouter(
           builder: (context, state) => const ToolsManagerScreen(),
         ),
         GoRoute(
+          path: '/templates/reports',
+          builder: (context, state) => const ReportsScreen(),
+        ),
+        GoRoute(
           path: '/ai',
           builder: (context, state) => const AIDataScreen(),
         ),
@@ -127,7 +152,61 @@ final router = GoRouter(
   ],
 
   // 🚀 BULLETPROOF WEB REDIRECT LOGIC
-  redirect: (context, state) {
+//   redirect: (context, state) {
+//     final bool isAuthenticated = authController.isAuthenticated;
+//     final bool isInitialized = authController.isInitialized;
+    
+//     final String path = state.uri.path;
+//     final String fullUri = state.uri.toString();
+
+//     // 1. Extract the intended destination from the URL if it exists
+//     final String? continueTo = state.uri.queryParameters['continue'];
+
+//     // Helper function: Safely attach the intended path to the redirect URL
+//     String createRedirect(String targetPath) {
+      
+//       if (authController.isExplicitLogout) return targetPath;
+
+//       final targetUri = continueTo ?? (path != '/' && path != '/login' && path != '/loading' && path != '/signup' ? fullUri : null);
+      
+//       if (targetUri != null) {
+//         return Uri(path: targetPath, queryParameters: {'continue': targetUri}).toString();
+//       }
+//       return targetPath;
+//     }
+
+//     // 2. Still Booting? Force to /loading and save the deep link in the URL
+//     if (!isInitialized) {
+//       if (path == '/loading') return null; 
+//       return createRedirect('/loading');
+//     }
+
+//     // 3. Not logged in? Force to /login and save the deep link in the URL
+//     if (!isAuthenticated) {
+//       if (path == '/login' || path == '/signup') return null; 
+//       return createRedirect('/login');
+//     }
+
+//     // 4. Logged in but User Data is missing? Fetch it on /loading
+//     if (isAuthenticated && authController.user == null) {
+//       return createRedirect('/loading');
+//     }
+
+//     // 5. Fully Authenticated and Booted!
+//     // If they are sitting on a public screen, release them to their intended path
+//     if (path == '/login' || path == '/loading' || path == '/signup') {
+//       if (continueTo != null && continueTo.isNotEmpty) {
+//         return continueTo; // Send them back to the deep link!
+//       }
+//       return '/projects'; // Default fallback if no deep link existed
+//     }
+
+//     // 6. Allow all normal navigation to proceed
+//     return null;
+//   },
+// );
+
+redirect: (context, state) {
     final bool isAuthenticated = authController.isAuthenticated;
     final bool isInitialized = authController.isInitialized;
     
@@ -137,13 +216,19 @@ final router = GoRouter(
     // 1. Extract the intended destination from the URL if it exists
     final String? continueTo = state.uri.queryParameters['continue'];
 
+    // 🚀 NEW: Define the list of public routes that don't require login
+    final bool isPublicRoute = path == '/login' || 
+                               path == '/signup' || 
+                               path == '/forgot-password';
+
     // Helper function: Safely attach the intended path to the redirect URL
     String createRedirect(String targetPath) {
-      // Don't save default routes as "intended destinations"
-      final targetUri = continueTo ?? (path != '/' && path != '/login' && path != '/loading' && path != '/signup' ? fullUri : null);
+      if (authController.isExplicitLogout) return targetPath;
+
+      // 🚀 UPDATED: Use the new isPublicRoute check
+      final targetUri = continueTo ?? (path != '/' && !isPublicRoute && path != '/loading' ? fullUri : null);
       
       if (targetUri != null) {
-        // This safely encodes the URL. Example: /loading?continue=%2Fcanvas%3Fdoc%3D123
         return Uri(path: targetPath, queryParameters: {'continue': targetUri}).toString();
       }
       return targetPath;
@@ -155,25 +240,24 @@ final router = GoRouter(
       return createRedirect('/loading');
     }
 
-    // 3. Not logged in? Force to /login and save the deep link in the URL
+    // 3. Not logged in? Force to /login (unless they are already on a public route)
     if (!isAuthenticated) {
-      if (path == '/login' || path == '/signup') return null; 
+      if (isPublicRoute) return null; // 🚀 THE FIX: Allows /forgot-password to render!
       return createRedirect('/login');
     }
 
     // 4. Logged in but User Data is missing? Fetch it on /loading
     if (isAuthenticated && authController.user == null) {
-      if (path == '/loading') return null;
       return createRedirect('/loading');
     }
 
     // 5. Fully Authenticated and Booted!
     // If they are sitting on a public screen, release them to their intended path
-    if (path == '/login' || path == '/loading' || path == '/signup') {
+    if (isPublicRoute || path == '/loading') { // 🚀 UPDATED: Use the new isPublicRoute check
       if (continueTo != null && continueTo.isNotEmpty) {
         return continueTo; // Send them back to the deep link!
       }
-      return '/'; // Default fallback if no deep link existed
+      return '/projects'; // Default fallback if no deep link existed
     }
 
     // 6. Allow all normal navigation to proceed

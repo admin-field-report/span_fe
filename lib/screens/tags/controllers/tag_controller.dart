@@ -122,6 +122,8 @@ class TagController extends ChangeNotifier {
         tagGroups = (data['data'] as List)
             .map((g) => AppTagGroup.fromJson(g as Map<String, dynamic>))
             .toList();
+
+        tagGroups.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       }
     } catch (e) {
       debugPrint("Error fetching tag groups: $e");
@@ -190,7 +192,7 @@ class TagController extends ChangeNotifier {
   Future<String?> createTagGroup({  
     required String name,
     required List<String> tagIds,
-    required List<String> templateIds,
+    // required List<String> templateIds,
     required List<Map<String, String>> newTags, // <-- ADD THIS
   }) async {
     notifyListeners();
@@ -199,7 +201,7 @@ class TagController extends ChangeNotifier {
       final payload = {
         "name": name,
         "tag_id_list": tagIds,
-        "template_id_list": templateIds,
+        // "template_id_list": templateIds,
         "new_tag_list": newTags,
       };
 
@@ -278,6 +280,23 @@ class TagController extends ChangeNotifier {
         return false;
       }
     } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteGroup(String groupId) async {
+    try {
+      final response = await _api.delete('/tagGroup/$groupId');
+      
+      if (response.statusCode == 200) {
+        // Remove from local list and refresh UI
+        tagGroups.removeWhere((g) => g.id == groupId);
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint("Error deleting tag group: $e");
       return false;
     }
   }

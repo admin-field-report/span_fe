@@ -1,10 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:http/http.dart' as http;
 
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
@@ -32,26 +29,20 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   List<dynamic> _inspections = [];
   final List<String> _selectedInspectionIds = []; 
 
-  // Step 2: NEW Local Files
-  final List<PlatformFile> _selectedFiles = [];
-
-  // Step 2: EXISTING Documents
-  bool _isLoadingExistingDocs = true;
-  List<dynamic> _existingDocuments = [];
-  final List<dynamic> _selectedExistingDocs = []; 
+  // 🚀 Step 2: Report Templates (Replaced Documents)
+  bool _isLoadingTemplates = true;
+  List<dynamic> _reportTemplates = [];
+  dynamic _selectedReportTemplate; // Single selection
 
   // Step 3: Clarification Questions
   List<dynamic> _clarificationQuestions = [];
   final Map<int, TextEditingController> _questionAnswers = {};
-  String? _summarizeJobId;
-
-  int get _totalSelectedDocuments => _selectedFiles.length + _selectedExistingDocs.length;
 
   @override
   void initState() {
     super.initState();
     _fetchInspections();
-    _fetchExistingDocuments(); 
+    _fetchReportTemplates();
   }
 
   @override
@@ -88,180 +79,70 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  // --- FETCH EXISTING DOCUMENTS LOGIC ---
-  Future<void> _fetchExistingDocuments() async {
+ Future<void> _fetchReportTemplates() async {
     try {
-      final response = await _apiService.get('/reportTemplate/getByUserAndComapany');
+      final response = await _apiService.get('/reportTemplate/getByCompanyId');
       final responseData = jsonDecode(response.body);
 
       if (!mounted) return;
 
       if (responseData['success'] == true || responseData['data'] != null) {
+        List<dynamic> fetched = responseData['data'] ?? [];
+        
+        // Sort newest first
+        fetched.sort((a, b) {
+          final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return dateB.compareTo(dateA); 
+        });
+
         setState(() {
-          _existingDocuments = responseData['data'] ?? [];
-          _isLoadingExistingDocs = false;
+          _reportTemplates = fetched;
+          _isLoadingTemplates = false;
         });
       }
     } catch (e) {
-      debugPrint("🚨 Error fetching existing documents: $e");
-      if (mounted) setState(() => _isLoadingExistingDocs = false);
+      debugPrint("🚨 Error fetching report templates: $e");
+      if (mounted) setState(() => _isLoadingTemplates = false);
     }
   }
-
-  // --- STEP 2 LOGIC (LOCAL FILES) ---
-  Future<void> _pickFiles() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-        allowMultiple: true, 
-      );
-      if (result != null) {
-        setState(() => _selectedFiles.addAll(result.files));
-      }
-    } catch (e) {
-      debugPrint("Error picking files: $e");
-    }
-  }
-
-  void _removeFile(int index) => setState(() => _selectedFiles.removeAt(index));
 
   // 🚀 THE HEAVY LIFTING: Merge Existing + Upload New -> Register Template -> Trigger AI
   Future<void> _processDocumentsAndAnalyze() async {
     setState(() {
       _isProcessing = true;
-      _loadingMessage = "Preparing Documents...";
+      _loadingMessage = "Generating Skill & Questions...";
     });
 
     try {
-      List<String> finalFileKeys = [];
-      List<String> finalOriginalFilenames = [];
+      // 1. TRIGGER SKILL GENERATION
+      final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
+      final genData = jsonDecode(genRes.body);
 
-      // 1. ADD EXISTING DOCUMENTS (No S3 upload needed!)
-      for (var doc in _selectedExistingDocs) {
-        final String s3Url = doc['s3_report_template_url']?.toString() ?? "";
-        finalFileKeys.add(s3Url); 
-        
-        // Extract the filename from the end of the S3 URL since 'name' is null
-        String originalName = doc['name'] ?? "Existing_Document.pdf";
-        if (doc['name'] == null && s3Url.isNotEmpty) {
-          originalName = s3Url.split('/').last;
-        }
-        
-        finalOriginalFilenames.add(originalName);
-      }
+      final String statusEndpoint = genData['data']['status_endpoint'];
 
-      // 2. PROCESS & UPLOAD LOCAL NEW FILES (If any)
-      if (_selectedFiles.isNotEmpty) {
-        setState(() => _loadingMessage = "Getting upload URLs...");
-        
-        final presignPayload = {
-          "project_id": widget.projectId,
-          "files": _selectedFiles.map((f) => {
-            "file_name": f.name,
-            "content_type": "application/pdf"
-          }).toList()
-        };
-
-        final presignRes = await _apiService.post('/reportTemplate/upload-presigned-urls', presignPayload);
-        final presignData = jsonDecode(presignRes.body);
-        final List<dynamic> uploads = presignData['data'] ?? [];
-
-        setState(() => _loadingMessage = "Uploading ${_selectedFiles.length} new documents...");
-
-        List<String> newlyUploadedKeys = []; // 🚀 Track keys for the new API call
-
-        for (var upload in uploads) {
-          final fileName = upload['file_name'];
-          final signedUrl = upload['signedUrl'];
-          final fileKey = upload['key'];
-
-          final localFile = _selectedFiles.firstWhere((f) => f.name == fileName);
-          List<int> fileBytes = localFile.bytes ?? await File(localFile.path!).readAsBytes();
-
-          final s3Res = await http.put(
-            Uri.parse(signedUrl),
-            headers: { 'Content-Type': 'application/pdf' },
-            body: fileBytes,
-          );
-
-          if (s3Res.statusCode != 200 && s3Res.statusCode != 201) {
-            throw Exception("Failed to upload $fileName to S3");
-          }
-          
-          finalFileKeys.add(fileKey);
-          finalOriginalFilenames.add(fileName);
-          newlyUploadedKeys.add(fileKey); // 🚀 Add to tracking list
-        }
-
-        // 🚀 2.5 REGISTER NEW DOCUMENTS IN THE DATABASE
-        if (newlyUploadedKeys.isNotEmpty) {
-          setState(() => _loadingMessage = "Registering new templates...");
-          final createTemplatePayload = {
-            "s3_report_template_url": newlyUploadedKeys
-          };
-          
-          final createRes = await _apiService.post('/reportTemplate/create', createTemplatePayload);
-          
-          if (createRes.statusCode != 200 && createRes.statusCode != 201) {
-            debugPrint("Warning: Failed to register new templates in DB. Proceeding anyway...");
-          }
-        }
-      }
-
-      // 3. START SUMMARIZE JOB WITH MERGED DATA
-      setState(() => _loadingMessage = "Starting AI Analysis...");
-      final summarizePayload = {
-        "inspection_ids": _selectedInspectionIds,
-        "skill_name": "inspection-skill",
-        "fileKeys": finalFileKeys,
-        "originalFilenames": finalOriginalFilenames
-      };
-
-      final summarizeRes = await _apiService.post('/inspection/report/summarize', summarizePayload);
-      final summarizeData = jsonDecode(summarizeRes.body);
-      
-      final String rawEndpoint = summarizeData['status_endpoint'];
-      final String statusEndpoint = rawEndpoint.startsWith('/v1') 
-          ? rawEndpoint.replaceFirst('/v1', '') 
-          : rawEndpoint;
-          
-      _summarizeJobId = summarizeData['job_id'];
-
-      // 4. POLL STATUS ENDPOINT
-      setState(() => _loadingMessage = "Analyzing Data... This may take a minute.");
-      
+      // 2. POLL UNTIL SKILL IS GENERATED
       bool isComplete = false;
-      int attempts = 0;
-      final int maxAttempts = 30; 
-
-      while (!isComplete && attempts < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 3)); 
-        attempts++;
-
+      while (!isComplete) {
+        await Future.delayed(const Duration(seconds: 3));
         final pollRes = await _apiService.get(statusEndpoint);
         final pollData = jsonDecode(pollRes.body);
-
-        if (pollData['status'] == 'completed') {
-          isComplete = true;
-          
-          if (!mounted) return;
-          
-          setState(() {
-            _clarificationQuestions = pollData['result']['clarification_questions'] ?? [];
-            _questionAnswers.clear();
-            for (int i = 0; i < _clarificationQuestions.length; i++) {
-              _questionAnswers[i] = TextEditingController();
-            }
-            _currentStep += 1; 
-          });
-        } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
-          throw Exception("Analysis job failed on server.");
-        }
+        if (pollData['status'] == 'completed') isComplete = true;
       }
 
-      if (!isComplete) throw Exception("Analysis timed out.");
+      // 3. GET CLARIFICATION QUESTIONS
+      setState(() => _loadingMessage = "Fetching questions...");
+      final qRes = await _apiService.get('/reportTemplate/${_selectedReportTemplate['id']}/clarification-questions');
+      final qData = jsonDecode(qRes.body);
 
+      setState(() {
+        _clarificationQuestions = qData['data']['clarification_questions'] ?? []; // Adjust key based on API
+        _questionAnswers.clear();
+        for (int i = 0; i < _clarificationQuestions.length; i++) {
+          _questionAnswers[i] = TextEditingController();
+        }
+        _currentStep = 2; // Move to the Questions Step
+      });
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
     } finally {
@@ -279,8 +160,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       setState(() => _currentStep += 1);
     } 
     else if (_currentStep == 1) {
-      if (_totalSelectedDocuments < 3 || _totalSelectedDocuments > 10) {
-        ToastService.show(context, message: "Please select between 3 and 10 total PDFs (Selected: $_totalSelectedDocuments).", type: ToastType.error);
+      // 🚀 Validate single template selection
+      if (_selectedReportTemplate == null) {
+        ToastService.show(context, message: "Please select a Report Template.", type: ToastType.error);
         return;
       }
       _processDocumentsAndAnalyze();
@@ -306,6 +188,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     });
     
     try {
+      // 1. APPLY CLARIFICATIONS
+
       final Map<String, String> answersPayload = {};
       
       for (int i = 0; i < _clarificationQuestions.length; i++) {
@@ -317,59 +201,83 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         }
       }
 
-      // Proceed with the payload (it might be an empty map {}, which is perfectly fine)
-      final finalizeRes = await _apiService.post(
-        '/report-skills/finalize-from-summarize/$_summarizeJobId',
-        {'clarification_answers': answersPayload}
-      );
-      
-      final finalizeData = jsonDecode(finalizeRes.body);
+      if (answersPayload.isEmpty) {
 
-      final String rawEndpoint = finalizeData['status_endpoint'];
-      final String statusEndpoint = rawEndpoint.startsWith('/v1') 
-          ? rawEndpoint.replaceFirst('/v1', '') 
-          : rawEndpoint;
+        final templateDetails = await _apiService.get('/reportTemplate/getById/${_selectedReportTemplate['id']}');
+        final templateData = jsonDecode(templateDetails.body);
 
-      bool isComplete = false;
-      int attempts = 0;
-      final int maxAttempts = 30;
-
-      while (!isComplete && attempts < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 3));
-        attempts++;
-
-        final pollRes = await _apiService.get(statusEndpoint);
-        final pollData = jsonDecode(pollRes.body);
-
-        if (pollData['status'] == 'completed') {
-          isComplete = true;
-          
-          if (!mounted) return;
-          
-          final skillContent = pollData['result']['skill']['skill_content'];
-          final skillId = pollData['result']['skill']['id'];
-
-          ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
-          
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ReportSkillPreviewScreen(
-                projectId: widget.projectId,
-                skillId: skillId,
-                initialContent: skillContent,
-                inspectionIds: [..._selectedInspectionIds],
-              ),
+        final bool? didCreateReport = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReportSkillPreviewScreen(
+              projectId: widget.projectId,
+              reportTemplateId: _selectedReportTemplate['id'],
+              initialContent: templateData['data']['skill_content'] ?? "",
+              inspectionIds: [..._selectedInspectionIds],
             ),
-          );
-          
-        } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
-          throw Exception("Finalization failed on server.");
+          ),
+        );
+
+        if (!context.mounted) return;
+        if (didCreateReport == true) {
+          Navigator.pop(context, true);
         }
+      } else {
+        // Proceed with the payload (it might be an empty map {}, which is perfectly fine)
+        final finalizeRes = await _apiService.post(
+          '/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications',
+          {'clarification_answers': answersPayload}
+        );
+        
+        final finalizeData = jsonDecode(finalizeRes.body);
+
+        final String statusEndpoint = finalizeData['status_endpoint'];
+
+        bool isComplete = false;
+        int attempts = 0;
+        final int maxAttempts = 30;
+
+        while (!isComplete && attempts < maxAttempts) {
+          await Future.delayed(const Duration(seconds: 3));
+          attempts++;
+
+          final pollRes = await _apiService.get(statusEndpoint);
+          final pollData = jsonDecode(pollRes.body);
+
+          if (pollData['status'] == 'completed') {
+            isComplete = true;
+            
+            if (!mounted) return;
+            
+            final skillContent = pollData['result']['skill_content'];
+            // final skillId = pollData['result']['skill']['id'];
+
+            ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
+            
+            final bool? didCreateReport = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ReportSkillPreviewScreen(
+                  projectId: widget.projectId,
+                  // skillId: 'skillId',
+                  reportTemplateId: _selectedReportTemplate['id'],
+                  initialContent: skillContent,
+                  inspectionIds: [..._selectedInspectionIds],
+                ),
+              ),
+            );
+            if (!context.mounted) return;
+            if (didCreateReport == true) {
+              Navigator.pop(context, true);
+            }
+            
+          } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
+            throw Exception("Finalization failed on server.");
+          }
+        }
+
+        if (!isComplete) throw Exception("Finalization timed out.");
       }
-
-      if (!isComplete) throw Exception("Finalization timed out.");
-
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
     } finally {
@@ -463,16 +371,16 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                     onChanged: (val) => setState(() { 
                                       val == true ? _selectedInspectionIds.add(id) : _selectedInspectionIds.remove(id); 
                                     }),
-                                    title: Text(insp['name'] ?? "Inspection", style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    title: Text(date, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     subtitle: Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            "Created: $date", 
-                                            maxLines: 2, 
-                                            overflow: TextOverflow.ellipsis, 
+                                            "Created By: ${insp['name'] ?? 'Unknown'}",
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)
                                           ),
                                         ],
@@ -487,121 +395,67 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   ),
 
                   // ==========================================
-                  // STEP 2: DOCUMENTS (MERGED LOCAL + SERVER UI)
+                  // 🚀 NEW STEP 2: SELECT REPORT TEMPLATE
                   // ==========================================
                   Step(
-                    title: const Text("Select Sample Documents", style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text("Combine 3 to 10 total PDF files"),
+                    title: const Text("Select Report Template", style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text("Choose the master template to build this report against"),
                     isActive: _currentStep >= 1,
                     state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-                    content: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: (_totalSelectedDocuments >= 3 && _totalSelectedDocuments <= 10) 
-                                ? colorScheme.primaryContainer 
-                                : colorScheme.errorContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            "Total Selected: $_totalSelectedDocuments / 10", 
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold, 
-                              color: (_totalSelectedDocuments >= 3 && _totalSelectedDocuments <= 10) 
-                                  ? colorScheme.onPrimaryContainer 
-                                  : colorScheme.onErrorContainer
-                            )
-                          ),
-                        ),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("Upload New Local Files", style: TextStyle(fontWeight: FontWeight.w600)),
-                            Button(
-                              label: "Browse PDFs", 
-                              variant: ButtonVariant.outline, 
-                              icon: Icons.upload_file, 
-                              onPressed: _totalSelectedDocuments >= 10 ? null : _pickFiles
+                    content: _isLoadingTemplates 
+                      ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+                      : _reportTemplates.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text("No report templates found.", style: TextStyle(color: Colors.grey)),
+                          )
+                        : Container(
+                            height: 300, // Fixed height making it scrollable
+                            decoration: BoxDecoration(
+                              color: colorScheme.surface,
+                              border: Border.all(color: colorScheme.outlineVariant),
+                              borderRadius: BorderRadius.circular(8)
                             ),
-                          ],
-                        ),
-                        if (_selectedFiles.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          ...List.generate(_selectedFiles.length, (index) {
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
-                              title: Text(_selectedFiles[index].name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              trailing: IconButton(icon: const Icon(Icons.close), onPressed: () => _removeFile(index)),
-                            );
-                          }),
-                        ],
+                            child: ListView.separated(
+                              itemCount: _reportTemplates.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final template = _reportTemplates[index];
+                                final bool hasDocuments = template['documents'] == true;
 
-                        const Divider(height: 32),
-
-                        const Text("Or Select Existing Documents", style: TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 12),
-                        
-                        _isLoadingExistingDocs 
-                          ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
-                          : _existingDocuments.isEmpty
-                            ? const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Text("No existing documents found on server.", style: TextStyle(color: Colors.grey)),
-                              )
-                            : Container(
-                                height: 250, 
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: colorScheme.outlineVariant),
-                                  borderRadius: BorderRadius.circular(8)
-                                ),
-                                child: ListView.separated(
-                                  itemCount: _existingDocuments.length,
-                                  separatorBuilder: (_, __) => const Divider(height: 1),
-                                  itemBuilder: (context, index) {
-                                    final doc = _existingDocuments[index];
-                                    
-                                    // 🚀 Parse name from S3 URL if 'name' is null
-                                    final String s3Url = doc['s3_report_template_url']?.toString() ?? "";
-                                    String displayName = doc['name'] ?? "Document ${index + 1}";
-                                    if (doc['name'] == null && s3Url.isNotEmpty) {
-                                      displayName = s3Url.split('/').last;
-                                    }
-                                    
-                                    final isSelected = _selectedExistingDocs.contains(doc);
-
-                                    return CheckboxListTile(
-                                      value: isSelected,
-                                      activeColor: colorScheme.primary,
-                                      controlAffinity: ListTileControlAffinity.leading,
-                                      title: Text(
-                                        displayName, 
-                                        maxLines: 1, 
-                                        overflow: TextOverflow.ellipsis, 
-                                        style: const TextStyle(fontSize: 14)
-                                      ),
-                                      secondary: const Icon(Icons.cloud_done_outlined, color: Colors.blueGrey, size: 20),
-                                      onChanged: _totalSelectedDocuments >= 10 && !isSelected 
-                                        ? null 
-                                        : (bool? val) {
-                                            setState(() {
-                                              if (val == true) {
-                                                _selectedExistingDocs.add(doc);
-                                              } else {
-                                                _selectedExistingDocs.remove(doc);
-                                              }
-                                            });
-                                          },
-                                    );
-                                  },
-                                ),
-                              ),
-                      ],
-                    ),
+                                return RadioListTile<dynamic>(
+                                  value: template,
+                                  groupValue: _selectedReportTemplate,
+                                  activeColor: colorScheme.primary,
+                                  title: Text(
+                                    template['name'] ?? "Unnamed Template", 
+                                    maxLines: 1, 
+                                    overflow: TextOverflow.ellipsis, 
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600, 
+                                      fontSize: 14,
+                                      // Optional: Dim the title text slightly if it's disabled
+                                      color: hasDocuments ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.5),
+                                    )
+                                  ),
+                                  subtitle: hasDocuments
+                                      ? null
+                                      : Text(
+                                          "No documents available for this template",
+                                          style: TextStyle(fontSize: 12, color: colorScheme.error.withOpacity(0.8)), 
+                                        ),
+                                  // Setting onChanged to null automatically disables the entire tile
+                                  onChanged: hasDocuments 
+                                      ? (val) {
+                                          setState(() {
+                                            _selectedReportTemplate = val;
+                                          });
+                                        }
+                                      : null, 
+                                );
+                              },
+                            ),
+                          ),
                   ),
 
                   // ==========================================

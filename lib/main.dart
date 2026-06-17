@@ -10,14 +10,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
 
-  // Initialize Storage first
   await StorageService.init();
 
-  // Then check auth state & initialize the refresh timer logic
-  await authController.checkSession();
-
   usePathUrlStrategy();
+
+  await themeController.loadPreferences();
+  
   runApp(const FieldReportApp());
+  
+  authController.checkSession();
 }
 
 class FieldReportApp extends StatefulWidget {

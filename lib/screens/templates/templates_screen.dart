@@ -36,7 +36,7 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => Scaffold(
-            appBar: AppBar(title: const Text("Template Details", style: TextStyle(fontSize: 16))),
+            appBar: AppBar(title: Text(template.name, style: TextStyle(fontSize: 16))),
             body: TemplateDetailPanel(template: template), // We will do this next!
           ),
         ),
@@ -185,7 +185,7 @@ class _TemplateManagementScreenState extends State<TemplateManagementScreen> {
   // Extracted list body logic to handle all your API states cleanly
   Widget _buildListBody(ThemeData theme, bool isMobile, bool isLoading, String? error, List<Template> filteredTemplates) {
     // 1. Loading State
-    if (isLoading && filteredTemplates.isEmpty) {
+    if (isLoading) {
       return Center(child: CircularProgressIndicator(color: theme.colorScheme.primary));
     }
 

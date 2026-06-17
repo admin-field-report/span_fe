@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import 'widgets/login_form.dart';
 import 'widgets/signup_form.dart';
 import 'widgets/early_access_form.dart';
+import 'widgets/forgot_password_form.dart';
 import 'widgets/branding_panel.dart';
+import '../../widgets/app_logo/app_logo.dart';
 import '../../utils/app_responsive.dart';
+
+enum AuthMode { login, signup, forgotPassword }
 
 class LoginScreen extends StatefulWidget {
   final bool showBetaLogin;
-  final bool isLoginMode; 
+  final AuthMode authMode;
 
   const LoginScreen({
     super.key, 
     this.showBetaLogin = false,
-    this.isLoginMode = true, 
+    this.authMode = AuthMode.login, 
   });
 
   @override
@@ -22,29 +28,28 @@ class LoginScreen extends StatefulWidget {
 }
   
 class _LoginScreenState extends State<LoginScreen> {
-  late bool _showLoginForm; 
+  late AuthMode _currentMode; 
 
   @override
   void initState() {
     super.initState();
-    _showLoginForm = widget.isLoginMode; 
+    _currentMode = widget.authMode; 
   }
 
   @override
   void didUpdateWidget(LoginScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isLoginMode != widget.isLoginMode) {
+    if (oldWidget.authMode != widget.authMode) {
       setState(() {
-        _showLoginForm = widget.isLoginMode;
+        _currentMode = widget.authMode;
       });
     }
   }
 
-  void _toggleFormMode() {
+  // 🚀 Universal navigation method that preserves query parameters
+  void _navigateTo(String targetPath) {
     final currentUri = GoRouterState.of(context).uri;
     final queryParams = Map<String, String>.from(currentUri.queryParameters);
-
-    final targetPath = _showLoginForm ? '/signup' : '/login';
 
     final newUri = Uri(
       path: targetPath, 
@@ -52,6 +57,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     
     context.go(newUri.toString());
+  }
+
+  Future<void> _launchUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint('Could not launch $url');
+    }
   }
 
   @override
@@ -62,22 +74,39 @@ class _LoginScreenState extends State<LoginScreen> {
     const Color emeraldAccent = Color(0xFF00AB55);
     const Color slateSurface = Color(0xFF1C252E);
 
-    // 🚀 2. Safely check if this is a Native Android or iOS app
     final bool isNativeMobileApp = !kIsWeb && 
         (defaultTargetPlatform == TargetPlatform.android || 
          defaultTargetPlatform == TargetPlatform.iOS);
 
-    // 🚀 3. Determine if we should show the standard login flow
-    // It shows if the URL has ?beta=true OR if it's a compiled mobile app
     final bool bypassEarlyAccess = widget.showBetaLogin || isNativeMobileApp;
 
+    // 🚀 Clean switch statement to determine the active form
     Widget activeForm;
     if (!bypassEarlyAccess) {
       activeForm = const EarlyAccessForm(key: ValueKey('early_access'));
     } else {
-      activeForm = _showLoginForm 
-          ? LoginForm(key: const ValueKey('login'), onSwitch: _toggleFormMode) 
-          : SignupForm(key: const ValueKey('signup'), onSwitch: _toggleFormMode);
+      switch (_currentMode) {
+        case AuthMode.login:
+          activeForm = LoginForm(
+            key: const ValueKey('login'), 
+            onSwitchToSignup: () => _navigateTo('/signup'),
+            onForgotPassword: () => _navigateTo('/forgot-password'),
+          );
+          break;
+        case AuthMode.signup:
+          activeForm = SignupForm(
+            // NOTE: Ensure your SignupForm also accepts an onSwitchToLogin callback now
+            key: const ValueKey('signup'), 
+            onSwitch: () => _navigateTo('/login'),
+          );
+          break;
+        case AuthMode.forgotPassword:
+          activeForm = ForgotPasswordForm(
+            key: const ValueKey('forgot_password'),
+            onBackToLogin: () => _navigateTo('/login'),
+          );
+          break;
+      }
     }
 
     return Scaffold(
@@ -111,11 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 constraints: const BoxConstraints(maxWidth: 450),
                                 child: Column(
                                   children: [
-                                    const Icon(
-                                      Icons.analytics_rounded, 
-                                      size: 64, 
-                                      color: emeraldAccent,
-                                    ),
+                                    AppLogo(size: 70, padding: 6, color: emeraldAccent),
                                     const SizedBox(height: 8),
                                     const Text(
                                       "Span Inspect",
@@ -126,7 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         fontSize: 24,
                                       ),
                                     ),
-                                    const SizedBox(height: 40),
+                                    const SizedBox(height: 25),
                                     Container(
                                       padding: const EdgeInsets.all(32),
                                       decoration: BoxDecoration(
@@ -155,15 +180,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   TextButton(
-                                    onPressed: () {}, 
-                                    child: const Text("Privacy Notice", 
-                                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                    onPressed: () => _launchUrl('https://spaninspect.com/privacy-policy'),
+                                    child: const Text("Privacy Notice", style: TextStyle(color: Colors.grey, fontSize: 12)),
                                   ),
                                   const Text("|", style: TextStyle(color: Colors.white10)),
                                   TextButton(
-                                    onPressed: () {}, 
-                                    child: const Text("Terms Of Use", 
-                                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                    onPressed: () => _launchUrl('https://spaninspect.com/terms-of-service'),
+                                    child: const Text("Terms Of Service", style: TextStyle(color: Colors.grey, fontSize: 12)),
                                   ),
                                 ],
                               ),

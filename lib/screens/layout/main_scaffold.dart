@@ -4,13 +4,19 @@ import 'app_menu_content.dart';
 import '../settings/settings_screen.dart';
 import '../../utils/utils.dart';
 import '../../screens/auth/controllers/auth_controller.dart';
+import '../../widgets/app_logo/app_logo.dart';
 
 class MainScaffold extends StatefulWidget {
   final Widget child;
   final bool isScrollable;
+  final bool removePadding;
+  final bool isFullScreen;
+
   const MainScaffold({
     required this.child,
     this.isScrollable = true,
+    this.removePadding = false,
+    this.isFullScreen = false,
     super.key
   });
 
@@ -35,6 +41,18 @@ class _MainScaffoldState extends State<MainScaffold> {
         final bool isTabletRange = AppResponsive.isTabletScreen(context);
 
         bool effectiveCollapsed = isMobile ? false : (isTabletRange ? !_isCollapsed : _isCollapsed);
+
+        if (widget.isFullScreen) {
+          return Scaffold(
+            backgroundColor: theme.scaffoldBackgroundColor,
+            // body: widget.child, // Full-screen content without SafeArea or padding
+            body: SafeArea(
+              // If you want the canvas to go completely edge-to-edge (even under the notch),
+              // you can remove the SafeArea here.
+              child: widget.child, 
+            ),
+          );
+        }
 
         return Scaffold(
           key: _scaffoldKey,
@@ -76,13 +94,13 @@ class _MainScaffoldState extends State<MainScaffold> {
                             color: theme.scaffoldBackgroundColor,
                             border: Border(
                               right: BorderSide(
-                                color: theme.dividerColor.withOpacity(isDark ? 0.2 : 0.12), 
+                                color: theme.dividerColor.withOpacity(0.8), 
                                 width: 1,
                               ),
                             ),
                             boxShadow: isDark ? null : [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
+                                color: Colors.black.withOpacity(0.04),
                                 blurRadius: 10,
                                 offset: const Offset(4, 0),
                               ),
@@ -120,27 +138,42 @@ class _MainScaffoldState extends State<MainScaffold> {
                   child: Column(
                     children: [
                       // FIXED HEADER
-                      _buildStickyHeader(context, isMobile, colorScheme, theme),
+                      if (isMobile)
+                        _buildStickyHeader(context, isMobile, colorScheme, theme),
                       
+                      // DYNAMIC BODY
+                      // Expanded(
+                      //   child: Padding,
+                      //     padding: isMobile 
+                      //         ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
+                      //         : const EdgeInsets.fromLTRB(20, 0, 24, 20),
+                      //     child: AnimatedContainer(
+                      //       duration: const Duration(milliseconds: 300),
+                      //       margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
+                      //       child: ClipRRect(
+                      //         borderRadius: BorderRadius.circular(8),
+                      //         child: widget.child,
+                      //       ),
+                      //     ),
+                      //   ),
+                      // ),
                       // DYNAMIC BODY
                       Expanded(
                         child: Padding(
-                          padding: isMobile 
-                              ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
-                              : const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                          // padding: widget.removePadding 
+                          //     ? EdgeInsets.zero 
+                          //     : (isMobile 
+                          //         ? const EdgeInsets.fromLTRB(15, 10, 15, 20) 
+                          //         : const EdgeInsets.fromLTRB(15, 0, 15, 15)),
+                          padding: EdgeInsets.all(0),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 300),
-                            margin: isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 16, 16),
+                            margin: widget.removePadding 
+                                ? EdgeInsets.zero 
+                                : (isMobile ? EdgeInsets.zero : const EdgeInsets.fromLTRB(0, 10, 10, 10)),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: widget.child, 
-                              // child: widget.isScrollable
-                              //     ? SingleChildScrollView(
-                              //         primary: true,
-                              //         physics: const BouncingScrollPhysics(),
-                              //         child: widget.child,
-                              //       )
-                              //     : widget.child, 
+                              borderRadius: BorderRadius.circular(widget.removePadding ? 0 : 8),
+                              child: widget.child,
                             ),
                           ),
                         ),
@@ -168,7 +201,7 @@ class _MainScaffoldState extends State<MainScaffold> {
           decoration: BoxDecoration(
             color: theme.scaffoldBackgroundColor,
             shape: BoxShape.circle,
-            border: Border.all(color: theme.dividerColor.withOpacity(0.2)),
+            border: Border.all(color: theme.dividerColor),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
@@ -202,14 +235,14 @@ class _MainScaffoldState extends State<MainScaffold> {
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
               color: colorScheme.onSurface,
             ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 20),
-            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-            color: colorScheme.onSurface.withOpacity(0.6),
-          ),
-          const SizedBox(width: 16),
-          _buildUserAvatar(theme, colorScheme),
+          // const Spacer(),
+          // IconButton(
+          //   icon: const Icon(Icons.settings_outlined, size: 20),
+          //   onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+          //   color: colorScheme.onSurface.withOpacity(0.6),
+          // ),
+          // const SizedBox(width: 16),
+          // _buildUserAvatar(theme, colorScheme),
         ],
       ),
     );
@@ -238,12 +271,13 @@ class _MainScaffoldState extends State<MainScaffold> {
   Widget _buildSidebarHeader(bool collapsed, ColorScheme colorScheme) {
     return Container(
       height: 100,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       alignment: collapsed ? Alignment.center : Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
+          // Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
+          AppLogo(size: 50, padding: 5),
           if (!collapsed) ...[
             const SizedBox(width: 12),
             const Flexible(

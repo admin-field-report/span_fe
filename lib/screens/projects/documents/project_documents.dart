@@ -2,6 +2,7 @@ import 'package:field_report_fe/models/project.dart';
 import 'package:field_report_fe/screens/projects/controllers/project_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
@@ -35,10 +36,12 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
 
   Future<void> removeDocument(BuildContext context, String id) async {
     try {
-      final response = await _apiService.delete('/templateDocument/$id');
+      final response = await _apiService.delete('/projectDocument/$id');
       if (!context.mounted) return;
 
-      if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true) {
         ToastService.show(context, 
           message: "Document deleted successfully", 
           type: ToastType.success
@@ -68,7 +71,7 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
             color: Colors.transparent,
             child: ConfirmationDialog(
               title: "Remove Document",
-              description: "Are you sure you want to remove document for '${DateFormat('dd MMM yyyy').format(document.createTime)}'?",
+              description: "Are you sure you want to remove document '${document.documentName}'?",
               confirmLabel: "Remove",
               onConfirm: () async => await removeDocument(context, document.id),
             ),
@@ -120,67 +123,100 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 20),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min, 
-                crossAxisAlignment: CrossAxisAlignment.stretch, 
-                children: [
-                  _buildTopToolbar(theme),
-                  const SizedBox(height: 10),
-                    ListenableBuilder(
-                      listenable: projectController,
-                      builder: (context, child) {
-                      final displayData = _getFilteredDocuments();
-                      return CommonTable<ProjectDocument>(
-                        isLoading: projectController.isDocumentsLoading,
-                        data: displayData,
-                        showCheckboxes: false,
-                        columns: [
-                          TableColumn(
-                            title: 'Sr No.',
-                            flex: 1,
-                            minWidth: 60,
-                            builder: (item) {
-                              final index = projectController.documents.indexOf(item) + 1;
-                              return Text(index.toString().padLeft(2, '0'));
-                            },
-                          ),
-                          TableColumn(
-                            title: 'Document Name',
-                            flex: 2,
-                            sortable: false,
-                            builder: (item) => Text(
-                              item.documentName,
-                              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                          ),
-                          TableColumn(
-                            title: 'Created Date',
-                            flex: 2,
-                            sortable: true,
-                            sortValue: (item) => item.createTime,
-                            builder: (item) => Text(
-                              DateFormat('dd MMM yyyy').format(item.createTime),
-                            ),
-                          ),
-                          TableColumn(
-                            title: "Actions",
-                            flex: 0,
-                            minWidth: 100,
-                            builder: (doc) => IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20),
-                              color: colorScheme.error,
-                              onPressed: () => _confirmDelete(context, doc),
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-                  )  
-                ]
-              )
+            const SizedBox(height: 10),
+            
+            // 🚀 1. Wrap the entire AppCard in Expanded
+            Expanded(
+              child: AppCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
+                  crossAxisAlignment: CrossAxisAlignment.stretch, 
+                  children: [
+                    _buildTopToolbar(theme),
+                    const SizedBox(height: 10),
+                    
+                    // 🚀 2. Wrap the Table in Expanded so it fills the rest of the card
+                    Expanded(
+                      child: ListenableBuilder(
+                        listenable: projectController,
+                        builder: (context, child) {
+                          final displayData = _getFilteredDocuments();
+                          return CommonTable<ProjectDocument>(
+                            isLoading: projectController.isDocumentsLoading,
+                            data: displayData,
+                            showCheckboxes: false,
+                            columns: [
+                              TableColumn(
+                                title: 'Sr No.',
+                                flex: 1,
+                                minWidth: 60,
+                                builder: (item) {
+                                  final index = projectController.documents.indexOf(item) + 1;
+                                  return Text(index.toString().padLeft(2, '0'));
+                                },
+                              ),
+                              TableColumn(
+                                title: 'Document Name',
+                                flex: 2,
+                                sortable: true,
+                                sortValue: (item) => item.documentName,
+                                builder: (item) => Text(
+                                  item.documentName,
+                                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                              TableColumn(
+                                title: 'Created Date',
+                                flex: 2,
+                                sortable: true,
+                                sortValue: (item) => item.createTime,
+                                builder: (item) => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      DateFormat('dd MMM yyyy').format(item.createTime),
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                    const SizedBox(height: 2), 
+                                    Text(
+                                      DateFormat('hh:mm a').format(item.createTime),
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant, 
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              // 🚀 3. ADDED isStickyRight to keep the delete button pinned!
+                              TableColumn(
+                                title: "Actions",
+                                flex: 0,
+                                minWidth: 60, // Shrank since it's just one icon
+                                isStickyRight: true, // 🌟 The magic property
+                                builder: (doc) => Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 20),
+                                      color: colorScheme.error,
+                                      onPressed: () => _confirmDelete(context, doc),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      ),
+                    ),  
+                  ]
+                )
+              ),
             ),
           ],
         );

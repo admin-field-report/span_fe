@@ -7,13 +7,15 @@ import '../../../widgets/form_components/color_picker_field.dart';
 import './controllers/tag_controller.dart';
 import '../../../models/tag_models.dart';
 import '../../utils/app_responsive.dart';
+import '../../widgets/confirmation/confirmation_remove.dart';
 
 import 'widgets/manage_tags_dialog.dart';
 import 'widgets/manage_templates_dialog.dart';
 import 'widgets/create_group_wizard.dart';
 
-enum MobileView { groups, groupDetails, allTags }
-enum SortOrder { none, asc, desc }
+// 🚀 Commented out allTags and SortOrder since they are currently unused
+enum MobileView { groups, groupDetails /*, allTags */ }
+// enum SortOrder { none, asc, desc } 
 
 class TagManagementScreen extends StatefulWidget {
   const TagManagementScreen({super.key});
@@ -26,9 +28,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   final TagController _controller = TagController();
   
   final TextEditingController _groupSearchController = TextEditingController();
-  final TextEditingController _tagSearchController = TextEditingController();
+  // final TextEditingController _tagSearchController = TextEditingController();
   
-  SortOrder _tagSortOrder = SortOrder.none;
+  // SortOrder _tagSortOrder = SortOrder.none;
   String? _selectedGroupId;
   MobileView _currentMobileView = MobileView.groups;
 
@@ -37,18 +39,18 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.fetchGroups();
-      _controller.fetchTags();
+      _controller.fetchTags(); // 🚀 Commented out global tags fetch
       _controller.fetchTemplates();
     });
     
     _groupSearchController.addListener(() => setState(() {}));
-    _tagSearchController.addListener(() => setState(() {}));
+    // _tagSearchController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _groupSearchController.dispose();
-    _tagSearchController.dispose();
+    // _tagSearchController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -57,7 +59,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // MOBILE NAVIGATION HELPER
   // ==========================================
   
-  Widget _buildMobileHeader(String title) {
+  Widget _buildMobileHeader(String title, {VoidCallback? onDelete}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Row(
@@ -69,6 +71,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+          
+          if (onDelete != null)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: "Delete Group",
+              onPressed: onDelete,
+            ),
         ],
       ),
     );
@@ -189,8 +198,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   Future<void> _showCreateGroupDialog() async {
     final isDesktop = AppResponsive.isDesktopScreen(context);
-    
-    // 🚀 Updated to use the public CreateGroupWizard class from the new file
     final wizard = CreateGroupWizard(controller: _controller);
 
     String? newGroupId;
@@ -278,13 +285,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   Future<void> _showManageTagsDialog(Set<String> currentTagIds) async {
     if (_selectedGroupId == null) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTagsDialog(
+    final isMobile = AppResponsive.isMobileScreen(context);
+
+    Widget buildContent(BuildContext context) {
+      return ManageTagsDialog(
         controller: _controller,
         initialSelectedIds: currentTagIds,
-        
         onSave: (updatedTagIds, newTagsToCreate) async {
           final success = await _controller.updateGroupTags(
             groupId: _selectedGroupId!, 
@@ -302,20 +308,54 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             return false;
           }
         },
-      ),
-    );
+      );
+    }
+
+    if (isMobile) {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              color: Theme.of(context).colorScheme.surface,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: buildContent(context),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: 500,
+            child: buildContent(context),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _showManageTemplatesDialog(Set<String> currentTemplateIds) async {
     if (_selectedGroupId == null) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => ManageTemplatesDialog(
+    final isMobile = AppResponsive.isMobileScreen(context);
+    final theme = Theme.of(context);
+
+    Widget buildContent(BuildContext context) {
+      return ManageTemplatesDialog(
         controller: _controller,
         initialSelectedIds: currentTemplateIds,
-        
         onSave: (updatedTemplateIds) async {
           final success = await _controller.updateGroupTemplates(
             groupId: _selectedGroupId!, 
@@ -330,6 +370,73 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           } else {
             ToastService.show(context, message: "Failed to update templates", type: ToastType.error);
             return false; 
+          }
+        },
+      );
+    }
+
+    if (isMobile) {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true, 
+        backgroundColor: Colors.transparent,
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              color: theme.colorScheme.surfaceContainer,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: buildContent(context),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          backgroundColor: theme.colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            width: 500,
+            child: buildContent(context),
+          ),
+        ),
+      );
+    }
+  }
+
+  // ==========================================
+  // DELETE LOGIC
+  // ==========================================
+  Future<void> _confirmDeleteGroup(String groupId, String groupName) async {
+    await showDialog(
+      context: context,
+      builder: (context) => ConfirmationDialog(
+        title: "Delete Tag Group",
+        description: "Are you sure you want to delete '$groupName'?",
+        confirmLabel: "Delete",
+        confirmColor: Colors.red,
+        onConfirm: () async {
+          final success = await _controller.deleteGroup(groupId);
+          
+          if (!mounted) return;
+          
+          if (success) {
+            ToastService.show(context, message: "Tag group deleted successfully", type: ToastType.success);
+            setState(() {
+              _selectedGroupId = null;
+              if (!AppResponsive.isDesktopScreen(context)) {
+                _currentMobileView = MobileView.groups; 
+              }
+            });
+          } else {
+            ToastService.show(context, message: "Failed to delete tag group", type: ToastType.error);
           }
         },
       ),
@@ -361,11 +468,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch, 
                         children: [
-                          Expanded(flex: 2, child: _buildTagGroupsList(theme, isDesktop: true)),
+                          // 🚀 Adjusted flex to fill the space cleanly
+                          Expanded(flex: 3, child: _buildTagGroupsList(theme, isDesktop: true)),
                           const SizedBox(width: 16),
-                          Expanded(flex: 3, child: _buildSelectedGroupDetails(theme, isDesktop: true)),
-                          const SizedBox(width: 16),
-                          Expanded(flex: 2, child: _buildGlobalTagsList(theme)),
+                          Expanded(flex: 5, child: _buildSelectedGroupDetails(theme, isDesktop: true)),
+                          // 🚀 Commented out the global tags column
+                          // const SizedBox(width: 16),
+                          // Expanded(flex: 2, child: _buildGlobalTagsList(theme)),
                         ],
                       ),
                     ),
@@ -399,14 +508,20 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           ],
         );
       case MobileView.groupDetails:
+        final activeGroup = _controller.tagGroups.where((g) => g.id == _selectedGroupId).firstOrNull;
         return Column(
           key: const ValueKey('details'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildMobileHeader(_controller.tagGroups.where((g) => g.id == _selectedGroupId).firstOrNull?.name ?? "Details"),
+            _buildMobileHeader(
+              activeGroup?.name ?? "Details",
+              onDelete: activeGroup != null ? () => _confirmDeleteGroup(activeGroup.id, activeGroup.name) : null,
+            ),
             Expanded(child: _buildSelectedGroupDetails(theme, isDesktop: false)),
           ],
         );
+      // 🚀 Commented out the allTags mobile view handler
+      /*
       case MobileView.allTags:
         return Column(
           key: const ValueKey('all_tags'),
@@ -416,6 +531,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             Expanded(child: _buildGlobalTagsList(theme)),
           ],
         );
+      */
     }
   }
 
@@ -458,6 +574,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           const Divider(height: 1),
           const Divider(height: 1),
 
+          // 🚀 Commented out the Mobile 'All Tags' list tile 
+          /*
           if (!isDesktop) ...[
             ListTile(
               leading: Container(
@@ -472,8 +590,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
             ),
             const Divider(height: 1, thickness: 4), 
           ],
+          */
+          
           Expanded(
-            // 🚀 REMOVED the isEmpty check here!
             child: _controller.isGroupsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : filteredGroups.isEmpty
@@ -487,7 +606,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                     
                     return ListTile(
                       title: Text(group.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-                      subtitle: Text("${group.tags.length} Tags • ${group.templates.length} Templates", style: const TextStyle(fontSize: 12)),
                       selected: isSelected,
                       selectedTileColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
                       onTap: () {
@@ -497,7 +615,20 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         });
                         _controller.fetchTemplatesForGroup(group.id);
                       },
-                      trailing: const Icon(Icons.chevron_right, size: 16),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                            tooltip: "Delete Group",
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _confirmDeleteGroup(group.id, group.name),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -533,9 +664,19 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         children: [
           if (isDesktop) ...[
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: theme.colorScheme.surface,
-              child: Text(activeGroup.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(activeGroup.name, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: "Delete Group",
+                    onPressed: () => _confirmDeleteGroup(activeGroup.id, activeGroup.name),
+                  )
+                ],
+              ),
             ),
             const Divider(height: 1),
           ],
@@ -556,7 +697,6 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         variant: ButtonVariant.outline,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         onPressed: () => _showManageTagsDialog(currentTagIds), 
-                        
                       )
                     ],
                   ),
@@ -578,12 +718,10 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         icon: Icons.edit,
                         variant: ButtonVariant.outline,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        
                         onPressed: () {
                           final Set<String> currentTemplateIds = activeGroup.templates.map((t) => t.id).toSet();
                           _showManageTemplatesDialog(currentTemplateIds);
                         },
-                        
                       )
                     ],
                   ),
@@ -608,13 +746,14 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     );
   }
 
-Widget _buildGlobalTagsList(ThemeData theme) {
+  // 🚀 Commented out the entire global tags list builder
+  /*
+  Widget _buildGlobalTagsList(ThemeData theme) {
     final query = _tagSearchController.text.toLowerCase();
     var filteredTags = _controller.globalTags.where((t) {
       return t.name.toLowerCase().contains(query);
     }).toList();
 
-    // 🚀 Apply the 3-state sorting logic
     if (_tagSortOrder != SortOrder.none) {
       filteredTags.sort((a, b) {
         final comp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -640,7 +779,6 @@ Widget _buildGlobalTagsList(ThemeData theme) {
           ),
           const Divider(height: 1),
 
-          // 🚀 All Tags Search & Sort Row
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -648,7 +786,7 @@ Widget _buildGlobalTagsList(ThemeData theme) {
               children: [
                 Expanded(
                   child: SizedBox(
-                    height: 45, // 🚀 Forces a compact height!
+                    height: 45, 
                     child: FormControlTextField(
                       controller: _tagSearchController,
                       hintText: "Search tags...",
@@ -658,7 +796,6 @@ Widget _buildGlobalTagsList(ThemeData theme) {
                 ),
                 const SizedBox(width: 8), 
                 
-                // 🚀 Borderless, Icon-Only Sorting Button
                 Container(
                   decoration: BoxDecoration(
                     color: _tagSortOrder == SortOrder.none 
@@ -699,7 +836,6 @@ Widget _buildGlobalTagsList(ThemeData theme) {
           const Divider(height: 1),
 
           Expanded(
-            // 🚀 REMOVED the isEmpty check here! It now spins on EVERY fetch.
             child: _controller.isTagsLoading 
               ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
               : SingleChildScrollView(
@@ -713,12 +849,16 @@ Widget _buildGlobalTagsList(ThemeData theme) {
       ),
     );
   }
+  */
 
+  // 🚀 Kept this helper as it's used by _buildSelectedGroupDetails
   Widget _buildTagChip(AppTag tag) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tag.color.withOpacity(0.1), border: Border.all(color: tag.color.withOpacity(0.5)), borderRadius: BorderRadius.circular(16),
+        // color: tag.color.withOpacity(0.1),
+        border: Border.all(color: tag.color.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

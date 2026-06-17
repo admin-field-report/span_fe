@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'package:field_report_fe/screens/auth/controllers/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/api_service.dart';
 import '../../../widgets/button/button.dart';
 import '../../../services/toast_service.dart';
+import '../../auth/controllers/auth_controller.dart';
 
 class CreateInspectionPanel extends StatefulWidget {
   final String projectId;
@@ -34,7 +36,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
     
     try {
       final responses = await Future.wait([
-        _apiService.get('/templateDocument/project/${widget.projectId}'),
+        _apiService.get('/projectDocument/project/${widget.projectId}'),
         _apiService.get('/inspection/project/${widget.projectId}'),
       ]);
 
@@ -43,8 +45,11 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       final docData = jsonDecode(responses[0].body);
       final inspData = jsonDecode(responses[1].body);
 
+      // 1. Extract both lists
+      List<dynamic> fetchedDocuments = docData['success'] == true ? (docData['data'] ?? []) : [];
       List<dynamic> fetchedInspections = inspData['success'] == true ? (inspData['data'] ?? []) : [];
 
+      // 2. Sort Inspections (Latest first)
       fetchedInspections.sort((a, b) {
         final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -52,8 +57,18 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         return dateB.compareTo(dateA);
       });
 
+      // 🚀 3. NEW: Sort Documents (Latest first)
+      fetchedDocuments.sort((a, b) {
+        // IMPORTANT: Ensure 'create_time' matches the exact key returned by your document API!
+        // If your API uses 'createdAt' or 'createDate' instead, change it here.
+        final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
+        
+        return dateB.compareTo(dateA);
+      });
+
       setState(() {
-        _documents = docData['success'] == true ? (docData['data'] ?? []) : [];
+        _documents = fetchedDocuments; // 🚀 Assign the newly sorted list
         _inspections = fetchedInspections;
         _isLoading = false;
       });
@@ -69,7 +84,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
 
     try {
       final payload = {
-        "project_id": widget.projectId
+        "project_id": widget.projectId,
+        "name": authController.user != null ? "${authController.user!.firstName} ${authController.user!.lastName}" : "",
       };
 
       final response = await _apiService.post('/inspection/create', payload);
@@ -80,14 +96,9 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (responseData['success'] == true && responseData['data'] != null) {
           
-          final newInspectionId = responseData['data']['id'];
+          final String newInspectionId = responseData['data']['id'];
           
-          // 1. Close the popup/bottom sheet
-          Navigator.pop(context);
-          
-          // 2. Redirect straight to the new inspection details screen!
-          final exactUrl = '/projects/details/${widget.projectId}/inspections/$newInspectionId';
-          context.go(exactUrl);
+          Navigator.pop(context, newInspectionId); 
           
         } else {
           ToastService.show(context, message: "Failed to parse inspection data.", type: ToastType.error);
@@ -96,7 +107,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         ToastService.show(context, message: responseData['message'] ?? "Failed to create inspection", type: ToastType.error);
       }
     } catch (e) {
-      debugPrint("🚨 Error creating inspection: $e");
       if (mounted) {
         ToastService.show(context, message: "Network error occurred.", type: ToastType.error);
       }
@@ -179,7 +189,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text("Create New Inspection", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text("Create New Inspection", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                         IconButton(
                           icon: const Icon(Icons.close),
                           onPressed: () => Navigator.pop(context),
@@ -218,7 +228,38 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                               const SizedBox(height: 16),
                               
                               if (_documents.isEmpty)
-                                Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
+                                // Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.description_outlined, 
+                                      size: 48, 
+                                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.3)
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      "No template documents available.", 
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold, 
+                                        color: theme.colorScheme.onSurfaceVariant
+                                      )
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                                      child: Text(
+                                        "Please upload a document from Project Documents to create an inspection.",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 13, 
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
                               else
                                 ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme)),
 
@@ -326,8 +367,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       ),
       child: ListTile(
         leading: Icon(Icons.history, color: colorScheme.primary),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text("Created: $formattedDate", style: const TextStyle(fontSize: 12)),
+        title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.w500)),
+        subtitle: Text("Created By: $name", style: const TextStyle(fontSize: 12)),
         
         // 🚀 2. CALL THE NEW METHOD HERE
         trailing: Button(

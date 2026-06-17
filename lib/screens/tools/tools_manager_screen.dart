@@ -170,17 +170,42 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 24.0, bottom: 16.0),
+                  padding: const EdgeInsets.only(left: 10.0, right: 10.0, top: 5.0, bottom: 5.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Tools Management", style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("Tools Management", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                       Button(
-                        label: "Create Tool Set",
-                        variant: ButtonVariant.filled,
+                        label: "Create Tool",
+                        variant: ButtonVariant.outline,
+                        icon: Icons.add,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        icon: Icons.create_new_folder_outlined,
-                        onPressed: () => _showCreateSetPanel(context)
+                        isLoading: _toolController.isGroupsLoading || _tagController.isGroupsLoading,
+                        // 🚀 Simply disable the button if the controllers are still loading
+                        onPressed: (_toolController.isGroupsLoading || _tagController.isGroupsLoading) 
+                            ? null 
+                            : () async {
+                                final didCreate = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => CreateToolScreen(
+                                      availableGroups: _toolController.toolGroups, 
+                                      isToolGroupsLoading: false, // We know it's false now!
+                                      initialGroupId: activeGroup?.id,
+                                      availableTagGroups: _tagController.tagGroups,
+                                      isTagGroupsLoading: false, // We know it's false now!
+                                    ),
+                                  ),
+                                );
+
+                                if (didCreate == true) {
+                                  final currentGroupId = activeGroup?.id;
+                                  if (currentGroupId != null) {
+                                    _toolController.fetchGroupDetails(currentGroupId);
+                                    _toolController.fetchMasterTools();
+                                  }
+                                }
+                              },
                       ),
                     ],
                   ),
@@ -197,7 +222,7 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
+                            Container(  
                               width: 320, 
                               decoration: BoxDecoration(border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.5)))),
                               child: _buildGroupList(isMobile: false),
@@ -256,9 +281,27 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: SearchField(
-            hintText: "Search groups...",
-            onChanged: (val) => setState(() => _groupSearchQuery = val),
+          child: Row(
+            children: [
+              // Search Field takes up the rest of the space
+              Expanded(
+                child: SearchField(
+                  hintText: "Search groups...",
+                  onChanged: (val) => setState(() => _groupSearchQuery = val),
+                ),
+              ),
+              
+              const SizedBox(width: 16), 
+              
+              // 🚀 Shrink the button using tight padding and a shorter label!
+              Button(
+                label: "Create", // Or "Create Set" to save space
+                variant: ButtonVariant.filled,
+                icon: Icons.create_new_folder_outlined,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // 🌟 The magic size reducer
+                onPressed: () => _showCreateSetPanel(context),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -279,9 +322,9 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                           selected: isSelected,
                           selectedTileColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 1.0),
                           title: Text(group.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500, color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurface)),
-                          subtitle: Text("${group.tools.length} tools", style: TextStyle(color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.7) : Colors.grey, fontSize: 12)),
+                          // subtitle: Text("${group.tools.length} tools", style: TextStyle(color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.7) : Colors.grey, fontSize: 12)),
                           onTap: () => _handleGroupSelected(group, isMobile),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,

@@ -5,12 +5,16 @@ import '../../utils/app_responsive.dart';
 
 class ColorPickerField extends StatelessWidget {
   final Color currentColor;
+  final String label;
   final ValueChanged<Color> onColorChanged;
+  final bool showOpacity; // 🚀 1. Added parameter here
 
   const ColorPickerField({
     super.key,
     required this.currentColor,
     required this.onColorChanged,
+    this.label = "Choose Color",
+    this.showOpacity = true, // Default is true
   });
 
   @override
@@ -32,18 +36,15 @@ class ColorPickerField extends StatelessWidget {
         
         // --- Open Picker Button ---
         Button(
-          label: "Choose Color",
+          label: label,
           icon: Icons.palette_outlined,
           variant: ButtonVariant.outline,
           onPressed: () {
-            // Temporary color to hold state before saving
             Color tempColor = currentColor;
             
-            // 🚀 Check if we are on Desktop or Mobile
             // ignore: undefined_class
             final isDesktop = AppResponsive.isDesktopScreen(context);
 
-            // 🚀 We extract the content so we can share it between Dialog and BottomSheet
             Widget buildPickerContent(BuildContext modalContext) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
@@ -69,6 +70,7 @@ class ColorPickerField extends StatelessWidget {
                       padding: const EdgeInsets.all(24),
                       child: AppColorPicker(
                         initialColor: tempColor,
+                        showOpacity: showOpacity, // 🚀 2. Pass it down to the picker widget
                         onColorChanged: (Color color) {
                           tempColor = color; 
                         },
@@ -92,7 +94,7 @@ class ColorPickerField extends StatelessWidget {
                         Button(
                           label: "Save Color",
                           onPressed: () {
-                            onColorChanged(tempColor); // Push the new color back up!
+                            onColorChanged(tempColor); 
                             Navigator.pop(modalContext);
                           },
                         ),
@@ -103,9 +105,7 @@ class ColorPickerField extends StatelessWidget {
               );
             }
 
-            // 🚀 RESPONSIVE TRIGGER
             if (isDesktop) {
-              // DESKTOP: Show Floating Dialog
               showDialog(
                 context: context,
                 builder: (BuildContext dialogContext) => Dialog(
@@ -120,13 +120,12 @@ class ColorPickerField extends StatelessWidget {
                 ),
               );
             } else {
-              // MOBILE: Show Bottom Sheet
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
                 builder: (BuildContext sheetContext) => Container(
-                  height: MediaQuery.of(context).size.height * 0.90, // Takes up 90% of mobile screen
+                  height: MediaQuery.of(context).size.height * 0.90, 
                   padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,

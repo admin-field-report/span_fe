@@ -46,6 +46,9 @@ class InspectionController extends ChangeNotifier {
       if (responseData['success'] == true) {
         final List dataList = responseData['data'] ?? [];
         _inspections = dataList.map((item) => ProjectInspection.fromJson(item)).toList();
+        
+        // 🚀 NEW: Sort the list descending by createTime (newest first)
+        _inspections.sort((a, b) => b.createTime.compareTo(a.createTime));
       }
     } catch (e) {
       _error = e.toString();
@@ -79,39 +82,65 @@ class InspectionController extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
+Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
     try {
       final response = await _apiService.get('/projectDocument/$inspectionId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
-        return List<Map<String, dynamic>>.from(responseData['data']);
+        final docs = List<Map<String, dynamic>>.from(responseData['data']);
+        
+        docs.sort((a, b) {
+          final timeA = a['create_time']?.toString() ?? '';
+          final timeB = b['create_time']?.toString() ?? '';
+          return timeB.compareTo(timeA);
+        });
+        
+        return docs;
       }
       return [];
     } catch (e) {
-      debugPrint("Doc Fetch Error: $e");
       return [];
     }
   }
 
   Future<List<String>> _fetchMedia(String inspectionId) async {
     try {
-      final response = await _apiService.get('/presignedurl/inspections-images/$inspectionId');
+      final response = await _apiService.get('/presignedurl/inspection-images/$inspectionId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
+
+      List<String> allMediaUrls = [];
 
       if (responseData['data'] != null && (responseData['data'] as List).isNotEmpty) {
         final firstItem = responseData['data'][0];
+        
+        // 1. Grab the standard inspection images
         if (firstItem['signedUrls'] != null) {
-          return List<String>.from(firstItem['signedUrls']);
+          allMediaUrls.addAll(List<String>.from(firstItem['signedUrls']));
+        }
+
+        // 2. Grab the document-specific images
+        if (firstItem['documentSignedUrls'] != null) {
+          final List documentImages = firstItem['documentSignedUrls'];
+          
+          for (var docItem in documentImages) {
+            if (docItem['signedUrl'] != null) {
+              allMediaUrls.addAll(List<String>.from(docItem['signedUrl']));
+            }
+          }
         }
       }
-      return [];
+      
+      return allMediaUrls;
+      
     } catch (e) {
       debugPrint("Media Fetch Error: $e");
       return [];
     }
   }
+
 }
+
 
 // Global instance
 final inspectionController = InspectionController();

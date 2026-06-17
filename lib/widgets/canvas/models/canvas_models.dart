@@ -38,7 +38,7 @@ class DrawingObject {
 
   String? description;
   List<String>? tagIds;
-  List<String>? imageUrls;
+  List<dynamic>? imageUrls;
 
   String? toolId;
 
@@ -193,6 +193,7 @@ class DrawingObject {
       parsedPoints = (json['points'] as List).map((p) => parseOffset(p)).toList();
     }
 
+    final dynamic rawImages = json['imageUrl'] ?? json['imageUrls'];
     var obj = DrawingObject(
       type: parseType(json['type']),
       start: parseOffset(json['start']),
@@ -213,7 +214,7 @@ class DrawingObject {
       isCallout: json['isCallout'] ?? false,
       description: json['description'],
       tagIds: json['tagIds'] != null ? List<String>.from(json['tagIds']) : null,
-      imageUrls: json['imageUrls'] != null ? List<String>.from(json['imageUrls']) : null,
+      imageUrls: rawImages != null ? List<dynamic>.from(rawImages) : null,
       base64Image: json['base64Image'],
       toolId: json['toolId'],
     );
@@ -234,10 +235,15 @@ class PageData {
   List<List<DrawingObject>> undoStack = [];
   List<List<DrawingObject>> redoStack = [];
 
+  double width;   
+  double height;
+
   PageData({
     required this.pageId,
     this.backgroundImageBytes,
     this.hasLoadedAnnotations = false,
+    this.width = 816.0,  // Fallback default
+    this.height = 1056.0, // Fallback default
   }); 
 }
 
@@ -267,11 +273,16 @@ class ProjectTag {
 class CustomTool {
   final String toolId;
   final String toolName;
-  final String base64ImageUrl;
   final List<String> tagIds;
-  ui.Image? decodedImage;
+  
+  final List<DrawingObject> toolObjects; 
 
-  CustomTool({required this.toolId, required this.toolName, required this.base64ImageUrl, required this.tagIds, this.decodedImage});
+  CustomTool({
+    required this.toolId, 
+    required this.toolName, 
+    required this.tagIds, 
+    this.toolObjects = const []
+  });
 }
 
 class CustomToolGroup {

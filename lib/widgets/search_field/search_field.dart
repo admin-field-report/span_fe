@@ -21,7 +21,7 @@ class SearchField extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: Container(
         width: width,
-        height: 50,
+        height: 45,
         decoration: BoxDecoration(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(8),

@@ -157,7 +157,7 @@ class TemplateController extends ChangeNotifier {
 
   Future<List<AppTagGroup>> getAllMasterTagGroups() async {
     try {
-      final response = await _apiService.get('/tagGroup/all'); 
+      final response = await _apiService.get('/tagGroupItem/company'); 
       final Map<String, dynamic> data = jsonDecode(response.body);
 
       if (data['success'] == true) {

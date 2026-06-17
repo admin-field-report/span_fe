@@ -1,4 +1,5 @@
 import 'package:field_report_fe/services/toast_service.dart';
+import 'package:field_report_fe/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../widgets/button/button.dart';
@@ -8,6 +9,7 @@ import '../../models/template.dart';
 import '../../models/tag_models.dart';
 import '../tools/models/tool_group.dart';
 import './controllers/template_controller.dart';
+import '../../utils/app_responsive.dart';
 
 // ==========================================
 // RIGHT PANE: REUSABLE DETAILS COMPONENT
@@ -136,78 +138,85 @@ final Set<int> _fetchedTabs = {};
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
-    // 🚀 Grab the data directly from your controller
-    final isLoading = templateController.isDetailLoading;
-    final tagGroups = templateController.currentTagGroups;
+    final isMobile = AppResponsive.isMobileScreen(context);
 
-    final isToolsLoading = templateController.isToolGroupsLoading;
-    final toolGroups = templateController.currentToolGroups;
+    // 🚀 1. Wrap the entire view in a ListenableBuilder!
+    return ListenableBuilder(
+      listenable: templateController,
+      builder: (context, _) {
+        
+        // 🚀 2. Grab the fresh data INSIDE the builder!
+        final tagGroups = templateController.currentTagGroups;
+        final toolGroups = templateController.currentToolGroups;
+        final documents = templateController.currentDocuments;
 
-    return DefaultTabController(
-      length: 3,
-      child: Container(
-        color: theme.colorScheme.surface,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            
-            // PANEL HEADER
-            Padding(
-              padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.template.name, 
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant, borderRadius: BorderRadius.circular(6)),
-                    child: Text("ID: ${widget.template.id}", style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
-            
-            TabBar(
-              controller: _tabController,
-              indicatorColor: theme.colorScheme.primary,
-              labelColor: theme.colorScheme.primary,
-              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-              tabs: const [Tab(text: "Tag Groups"), Tab(text: "Tool Sets"), Tab(text: "Documents")],
-            ),
-            Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-
-            // TABS CONTENT
-            Expanded(
-              // 🚀 Wait for controller to finish loading
-              child: isLoading 
-                ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
-                : TabBarView(
-                  controller: _tabController,
+        return DefaultTabController(
+          length: 3,
+          child: Container(
+            color: theme.colorScheme.surface,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                
+                // PANEL HEADER
+                if(!isMobile) Padding(
+                  padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
                     children: [
+                      Expanded(
+                        child: Text(
+                          widget.template.name, 
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                TabBar(
+                  controller: _tabController,
+                  indicatorColor: theme.colorScheme.primary,
+                  labelColor: theme.colorScheme.primary,
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                  tabs: const [Tab(text: "Tag Groups"), Tab(text: "Tool Sets"), Tab(text: "Documents")],
+                ),
+                Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+                // TABS CONTENT
+                Expanded(
+                  // 🚀 3. Removed the global isLoading check! 
+                  // Now the TabBarView is always visible, and each tab handles its own loader.
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      
                       // 🚀 THE TAG GROUPS TAB
                       _buildTabContent(
                         theme: theme, 
-                        isLoading: templateController.isDetailLoading,
+                        isLoading: templateController.isDetailLoading, // Specific to Tags
                         title: "Assigned Tag Groups", 
                         itemCount: tagGroups.length,
                         emptyMessage: "No tag groups assigned yet.",
                         onActionButtonPressed: () {
-                          _openManageTagsModal(context, templateController.currentTagGroups);
+                          _openManageTagsModal(context, tagGroups); // Uses fresh data
                         },
                         itemBuilder: (context, index) {
                           final group = tagGroups[index];
                           
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                          return Container(
+                            width: double.infinity, // Ensures all boxes stretch to the same width
+                            margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0), // Outer spacing
+                            padding: const EdgeInsets.all(16.0), // Inner spacing
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: theme.colorScheme.outlineVariant, 
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(12), 
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -215,10 +224,17 @@ final Set<int> _fetchedTabs = {};
                                   group.name, 
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 12),
                                 
                                 group.tags.isEmpty
-                                    ? Text("No tags in this group.", style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant))
+                                    ? Text(
+                                        "No tags available", 
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      )
                                     : Wrap(
                                         spacing: 8,
                                         runSpacing: 8,
@@ -230,14 +246,13 @@ final Set<int> _fetchedTabs = {};
                         }
                       ),
                       
-                      // Placeholder for Tool Sets Tab
+                      // 🚀 TOOL SETS TAB
                       _buildTabContent(
                         theme: theme, 
-                        isLoading: templateController.isToolGroupsLoading,
+                        isLoading: templateController.isToolGroupsLoading, // Specific to Tools
                         title: "Assigned Tool Sets", 
                         itemCount: toolGroups.length, 
                         emptyMessage: "No tool sets assigned yet.", 
-                        // 🚀 HOOKED UP!
                         onActionButtonPressed: () => _openManageToolSetsModal(context, toolGroups),
                         itemBuilder: (context, index) {
                           final group = toolGroups[index];
@@ -259,7 +274,6 @@ final Set<int> _fetchedTabs = {};
                                         spacing: 8,
                                         runSpacing: 8,
                                         children: group.tools.map((tool) {
-                                          // 🚀 Clean, subtle UI chips for the tools!
                                           return Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                             decoration: BoxDecoration(
@@ -284,22 +298,20 @@ final Set<int> _fetchedTabs = {};
                         }
                       ),
                       
-                      // Placeholder for Documents Tab
-                      // 🚀 THE DOCUMENTS TAB
+                      // 🚀 DOCUMENTS TAB
                       _buildTabContent(
                         theme: theme, 
-                        isLoading: templateController.isDocumentsLoading, 
+                        isLoading: templateController.isDocumentsLoading, // Specific to Documents
                         title: "Template Documents", 
-                        itemCount: templateController.currentDocuments.length, 
+                        itemCount: documents.length, 
                         emptyMessage: "No documents uploaded yet.", 
                         
-                        // 🚀 CUSTOMIZE THE BUTTON
                         buttonLabel: "Upload Document",
                         buttonIcon: Icons.upload_file,
                         onActionButtonPressed: () => _openUploadDocumentModal(context),
                         
                         itemBuilder: (context, index) {
-                          final doc = templateController.currentDocuments[index];
+                          final doc = documents[index];
                           
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -312,7 +324,7 @@ final Set<int> _fetchedTabs = {};
                               child: Icon(Icons.picture_as_pdf, color: theme.colorScheme.primary),
                             ),
                             title: Text(
-                              doc.displayName, // 🚀 Uses our magic getter
+                              doc.displayName, 
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)
                             ),
                             subtitle: Padding(
@@ -332,29 +344,47 @@ final Set<int> _fetchedTabs = {};
                       ),
                     ],
                   ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   // 🚀 REFACTORED TAG CHIP (Much cleaner since the Model handles the hex conversion now!)
   Widget _buildTagChip(AppTag tag) {
-    // Determine text color based on the actual background color luminance
-    Color textColor = tag.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
-    bool isWhiteBg = tag.color == Colors.white || tag.color.computeLuminance() > 0.95;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: tag.color, // Direct from your model
+        // color: tag.color.withOpacity(0.1), // 🚀 Light background tint
+        border: Border.all(color: tag.color.withOpacity(0.5)), // 🚀 Outlined border
         borderRadius: BorderRadius.circular(16),
-        border: isWhiteBg ? Border.all(color: Colors.grey.shade300) : null,
       ),
-      child: Text(
-        tag.name,
-        style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w600),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 🚀 The little solid color dot
+          Container(
+            width: 8, 
+            height: 8, 
+            decoration: BoxDecoration(
+              color: tag.color, 
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          // 🚀 Text colored to match the tag
+          Text(
+            tag.name, 
+            style: TextStyle(
+              color: tag.color, 
+              fontSize: 12, 
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -398,8 +428,8 @@ final Set<int> _fetchedTabs = {};
                   : Container(
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                        // borderRadius: BorderRadius.circular(8),
+                        // border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
                       ),
                       child: ListView.separated(
                         itemCount: itemCount,
@@ -546,6 +576,8 @@ final Set<int> _fetchedTabs = {};
 }
 
 
+
+
 enum TagFilter { all, selected, unselected }
 
 class ManageTagGroupsContent extends StatefulWidget {
@@ -603,8 +635,8 @@ class _ManageTagGroupsContentState extends State<ManageTagGroupsContent> {
     if (!mounted) return;
 
     if (success) {
-      Navigator.pop(context, true);
       ToastService.show(context, message: "Tag Groups updated!", type: ToastType.success);
+      Navigator.pop(context, true);
     } else {
       setState(() => _isSaving = false);
       ToastService.show(context, message: "Failed to update Tag Groups.", type: ToastType.error);
@@ -758,7 +790,6 @@ class _ManageTagGroupsContentState extends State<ManageTagGroupsContent> {
     );
   }
 }
-
 
 
 
