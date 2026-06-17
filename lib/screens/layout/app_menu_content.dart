@@ -51,14 +51,14 @@ class AppMenuContent extends StatelessWidget {
                     onTap: () => _navigate(context, '/projects'),
                   ),
                   _buildTemplatesMenu(context, theme),
-                  _NavTile(
-                    icon: Icons.architecture,
-                    label: "Canvas",
-                    isCollapsed: isCollapsed,
-                    isSelected: _isPathActive(context, '/canvas'),
-                    onTap: () => _navigate(context, '/canvas'),
-                  ),
-                  _NavTile(icon: Icons.groups_outlined, label: "Team", isCollapsed: isCollapsed),
+                  // _NavTile(
+                  //   icon: Icons.architecture,
+                  //   label: "Canvas",
+                  //   isCollapsed: isCollapsed,
+                  //   isSelected: _isPathActive(context, '/canvas'),
+                  //   onTap: () => _navigate(context, '/canvas'),
+                  // ),
+                  // _NavTile(icon: Icons.groups_outlined, label: "Team", isCollapsed: isCollapsed),
                   _NavTile(
                     icon: Icons.auto_awesome,
                     label: "AI",
