@@ -134,3 +134,6 @@ If you encounter platform-specific issues:
 3. For Android: Check that Android SDK is properly configured
 4. For iOS: Ensure Xcode and CocoaPods are properly set up
 5. For Web: Ensure you're using a modern browser with JavaScript enabled
+
+## To Prepare build for web
+ - flutter build web --release && (cd build/web && zip -r ../../web_build.zip .)
