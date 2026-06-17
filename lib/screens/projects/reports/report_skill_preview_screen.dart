@@ -174,8 +174,7 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
       final startRes = await _apiService.post('/inspection/report/generate', payload);
       final startData = jsonDecode(startRes.body);
 
-      final String rawEndpoint = startData['status_endpoint'];
-      final String statusEndpoint = rawEndpoint.startsWith('/v1') ? rawEndpoint.replaceFirst('/v1', '') : rawEndpoint;
+      final String statusEndpoint = startData['status_endpoint'];
 
       setState(() => _loadingMessage = "Compiling Report Data...");
       

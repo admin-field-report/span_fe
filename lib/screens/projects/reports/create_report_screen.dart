@@ -119,7 +119,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
       final genData = jsonDecode(genRes.body);
 
-      final String statusEndpoint = genData['data']['status_endpoint'].toString().replaceFirst('/v1', '');
+      final String statusEndpoint = genData['data']['status_endpoint'];
 
       // 2. POLL UNTIL SKILL IS GENERATED
       bool isComplete = false;
@@ -231,10 +231,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         
         final finalizeData = jsonDecode(finalizeRes.body);
 
-        final String rawEndpoint = finalizeData['status_endpoint'];
-        final String statusEndpoint = rawEndpoint.startsWith('/v1') 
-            ? rawEndpoint.replaceFirst('/v1', '') 
-            : rawEndpoint;
+        final String statusEndpoint = finalizeData['status_endpoint'];
 
         bool isComplete = false;
         int attempts = 0;

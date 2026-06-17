@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// import 'package:go_router/go_router.dart'; // Add if you need to route on row tap later
 import '../../../widgets/card/card.dart';
 import '../../../widgets/table/table.dart';
 import '../../../widgets/button/button.dart';
@@ -8,6 +7,9 @@ import '../../../widgets/search_field/search_field.dart';
 import '../../../utils/app_responsive.dart';
 import './controllers/report_controller.dart';
 import './widgets/add_report_form.dart';
+import './report_templete_details_screen.dart';
+import '../../services/toast_service.dart';
+import '../../widgets/confirmation/confirmation_remove.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -38,7 +40,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       showDialog(
         context: context,
         barrierColor: Colors.black.withOpacity(0.5),
-        builder: (context) => Center(
+        builder: (context) => const Center(
           child: Material(
             color: Colors.transparent,
             child: AddReportForm(isDesktop: true),
@@ -54,6 +56,41 @@ class _ReportsScreenState extends State<ReportsScreen> {
         builder: (context) => const AddReportForm(isDesktop: false),
       );
     }
+  }
+
+  Future<void> _showDeleteConfirmation(ReportTemplate report) async {
+    final theme = Theme.of(context);
+
+    await showDialog(
+      context: context,
+      builder: (context) => ConfirmationDialog(
+        title: "Delete Report Template",
+        description: "Are you sure you want to delete '${report.name}'?",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        confirmColor: theme.colorScheme.error,
+        onConfirm: () async {
+          try {
+            await reportController.deleteReport(report.id);
+            if (mounted) {
+              ToastService.show(
+                context, 
+                type: ToastType.success, 
+                message: "Report template deleted successfully."
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ToastService.show(
+                context, 
+                type: ToastType.error, 
+                message: e.toString().replaceAll("Exception: ", "")
+              );
+            }
+          }
+        },
+      ),
+    );
   }
 
   @override
@@ -85,6 +122,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         isLoading: reportController.isLoading,
                         data: _getFilteredReports(),
                         showCheckboxes: false,
+                        onRowTap: (item) => {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ReportTemplateDetailsScreen(
+                                templateId: item.id,
+                              ),
+                            ),
+                          )
+                        },
                         columns: [
                           TableColumn(
                             title: "Report Name",
@@ -123,6 +170,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                 Text(DateFormat('hh:mm a').format(r.createDate), style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
                               ],
                             ),
+                          ),
+                          // 🚀 NEW: Action Column with stickyRight
+                          // TableColumn(
+                          //   title: "Action",
+                          //   width: 80,
+                          //   stickyRight: true, // Keeps it pinned to the right edge
+                          //   align: Alignment.center,
+                          //   builder: (r) => IconButton(
+                          //     tooltip: "Delete Report",
+                          //     icon: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
+                          //     onPressed: () {
+                          //       _showDeleteConfirmation(r);
+                          //     },
+                          //   ),
+                          // ),
+                          TableColumn(
+                            title: "Actions",
+                            flex: 0,
+                            minWidth: 100,
+                            isStickyRight: true,
+                            builder: (p) => IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: colorScheme.error,
+                                  tooltip: "Delete Project",
+                                  onPressed: () => _showDeleteConfirmation(p),
+                                ),
                           ),
                         ],
                       ),

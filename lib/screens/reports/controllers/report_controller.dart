@@ -49,6 +49,12 @@ class ReportController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  bool _isLoadingTemplateDetails = false;
+  bool get isLoadingTemplateDetails => _isLoadingTemplateDetails;
+  Map<String, dynamic>? templateData;
+  String? errorMessage;
+  
+
   Future<void> getAllReports() async {
     _isLoading = true;
     notifyListeners();
@@ -142,6 +148,123 @@ class ReportController extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error in createReportWithDocuments: $e");
       return isReportCreated ? CreateReportStatus.partialSuccess : CreateReportStatus.failure;
+    }
+  }
+
+  Future<void> deleteReport(String templateId) async {
+    try {
+      final response = await _apiService.delete('/reportTemplate/delete/$templateId');
+      
+      if (response.statusCode == 200) {
+        reports.removeWhere((r) => r.id == templateId);
+        notifyListeners();
+      } else {
+        final resData = jsonDecode(response.body);
+        throw Exception(resData['message'] ?? "Failed to delete report.");
+      }
+    } catch (e) {
+      throw Exception(e.toString());
+    }
+  }
+
+  Future<void> fetchTemplateDetails(String templateId) async {
+    errorMessage = null;
+    _isLoadingTemplateDetails = true;
+    notifyListeners();
+
+    try {
+      final response = await _apiService.get('/reportTemplate/getById/$templateId');
+      final resData = jsonDecode(response.body);
+      templateData = resData['data'];
+    } catch (e) {
+      errorMessage = "Failed to fetch template details.";
+    } finally {
+      _isLoadingTemplateDetails = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteDocument(String docId, bool updateSkill) async {
+    try {
+      final response = await _apiService.delete('/reportTemplate/$docId/document?updateSkill=$updateSkill');
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? "Failed to delete document.");
+      }
+    } catch (e) {
+      throw Exception("Error deleting document: $e");
+    }
+  }
+
+  Future<List<Map<String, String>>> uploadDocumentsToS3(
+    String templateId, 
+    List<PlatformFile> files, {
+    Function(int current, int total)? onProgress, // 🚀 Added callback
+  }) async {
+    
+    final presignPayload = {
+      "files": files.map((f) => {
+        "file_name": f.name,
+        "content_type": "application/pdf"
+      }).toList()
+    };
+    
+    final presignResponse = await _apiService.post(
+      '/reportTemplate/$templateId/documents/presigned-urls', 
+      presignPayload
+    );
+    
+    final presignData = jsonDecode(presignResponse.body);
+    
+    if (presignData['uploads'] == null) {
+       throw Exception("Failed to generate upload URLs.");
+    }
+    
+    final List urlsData = presignData['uploads']; 
+    List<Map<String, String>> registeredDocs = [];
+
+    for (int i = 0; i < files.length; i++) {
+      final file = files[i];
+      final urlInfo = urlsData[i]; 
+      
+      final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
+      final String s3Key = urlInfo['key'];
+
+      if (file.bytes == null) continue;
+
+      final uploadResponse = await http.put(Uri.parse(signedUrl), body: file.bytes);
+      
+      if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {
+        registeredDocs.add({
+          "name": file.name,
+          "key": s3Key
+        });
+        // 🚀 Report progress back to the UI
+        onProgress?.call(i + 1, files.length);
+      } else {
+        throw Exception("Failed to upload ${file.name} to S3.");
+      }
+    }
+
+    return registeredDocs;
+  }
+
+  Future<Map<String, dynamic>> addDocuments(String templateId, List<Map<String, String>> uploadedDocs, bool updateSkill) async {
+    final response = await _apiService.post(
+      '/reportTemplate/$templateId/documents?updateSkill=$updateSkill',
+      {
+        "documents": uploadedDocs 
+      }
+    );
+
+    final resData = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return resData; 
+    } else {
+      throw Exception(resData['message'] ?? "Failed to register documents.");
     }
   }
 }
