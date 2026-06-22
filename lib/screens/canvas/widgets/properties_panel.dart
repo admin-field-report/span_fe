@@ -26,6 +26,8 @@ class PropertiesPanel extends StatefulWidget {
   final Function(String s3Key) onImageTap;
 
   final bool allowImageUpload;
+  final bool showImageSection; 
+  final bool isInspectionLevel; // 🚀 NEW: Controls if "Inspection Details" should render when no object is selected
    
   const PropertiesPanel({
     super.key,
@@ -44,6 +46,8 @@ class PropertiesPanel extends StatefulWidget {
     required this.onImageDelete,
     required this.onImageTap,
     this.allowImageUpload = true,
+    this.showImageSection = true, 
+    this.isInspectionLevel = true, // 🚀 Default is true
   });
 
   @override
@@ -57,7 +61,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   bool _isUploading = false; 
   final Set<String> _deletingKeys = {};
 
-  // 🚀 THE FIX 1: Cache for decoded images to prevent rebuilding blink
   final Map<String, Uint8List> _imageCache = {};
 
   String get _currentDescription => widget.activeObject != null 
@@ -104,7 +107,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       _descController.text = _currentDescription;
       _descController.addListener(_onTextChanged);
 
-      // 🚀 THE FIX 2: Clear cache when switching objects to free up memory
       _imageCache.clear();
     }
   }
@@ -117,7 +119,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     super.dispose();
   }
 
-  // 🚀 THE FIX 3: Helper to prevent re-decoding base64 strings on every setState
   Uint8List _getDecodedBytes(String key, String base64Str) {
     if (_imageCache.containsKey(key)) return _imageCache[key]!;
     
@@ -248,7 +249,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
         });
       }
       
-      // Remove from cache to free memory
       _imageCache.remove(s3Key);
       widget.onUpdate();
     } catch (e) {
@@ -277,7 +277,8 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    if (widget.activeObject == null && !widget.allowImageUpload) {
+    // 🚀 THE FIX: If no object is selected AND we are not at the inspection level, show the placeholder!
+    if (widget.activeObject == null && !widget.isInspectionLevel) {
       return Container(
         width: 300,
         decoration: BoxDecoration(
@@ -387,106 +388,110 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                     }).toList(),
                   ),
 
-                  if (widget.allowImageUpload) ...[
-                    const SizedBox(height: 32),
-                    Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _isUploading ? null : _showImageOptions,
-                        icon: _isUploading 
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.add_a_photo_outlined, size: 18), 
-                        label: Text(_isUploading ? "Uploading..." : "Upload Image"),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                  if (widget.showImageSection) ...[
+                    if (widget.allowImageUpload || imageUrls.isNotEmpty) ...[
+                      const SizedBox(height: 32),
+                      Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (widget.allowImageUpload) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _isUploading ? null : _showImageOptions,
+                          icon: _isUploading 
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.add_a_photo_outlined, size: 18), 
+                          label: Text(_isUploading ? "Uploading..." : "Upload Image"),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  
-                  if (imageUrls.isNotEmpty)
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2, 
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 1.0, 
-                      ),
-                      itemCount: imageUrls.length,
-                      itemBuilder: (context, index) {
-                        final dynamic imgData = imageUrls[index];
-                        String s3Key = '';
-                        String? base64Preview;
+                      const SizedBox(height: 16),
+                    ],
+                    
+                    if (imageUrls.isNotEmpty)
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2, 
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 1.0, 
+                        ),
+                        itemCount: imageUrls.length,
+                        itemBuilder: (context, index) {
+                          final dynamic imgData = imageUrls[index];
+                          String s3Key = '';
+                          String? base64Preview;
 
-                        if (imgData is String) {
-                          s3Key = imgData;
-                        } else if (imgData is Map) {
-                          s3Key = imgData['image_url'] ?? imgData['key'] ?? '';
-                          base64Preview = imgData['preview_image'];
-                        }
+                          if (imgData is String) {
+                            s3Key = imgData;
+                          } else if (imgData is Map) {
+                            s3Key = imgData['image_url'] ?? imgData['key'] ?? '';
+                            base64Preview = imgData['preview_image'];
+                          }
 
-                        final bool isDeleting = _deletingKeys.contains(s3Key);
+                          final bool isDeleting = _deletingKeys.contains(s3Key);
 
-                        return Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: theme.colorScheme.outlineVariant),
-                            borderRadius: BorderRadius.circular(8),
-                            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3), 
-                          ),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              MouseRegion(
-                                cursor: SystemMouseCursors.click,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque, 
-                                  onTap: () => widget.onImageTap(s3Key), 
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(7),
-                                    child: (base64Preview != null && base64Preview.isNotEmpty)
-                                      // 🚀 THE FIX 4: Call the cache helper and use gaplessPlayback
-                                      ? Image.memory(
-                                          _getDecodedBytes(s3Key, base64Preview),
-                                          fit: BoxFit.cover,
-                                          gaplessPlayback: true,
-                                          errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(theme),
-                                        )
-                                      : _buildFallbackIcon(theme),
-                                  ),
-                                ),
-                              ),
-                              
-                              if (isDeleting)
-                                Container(
-                                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(8)),
-                                  child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary))),
-                                )
-                              else
-                                Positioned(
-                                  top: 4, right: 4,
-                                  child: MouseRegion(
-                                    cursor: SystemMouseCursors.click,
-                                    child: GestureDetector(
-                                      onTap: () => _handleDeleteImage(s3Key),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                                        child: const Icon(Icons.delete_outline, color: Colors.white, size: 14),
-                                      ),
+                          return Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: theme.colorScheme.outlineVariant),
+                              borderRadius: BorderRadius.circular(8),
+                              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3), 
+                            ),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque, 
+                                    onTap: () => widget.onImageTap(s3Key), 
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(7),
+                                      child: (base64Preview != null && base64Preview.isNotEmpty)
+                                        ? Image.memory(
+                                            _getDecodedBytes(s3Key, base64Preview),
+                                            fit: BoxFit.cover,
+                                            gaplessPlayback: true,
+                                            errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(theme),
+                                          )
+                                        : _buildFallbackIcon(theme),
                                     ),
                                   ),
                                 ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                                
+                                if (isDeleting)
+                                  Container(
+                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(8)),
+                                    child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary))),
+                                  )
+                                else
+                                  Positioned(
+                                    top: 4, right: 4,
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        onTap: () => _handleDeleteImage(s3Key),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                          child: const Icon(Icons.delete_outline, color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                  ],
 
                   const SizedBox(height: 20),
                 ],

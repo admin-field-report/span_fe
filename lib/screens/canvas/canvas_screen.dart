@@ -21,6 +21,7 @@ class CanvasScreen extends StatefulWidget {
   final String projectId;
   final String inspectionId;
   final String page;
+  final String? annotateImageKey; 
 
   const CanvasScreen({
     super.key,
@@ -28,6 +29,7 @@ class CanvasScreen extends StatefulWidget {
     required this.inspectionId,
     required this.documentId,
     this.page = '1',
+    this.annotateImageKey,
   });
 
   @override
@@ -38,9 +40,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   final ApiService _apiService = ApiService();
   final Map<String, GlobalKey<custom_canvas.CanvasState>> _canvasKeys = {};
 
+  bool _isInitializing = true; 
   bool _isPageLoading = false;
-  bool _isLoadingDocument = true;
+  bool _isLoadingAnnotations = false; 
+  bool _isUploadingImage = false;
   bool _isSaving = false;
+  bool _isFirstLoadComplete = false; 
 
   bool _hasUnsavedChanges = false;
   bool _hasUnsavedImageChanges = false;
@@ -62,12 +67,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   List<String> _inspectionTagIds = [];
   List<dynamic> _inspectionImages = [];
 
-  // 🚀 THE OVERLAY STATE: Controls the instant image annotator
   String? _overlayImageKey;
   bool _isOverlayInspection = false;
   DrawingObject? _overlayParentObject;
   
-  // 🚀 LOCAL PENDING STATE: For instant previews before upload
   Uint8List? _pendingUploadBytes;
   String? _pendingUploadFileName;
 
@@ -96,7 +99,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   void _switchPage(String newPage) async {
-    if (_overlayImageKey != null) {
+    if (_overlayImageKey != null || widget.annotateImageKey != null) {
       ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
       return; 
     }
@@ -130,10 +133,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   // ==========================================
-  // 🌟 IN-MEMORY IMAGE ANNOTATION LOGIC 🌟
+  // 🌟 IN-MEMORY IMAGE ANNOTATION LOGIC
   // ==========================================
 
-  // Opens an ALREADY uploaded image for editing
   Future<void> _handleImageTap(String s3Key) async {
     if (_overlayImageKey != null) {
       ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
@@ -185,6 +187,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _overlayImageKey = s3Key;
         _isOverlayInspection = isInspection;
         _overlayParentObject = _selectedCanvasObject;
+        _selectedCanvasObject = null; 
+        _canvasKeys.remove(pageId); 
         _isPageLoading = false;
       });
     } catch (e) {
@@ -193,7 +197,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  // 🚀 INSTANT LOCAL PREVIEW: Sets up the overlay immediately without uploading
   Future<void> _setupLocalImageOverlay(String fileName, Uint8List bytes, bool isInspection) async {
     setState(() => _isPageLoading = true);
     try {
@@ -212,8 +215,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _overlayImageKey = 'LOCAL_PENDING';
         _isOverlayInspection = isInspection;
         _overlayParentObject = _selectedCanvasObject;
+        _selectedCanvasObject = null; 
         _pendingUploadBytes = bytes;
         _pendingUploadFileName = fileName;
+        _canvasKeys.remove(pageId);
         _isPageLoading = false;
       });
     } catch (e) {
@@ -225,10 +230,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
   void _closeOverlay() {
     _pageDataMap.remove('IMG_$_overlayImageKey');
     _overlayImageKey = null;
+    _selectedCanvasObject = _overlayParentObject; 
     _overlayParentObject = null;
     _pendingUploadBytes = null;
     _pendingUploadFileName = null;
-    _selectedCanvasObject = null; 
   }
 
   void _discardImageAnnotations() {
@@ -237,11 +242,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
     });
   }
 
-  // 🚀 COMBINED SAVE & UPLOAD LOGIC
   Future<void> _saveImageAnnotationsToMemory() async {
     _syncCurrentPageObjects();
 
-    // CASE 1: Editing an already uploaded image (Instant save to memory)
     if (_overlayImageKey != 'LOCAL_PENDING') {
       final pageData = _pageDataMap['IMG_$_overlayImageKey'];
       if (pageData != null) {
@@ -262,16 +265,13 @@ class _CanvasScreenState extends State<CanvasScreen> {
       return;
     }
 
-    // CASE 2: Saving a BRAND NEW local image (Upload happens now!)
     if (_pendingUploadBytes == null || _pendingUploadFileName == null) return;
 
-    setState(() => _isSaving = true);
+    setState(() => _isUploadingImage = true);
 
     try {
-      // Step A: Upload and get compressed preview
       final uploadedData = await _executeDirectS3Upload(_pendingUploadFileName!, _pendingUploadBytes!);
       
-      // Step B: Serialize the annotations drawn on the local preview
       final pageData = _pageDataMap['IMG_LOCAL_PENDING'];
       List<Map<String, dynamic>> annotations = [];
       if (pageData != null) {
@@ -310,7 +310,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) {
       ToastService.show(context, message: "Failed to upload image.", type: ToastType.error);
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
@@ -408,28 +408,26 @@ class _CanvasScreenState extends State<CanvasScreen> {
             }
           });
 
-          _pages.clear();
-          _pageDataMap.clear();
-
-          if (data['page_list'] != null) {
-            Map<String, int> nameCounts = {};
-
-            for (var pageJson in data['page_list']) {
-              final String pageId = pageJson['page_id'] ?? '';
-              String basePageName = pageJson['page_name'] ?? 'Page ${pageJson['sort_order'] ?? 1}';
-              
-              String pageName = basePageName;
-              if (nameCounts.containsKey(basePageName)) {
-                nameCounts[basePageName] = nameCounts[basePageName]! + 1;
-                pageName = "$basePageName (${nameCounts[basePageName]})";
-              } else {
-                nameCounts[basePageName] = 1;
+          if (widget.annotateImageKey != null) {
+            _pages.clear();
+            _pageDataMap.clear();
+            
+            _pages = ['Attached Image'];
+            _currentPage = 'Attached Image';
+            final pageData = PageData(pageId: widget.annotateImageKey!);
+            
+            var targetImageJson;
+            if (data['image_list'] != null) {
+              for (var img in data['image_list']) {
+                if (img['image_url'] == widget.annotateImageKey) {
+                  targetImageJson = img;
+                  break;
+                }
               }
+            }
 
-              _pages.add(pageName);
-              final pageData = PageData(pageId: pageId);
-
-              final String base64String = pageJson['image_preview'] ?? ''; 
+            if (targetImageJson != null) {
+              final String base64String = targetImageJson['preview_image'] ?? '';
               if (base64String.isNotEmpty && base64String != "base64") {
                 pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
                 final ui.Image decodedImage = await _decodeBase64Image(base64String);
@@ -439,15 +437,29 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 pageData.width = 816.0;
                 pageData.height = 1056.0;
               }
-
-              pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
-              pageData.hasLoadedAnnotations = true;
-              _pageDataMap[pageName] = pageData;
+              pageData.objects = _parseAnnotationsList(targetImageJson['annotation_list'], pageData.width, pageData.height);
             }
-          }
-          if (_pages.isNotEmpty) {
-            if (!_pages.contains(_currentPage)) {
-              _currentPage = _pages.first;
+            pageData.hasLoadedAnnotations = true;
+            _pageDataMap['Attached Image'] = pageData;
+            
+          } else {
+            if (data['page_list'] != null) {
+              for (var pageJson in data['page_list']) {
+                final String pageId = pageJson['page_id'] ?? '';
+                
+                PageData? pageData;
+                for (var pd in _pageDataMap.values) {
+                  if (pd.pageId == pageId) {
+                    pageData = pd;
+                    break;
+                  }
+                }
+
+                if (pageData != null) {
+                  pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
+                  pageData.hasLoadedAnnotations = true;
+                }
+              }
             }
           }
         }
@@ -640,28 +652,28 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Future<void> _fetchAvailableTags() async {
     try {
-      setState(() => _isLoadingTags = true);
       final response = await _apiService.get('/project/tags/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
-      if (responseData['success'] == true && responseData['data'] != null) {
+      if (responseData['success'] == true && responseData['data'] != null && mounted) {
         setState(() {
-          _availableTags = (responseData['data'] as List)
-              .map((tagJson) => ProjectTag.fromJson(tagJson))
-              .toList();
+          _availableTags = (responseData['data'] as List).map((tagJson) => ProjectTag.fromJson(tagJson)).toList();
         });
       }
-    } catch (e) { debugPrint("Error fetching tags: $e"); }
-    finally { setState(() => _isLoadingTags = false); }
+    } catch (e) { 
+      debugPrint("Error fetching tags: $e"); 
+    } finally {
+      // 🚀 RESTORED FINALLY BLOCK
+      if (mounted) setState(() => _isLoadingTags = false);
+    }
   }
 
   Future<void> _fetchCustomTools() async {
     try {
-      setState(() => _isLoadingCustomTools = true);
       final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
-      if (responseData['success'] == true && responseData['data'] != null) {
+      if (responseData['success'] == true && responseData['data'] != null && mounted) {
         List<CustomToolGroup> loadedGroups = [];
         for (var groupJson in responseData['data']) {
           List<CustomTool> tools = [];
@@ -685,30 +697,62 @@ class _CanvasScreenState extends State<CanvasScreen> {
         }
         setState(() => _customToolGroups = loadedGroups);
       }
-    } catch (e) { debugPrint("Error fetching custom tools: $e"); } 
-    finally { setState(() => _isLoadingCustomTools = false); }
+    } catch (e) { 
+      debugPrint("Error fetching custom tools: $e"); 
+    } finally {
+      // 🚀 RESTORED FINALLY BLOCK
+      if (mounted) setState(() => _isLoadingCustomTools = false);
+    }
   }
 
   Future<void> _initializeCanvas() async {
-    setState(() => _isLoadingDocument = true);
+    setState(() => _isInitializing = true);
     
-    await _fetchAvailableTags(); 
-    await _fetchCustomTools(); 
-    await _fetchAllDocumentData();
-
-    if (_pages.isEmpty) {
+    _fetchAvailableTags(); 
+    _fetchCustomTools(); 
+    
+    if (widget.annotateImageKey != null) {
+      await _fetchAllDocumentData();
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+          _isFirstLoadComplete = true;
+        });
+      }
+    } else {
       await _fetchPageList();
       if (_pages.isEmpty) {
         _pages = ['Page 1'];
         _currentPage = 'Page 1';
         _pageDataMap = {'Page 1': PageData(pageId: 'fallback_id')};
       }
-    }
-    if (_pages.isNotEmpty) {
-      await _fetchPageImage(_currentPage);
-    }
 
-    setState(() => _isLoadingDocument = false);
+      if (mounted) {
+        setState(() {
+          _isInitializing = false;
+          _isPageLoading = true;
+        });
+      }
+
+      await _fetchPageImage(_currentPage);
+
+      if (mounted) {
+        setState(() {
+          _isPageLoading = false;
+          _isLoadingAnnotations = true;
+          _isFirstLoadComplete = true; 
+        });
+      }
+
+      await _fetchAllDocumentData();
+
+      if (mounted) {
+        setState(() {
+          _canvasKeys.remove(_currentPage);
+          _isLoadingAnnotations = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchPageList() async {
@@ -740,7 +784,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     final pageData = _pageDataMap[pageName];
     if (pageData == null || pageData.backgroundImageBytes != null) return;
 
-    setState(() => _isPageLoading = true);
     try {
       final response = await _apiService.get('/projectDocumentPage/project-document-page-pdf/${pageData.pageId}');
       final responseData = jsonDecode(response.body);
@@ -763,10 +806,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
               pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
             }
           }
+          
+          _canvasKeys.remove(pageName);
         }
       }
     } catch (e) { debugPrint("Error loading page image: $e"); } 
-    finally { setState(() => _isPageLoading = false); }
   }
 
   Future<void> _deleteImageForObject(String s3Key) async {
@@ -926,24 +970,71 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Widget _buildLoadingOverlay(ThemeData theme) {
+    String title = "Loading...";
+    String subtitle = "Please wait...";
+
+    if (_isInitializing) {
+      title = widget.annotateImageKey != null ? "Initializing Image..." : "Initializing Document...";
+      subtitle = "Fetching document structure";
+    } else if (_isPageLoading) {
+      title = widget.annotateImageKey != null ? "Loading Image..." : "Loading Page...";
+      subtitle = "Rendering visual layout";
+    } else if (_isLoadingAnnotations) {
+      title = "Loading Annotations...";
+      subtitle = "Applying drawings and details";
+    } else if (_isUploadingImage) {
+      title = "Uploading Image...";
+      subtitle = "Saving securely to the cloud";
+    } else if (_isSaving) {
+      title = "Saving Changes...";
+      subtitle = "Syncing annotations with the server";
+    }
+
+    final double bgOpacity = _isFirstLoadComplete ? 0.7 : 1.0;
+
     return Container(
-      color: theme.colorScheme.surface.withOpacity(0.6), 
+      color: theme.scaffoldBackgroundColor.withOpacity(bgOpacity), 
       child: Center(
         child: Container(
-          padding: const EdgeInsets.all(20),
+          width: 320, 
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)]
+            color: theme.colorScheme.surface, 
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.min, 
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(color: theme.colorScheme.primary),
-              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
+                  strokeWidth: 4,
+                ),
+              ),
+              const SizedBox(height: 24),
               Text(
-                _isSaving ? "Saving changes..." : "Loading...", 
-                style: const TextStyle(fontWeight: FontWeight.bold)
+                title, 
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle, 
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)
               ),
             ],
           ),
@@ -1001,23 +1092,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (_isLoadingDocument) {
-      return Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: theme.scaffoldBackgroundColor,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(color: theme.colorScheme.primary),
-              const SizedBox(height: 16),
-              Text("Loading Document...", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6))),
-            ],
-          ),
-        ),
-      );
-    }
-
+    final bool isImageOpen = _overlayImageKey != null || widget.annotateImageKey != null;
     final String activeCanvasKey = _overlayImageKey != null ? 'IMG_$_overlayImageKey' : _currentPage;
     final PageData? activePageData = _pageDataMap[activeCanvasKey];
 
@@ -1081,7 +1156,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               },
             ),
 
-            // 🚀 ALWAYS visible properties panel, allowing edits to shapes drawn inside the overlay!
             customRightPanel: PropertiesPanel(
               activeObject: _selectedCanvasObject, 
               availableTags: _availableTags,
@@ -1090,6 +1164,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
               inspectionTagIds: _inspectionTagIds,
               inspectionImageUrls: _inspectionImages,
               
+              isInspectionLevel: !isImageOpen, 
+              allowImageUpload: !isImageOpen,
+              showImageSection: !isImageOpen,
+
               onInspectionDescriptionChanged: (val) {
                 setState(() => _inspectionDescription = val);
                 _hasUnsavedChanges = true;
@@ -1105,7 +1183,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               },
               
               onImageUpload: (fileName, bytes) async {
-                // 🚀 Send straight to the local overlay instead of uploading
                 await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
               },
               
@@ -1122,8 +1199,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 }
               },
               
-              // Prevent new uploads if we are currently looking at an overlay
-              allowImageUpload: _overlayImageKey == null,
               onImageTap: _handleImageTap,
               onClose: () {
                 setState(() => _selectedCanvasObject = null);
@@ -1131,7 +1206,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
               },
             ),
 
-            // 🚀 SWAP ACTIONS based on Overlay state
             showCloseButton: _overlayImageKey == null,
             onClosePressed: _handleClose,
             leftActions: [],
@@ -1166,7 +1240,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
               });
             },
           ),
-          if (_isPageLoading || _isSaving)
+          
+          if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
             _buildLoadingOverlay(theme),
         ],
       )
