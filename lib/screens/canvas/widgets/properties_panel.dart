@@ -57,6 +57,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   bool _isUploading = false; 
   final Set<String> _deletingKeys = {};
 
+  // 🚀 THE FIX 1: Cache for decoded images to prevent rebuilding blink
+  final Map<String, Uint8List> _imageCache = {};
+
   String get _currentDescription => widget.activeObject != null 
       ? (widget.activeObject!.description ?? "") 
       : (widget.inspectionDescription ?? "");
@@ -100,6 +103,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
       _descController.removeListener(_onTextChanged);
       _descController.text = _currentDescription;
       _descController.addListener(_onTextChanged);
+
+      // 🚀 THE FIX 2: Clear cache when switching objects to free up memory
+      _imageCache.clear();
     }
   }
 
@@ -107,7 +113,18 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   void dispose() {
     _descController.removeListener(_onTextChanged);
     _descController.dispose();
+    _imageCache.clear();
     super.dispose();
+  }
+
+  // 🚀 THE FIX 3: Helper to prevent re-decoding base64 strings on every setState
+  Uint8List _getDecodedBytes(String key, String base64Str) {
+    if (_imageCache.containsKey(key)) return _imageCache[key]!;
+    
+    String cleanBase64 = base64Str.contains(',') ? base64Str.split(',').last : base64Str;
+    Uint8List bytes = base64Decode(cleanBase64);
+    _imageCache[key] = bytes;
+    return bytes;
   }
 
   void _toggleTag(String tagId) {
@@ -132,10 +149,8 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
-  // 🚀 NEW: Shows the bottom sheet to pick between Camera and Gallery
   void _showImageOptions() {
     if (kIsWeb) {
-      // Skip the bottom sheet on web and just open the file explorer
       _pickAndUploadImage(useCamera: false);
       return;
     }
@@ -183,14 +198,12 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     );
   }
 
-  // 🚀 REVISED: Routes intelligently between ImagePicker and FilePicker
   Future<void> _pickAndUploadImage({required bool useCamera}) async {
     try {
       Uint8List? fileBytes;
       String fileName = "";
 
       if (useCamera) {
-        // Trigger the native mobile camera
         final ImagePicker picker = ImagePicker();
         final XFile? photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 80);
         
@@ -199,7 +212,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
           fileName = photo.name;
         }
       } else {
-        // Trigger the standard gallery/file explorer
         FilePickerResult? result = await FilePicker.platform.pickFiles(
           type: FileType.image,
           withData: true, 
@@ -211,7 +223,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
         }
       }
 
-      // If a file was successfully captured/selected, upload it!
       if (fileBytes != null) {
         setState(() => _isUploading = true);
         await widget.onImageUpload(fileName, fileBytes);
@@ -229,15 +240,16 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     try {
       await widget.onImageDelete(s3Key);
       
-      // Remove from local list after successful backend deletion
       if (widget.activeObject != null && widget.activeObject!.imageUrls != null) {
         widget.activeObject!.imageUrls!.removeWhere((item) {
           if (item is String) return item == s3Key;
-          if (item is Map) return item['key'] == s3Key;
+          if (item is Map) return item['image_url'] == s3Key || item['key'] == s3Key;
           return false;
         });
       }
       
+      // Remove from cache to free memory
+      _imageCache.remove(s3Key);
       widget.onUpdate();
     } catch (e) {
       debugPrint("Error deleting image: $e");
@@ -246,7 +258,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
-  // Helper for when base64 previews are missing or fail to decode
   Widget _buildFallbackIcon(ThemeData theme) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -334,7 +345,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       final Color foregroundColor = isSelected ? Colors.white : tag.color;
 
                       return InkWell(
-                        onTap: () => _toggleTag(tag.id), // 🚀 Using your existing toggle function
+                        onTap: () => _toggleTag(tag.id), 
                         borderRadius: BorderRadius.circular(16),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
@@ -383,11 +394,10 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        // 🚀 REVISED: This now opens the Bottom Sheet!
                         onPressed: _isUploading ? null : _showImageOptions,
                         icon: _isUploading 
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.add_a_photo_outlined, size: 18), // Switched to a camera/add icon
+                            : const Icon(Icons.add_a_photo_outlined, size: 18), 
                         label: Text(_isUploading ? "Uploading..." : "Upload Image"),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -414,11 +424,10 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                         String s3Key = '';
                         String? base64Preview;
 
-                        // 🚀 Safely handle both legacy strings and new Map objects
                         if (imgData is String) {
                           s3Key = imgData;
                         } else if (imgData is Map) {
-                          s3Key = imgData['key'] ?? '';
+                          s3Key = imgData['image_url'] ?? imgData['key'] ?? '';
                           base64Preview = imgData['preview_image'];
                         }
 
@@ -441,10 +450,11 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(7),
                                     child: (base64Preview != null && base64Preview.isNotEmpty)
-                                      // 🚀 Shows the actual compressed preview!
+                                      // 🚀 THE FIX 4: Call the cache helper and use gaplessPlayback
                                       ? Image.memory(
-                                          base64Decode(base64Preview.contains(',') ? base64Preview.split(',').last : base64Preview),
+                                          _getDecodedBytes(s3Key, base64Preview),
                                           fit: BoxFit.cover,
+                                          gaplessPlayback: true,
                                           errorBuilder: (context, error, stackTrace) => _buildFallbackIcon(theme),
                                         )
                                       : _buildFallbackIcon(theme),

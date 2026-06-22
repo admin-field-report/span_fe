@@ -22,6 +22,7 @@ class CanvasScreen extends StatefulWidget {
   final String page;
  
   final String? annotateImageKey;
+
   final bool isInspectionImage;
 
   const CanvasScreen({
@@ -54,19 +55,16 @@ class _CanvasScreenState extends State<CanvasScreen> {
   bool _isLoadingCustomTools = true;
   CustomTool? _selectedCustomTool;
 
-  Map<String, dynamic> _rawDocumentData = {}; 
-
   List<String> _pages = [];
   String _currentPage = ''; 
   Map<String, PageData> _pageDataMap = {};
   List<ProjectTag> _availableTags = [];
   bool _isLoadingTags = false;
 
+  // 🌟 NEW: INSPECTION LEVEL STATE 🌟
   String _inspectionDescription = "";
   List<String> _inspectionTagIds = [];
-  
-  // 🚀 THE FIX 1: Upgraded to a List of rich Objects instead of Strings!
-  List<dynamic> _inspectionImages = [];
+  List<String> _inspectionImageUrls = [];
 
   @override
   void initState() {
@@ -88,7 +86,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  void _switchPage(String newPage) async {
+void _switchPage(String newPage) async {
     _syncCurrentPageObjects(); 
     setState(() {
       _isPageLoading = true;
@@ -97,6 +95,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     });
     
     await _fetchPageImage(newPage);
+    await _fetchSavedAnnotations(newPage); 
     
     if (mounted) {
       setState(() => _isPageLoading = false);
@@ -112,334 +111,92 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   // ==========================================
-  // 🌟 UNIFIED GET API
+  // 🌟 NEW: INSPECTION LEVEL API METHODS 🌟
   // ==========================================
   
-  Future<void> _fetchAllDocumentData() async {
+  Future<void> _fetchInspectionAnnotation() async {
     try {
-      final queryParams = {
-        "project_id": widget.projectId,
-        "inspection_id": widget.inspectionId,
-        "project_document_id": widget.documentId,
-      };
-      
-      final queryString = Uri(queryParameters: queryParams).query;
-      final presignResponse = await _apiService.get('/canvas/pre-sign/inspection/read?$queryString');
-      final presignData = jsonDecode(presignResponse.body);
+      final response = await _apiService.get('/inspection/document/annotation/${widget.documentId}');
+      final resData = jsonDecode(response.body);
 
-      if (presignData['success'] == true && presignData['data'] != null) {
-        final String signedUrl = presignData['data'];
-
-        final s3Response = await http.get(Uri.parse(signedUrl));
-
-        if (s3Response.statusCode == 200) {
-          final data = jsonDecode(s3Response.body);
-          _rawDocumentData = data; 
-
+      if (resData['success'] == true && resData['data'] != null) {
+        final List dataList = resData['data']; 
+        
+        if (dataList.isNotEmpty) {
+          final data = dataList[0];
           setState(() {
             _inspectionDescription = data['description'] ?? "";
             _inspectionTagIds = List<String>.from(data['tag_id_list'] ?? []);
-            
-            // 🚀 THE FIX 2: Store the entire image object so we have the base64 preview!
-            _inspectionImages.clear();
-            if (data['image_list'] != null) {
-              _inspectionImages = List<dynamic>.from(data['image_list']);
-            }
+            _inspectionImageUrls = List<String>.from(data['image_url_list'] ?? []);
           });
-
-          _pages.clear();
-          _pageDataMap.clear();
-
-          if (widget.annotateImageKey != null) {
-            _pages = ['Attached Image'];
-            _currentPage = 'Attached Image';
-            final pageData = PageData(pageId: widget.annotateImageKey!);
-            
-            var targetImageJson;
-            if (data['image_list'] != null) {
-              for (var img in data['image_list']) {
-                if (img['image_url'] == widget.annotateImageKey) {
-                  targetImageJson = img;
-                  break;
-                }
-              }
-            }
-
-            if (targetImageJson != null) {
-              final String base64String = targetImageJson['preview_image'] ?? '';
-              if (base64String.isNotEmpty && base64String != "base64") {
-                pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-                final ui.Image decodedImage = await _decodeBase64Image(base64String);
-                pageData.width = decodedImage.width.toDouble();
-                pageData.height = decodedImage.height.toDouble();
-              } else {
-                pageData.width = 816.0;
-                pageData.height = 1056.0;
-              }
-
-              pageData.objects = _parseAnnotationsList(targetImageJson['annotation_list'], pageData.width, pageData.height);
-            }
-            pageData.hasLoadedAnnotations = true;
-            _pageDataMap['Attached Image'] = pageData;
-          } 
-          else {
-            if (data['page_list'] != null) {
-              Map<String, int> nameCounts = {};
-
-              for (var pageJson in data['page_list']) {
-                final String pageId = pageJson['page_id'] ?? '';
-                String basePageName = pageJson['page_name'] ?? 'Page ${pageJson['sort_order'] ?? 1}';
-                
-                String pageName = basePageName;
-                if (nameCounts.containsKey(basePageName)) {
-                  nameCounts[basePageName] = nameCounts[basePageName]! + 1;
-                  pageName = "$basePageName (${nameCounts[basePageName]})";
-                } else {
-                  nameCounts[basePageName] = 1;
-                }
-
-                _pages.add(pageName);
-                final pageData = PageData(pageId: pageId);
-
-                final String base64String = pageJson['image_preview'] ?? ''; 
-                if (base64String.isNotEmpty && base64String != "base64") {
-                  pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-                  final ui.Image decodedImage = await _decodeBase64Image(base64String);
-                  pageData.width = decodedImage.width.toDouble();
-                  pageData.height = decodedImage.height.toDouble();
-                } else {
-                  pageData.width = 816.0;
-                  pageData.height = 1056.0;
-                }
-
-                pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
-                pageData.hasLoadedAnnotations = true;
-                _pageDataMap[pageName] = pageData;
-              }
-            }
-            if (_pages.isNotEmpty) {
-              if (!_pages.contains(_currentPage)) {
-                _currentPage = _pages.first;
-              }
-            }
-          }
         }
       }
     } catch (e) {
-      debugPrint("Error loading document data from S3: $e");
+      debugPrint("Error fetching inspection data: $e");
     }
   }
 
-  List<DrawingObject> _parseAnnotationsList(List<dynamic>? annList, double pWidth, double pHeight) {
-    List<DrawingObject> loadedObjects = [];
-    if (annList == null) return loadedObjects;
-
-    for (var item in annList) {
-      DrawingType parsedType = _parseDrawingType(item['type']);
-      String? savedToolId = item['toolId'];
-      
-      List<DrawingObject>? matchedInternalShapes;
-      if (parsedType == DrawingType.customTool && savedToolId != null) {
-        for (var group in _customToolGroups) {
-          try {
-            final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
-            matchedInternalShapes = matchedTool.toolObjects;
-            break;
-          } catch(e) {} 
-        }
-      }
-      
-      loadedObjects.add(DrawingObject(
-        type: parsedType,
-        toolId: savedToolId,
-        internalShapes: matchedInternalShapes, 
-        start: Offset((item['start']['dx'] ?? 0.0) * pWidth, (item['start']['dy'] ?? 0.0) * pHeight),
-        end: Offset((item['end']['dx'] ?? 0.0) * pWidth, (item['end']['dy'] ?? 0.0) * pHeight),
-        strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
-        text: item['text']?.isEmpty == true ? null : item['text'],
-        description: item['description'],
-        tagIds: List<String>.from(item['tagIds'] ?? []),
-        imageUrls: item['image_list'] != null ? List<dynamic>.from(item['image_list']) : null,
-        color: item['color'] != null ? Color(item['color']) : Colors.red[800]!,
-        fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
-        borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
-        opacity: (item['opacity'] ?? 1.0).toDouble(),
-        rotation: (item['rotation'] ?? 0.0).toDouble(),
-        fontSize: (item['fontSize'] ?? 24.0).toDouble(),
-        isBold: item['isBold'] ?? false,
-        isItalic: item['isItalic'] ?? false,
-        isUnderline: item['isUnderline'] ?? false,
-        isStrikethrough: item['isStrikethrough'] ?? false,
-        isCallout: item['isCallout'] ?? false,
-        points: item['points'] != null ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * pWidth, (p['dy'] ?? 0.0) * pHeight)).toList() : null,
-      ));
+  Future<void> _saveInspectionLevelAnnotation() async {
+    if (!_hasUnsavedChanges) {
+      return; 
     }
-    return loadedObjects;
-  }
-
-  // ==========================================
-  // UNIFIED SAVING API
-  // ==========================================
-
-  List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects, double pWidth, double pHeight) {
-    List<Map<String, dynamic>> itemsList = [];
-    for (var obj in objects) {
-      List<Map<String, dynamic>> nestedImageList = [];
-      if (obj.imageUrls != null) {
-        for (var i = 0; i < obj.imageUrls!.length; i++) {
-          var img = obj.imageUrls![i];
-          if (img is Map) {
-            nestedImageList.add({
-              "image_id": img["image_id"] ?? "",
-              "image_url": img["image_url"] ?? img["key"] ?? "",
-              "preview_image": img["preview_image"] ?? "",
-              "image_name": img["image_name"] ?? "",
-              "sort_order": img["sort_order"] ?? (i + 1),
-            });
-          }
-        }
-      }
-
-      Map<String, dynamic> item = {
-        "type": _getDrawingTypeString(obj.type),
-        "start": {"dx": obj.start.dx / pWidth, "dy": obj.start.dy / pHeight},
-        "end": {"dx": obj.end.dx / pWidth, "dy": obj.end.dy / pHeight},
-        if (obj.type == DrawingType.customTool) "toolId": obj.toolId, 
-        "text": obj.text ?? "",
-        "description": obj.description ?? "",
-        "strokeWidth": obj.strokeWidth,
-        "tagIds": obj.tagIds ?? [],
-        "image_list": nestedImageList, 
-        "color": obj.color.value,             
-        "fillColor": obj.fillColor.value,
-        "borderColor": obj.borderColor.value,
-        "opacity": obj.opacity,
-        "rotation": obj.rotation,
-        "fontSize": obj.fontSize,
-        "isBold": obj.isBold,
-        "isItalic": obj.isItalic,
-        "isUnderline": obj.isUnderline,
-        "isStrikethrough": obj.isStrikethrough,
-        "isCallout": obj.isCallout,
-      };
-
-      if (obj.points != null && obj.points!.isNotEmpty) {
-        item["points"] = obj.points!.map((p) => {"dx": p.dx / pWidth, "dy": p.dy / pHeight}).toList();
-      }
-      itemsList.add(item);
-    }
-    return itemsList;
-  }
-  
-  Future<void> _saveAnnotations() async {
-    setState(() => _isSaving = true);
-    _syncCurrentPageObjects(); 
 
     try {
-      Map<String, dynamic> masterPayload = Map<String, dynamic>.from(_rawDocumentData);
-      
-      masterPayload['project_document_id'] = widget.documentId;
-      masterPayload['description'] = _inspectionDescription;
-      masterPayload['tag_id_list'] = _inspectionTagIds;
-
-      // 🚀 THE FIX 3: Drastically simplified `image_list` saving! 
-      // Because `_inspectionImages` perfectly matches what the backend needs, we just copy it.
-      List<dynamic> currentImageList = List.from(_inspectionImages);
-
-      // If the user is editing an Attached Image, serialize the annotations
-      if (widget.annotateImageKey != null) {
-        final pageData = _pageDataMap['Attached Image'];
-        if (pageData != null) {
-          int existingIndex = currentImageList.indexWhere((img) => img['image_url'] == widget.annotateImageKey);
-          final serializedObjects = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-          
-          if (existingIndex != -1) {
-            currentImageList[existingIndex]['annotation_list'] = serializedObjects;
-          } else {
-            // Failsafe if image was somehow missing
-            currentImageList.add({
-              "image_id": "", 
-              "image_url": widget.annotateImageKey,
-              "preview_image": "base64", 
-              "image_name": "Attached Image",
-              "sort_order": currentImageList.length + 1,
-              "annotation_list": serializedObjects
-            });
+      final payload = {
+        "json_data": [
+          {
+            "description": _inspectionDescription,
+            "tag_id_list": _inspectionTagIds,
+            "image_url_list": _inspectionImageUrls
           }
-        }
+        ],
+        "project_id": widget.projectId,
+        "inspection_id": widget.inspectionId,
+        "project_document_id": widget.documentId,
+      };
+      await _apiService.post('/inspection/document/add-annotation', payload);
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, message: "Error saving inspection details.", type: ToastType.error);
       }
-      masterPayload['image_list'] = currentImageList;
+    }
+  }
 
-      // Update `page_list`
-      if (widget.annotateImageKey == null) {
-        List<dynamic> currentPageList = List.from(masterPayload['page_list'] ?? []);
-        
-        for (int i = 0; i < _pages.length; i++) {
-          final String pageName = _pages[i];
-          final pageData = _pageDataMap[pageName];
-
-          if (pageData != null) {
-            final serializedObjects = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-            int existingIndex = currentPageList.indexWhere((p) => p['page_id'] == pageData.pageId);
-            
-            if (existingIndex != -1) {
-              currentPageList[existingIndex]['annotation_list'] = serializedObjects;
-            } else {
-              currentPageList.add({
-                "page_id": pageData.pageId,
-                "page_name": pageName,
-                "sort_order": i + 1,
-                "annotation_list": serializedObjects
-              });
-            }
-          }
-        }
-        masterPayload['page_list'] = currentPageList;
-      }
-
-      // Pre-Signed Save Logic
-      final queryParams = {
+  Future<void> _uploadInspectionImage(String fileName, Uint8List bytes) async {
+    try {
+      final payload = {
+        "file": fileName,
+        "content_type": "image/jpeg", 
         "project_id": widget.projectId,
         "inspection_id": widget.inspectionId,
         "project_document_id": widget.documentId,
       };
       
-      final queryString = Uri(queryParameters: queryParams).query;
-      final presignResponse = await _apiService.get('/canvas/pre-sign/inspection/write?$queryString');
-      final presignData = jsonDecode(presignResponse.body);
-
-      if (presignData['success'] == true && presignData['data'] != null) {
-        final String signedUrl = presignData['data']['signedUrl'] ?? presignData['data'];
-
-        final putResponse = await http.put(
-          Uri.parse(signedUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(masterPayload),
-        );
-
-        if (putResponse.statusCode == 200 || putResponse.statusCode == 201) {
-          _hasUnsavedChanges = false;
-          _hasUnsavedImageChanges = false;
-          _rawDocumentData = masterPayload; 
-          
-          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success);
-        } else {
-          throw Exception("Failed to upload document data to S3. Status: ${putResponse.statusCode}");
-        }
-      } else {
-        throw Exception(presignData['message'] ?? "Failed to get secure upload URL.");
-      }
+      final response = await _apiService.post('/inspection/document/image/presigned-url', payload);
+      final responseData = jsonDecode(response.body);
       
-    } catch (e) {
-      debugPrint("Save Error: $e");
-      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (responseData['signedUrl'] != null && responseData['key'] != null) {
+        final String signedUrl = responseData['signedUrl'];
+        final String s3Key = responseData['key'];
+        
+        final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
+        
+        if (uploadResponse.statusCode == 200) {
+           setState(() {
+              _inspectionImageUrls.add(s3Key);
+              _hasUnsavedChanges = true;
+           });
+        } else {
+           throw Exception("Inspection image S3 upload failed");
+        }
+      }
+    } catch(e) {
+      if (mounted) ToastService.show(context, message: "Failed to upload inspection image.", type: ToastType.error);
     }
   }
 
   // ==========================================
-  // INITIALIZATION
+  // EXISTING API METHODS
   // ==========================================
 
   Future<void> _fetchAvailableTags() async {
@@ -459,106 +216,127 @@ class _CanvasScreenState extends State<CanvasScreen> {
     finally { setState(() => _isLoadingTags = false); }
   }
 
-  Future<void> _fetchCustomTools() async {
-    try {
-      setState(() => _isLoadingCustomTools = true);
-      final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
-      final responseData = jsonDecode(response.body);
-
-      if (responseData['success'] == true && responseData['data'] != null) {
-        List<CustomToolGroup> loadedGroups = [];
-        for (var groupJson in responseData['data']) {
-          List<CustomTool> tools = [];
-          if (groupJson['toolds'] != null) {
-            for (var toolJson in groupJson['toolds']) {
-              List<DrawingObject> parsedObjects = [];
-              if (toolJson['imageJsonData'] != null) {
-                for (var item in toolJson['imageJsonData']) {
-                  parsedObjects.add(DrawingObject.fromJson(item));
-                }
-              }
-              tools.add(CustomTool(
-                toolId: toolJson['toolId'] ?? '', 
-                toolName: toolJson['toolName'] ?? 'Unknown Tool',
-                tagIds: List<String>.from(toolJson['tagIds'] ?? []),
-                toolObjects: parsedObjects,
-              ));
-            }
-          }
-          loadedGroups.add(CustomToolGroup(toolGroup: groupJson['toolGroup'] ?? 'General', tools: tools));
-        }
-        setState(() => _customToolGroups = loadedGroups);
-      }
-    } catch (e) { debugPrint("Error fetching custom tools: $e"); } 
-    finally { setState(() => _isLoadingCustomTools = false); }
-  }
-
   Future<void> _initializeCanvas() async {
     setState(() => _isLoadingDocument = true);
     
-    await _fetchAvailableTags(); 
-    await _fetchCustomTools(); 
-    await _fetchAllDocumentData();
-
+    _fetchAvailableTags(); 
+    _fetchCustomTools(); 
+    await _fetchInspectionAnnotation(); 
+    
     if (widget.annotateImageKey != null) {
-      await _fetchAttachedImage(); 
-    } else {
-      if (_pages.isEmpty) {
-        await _fetchPageList();
-        if (_pages.isEmpty) {
-          _pages = ['Page 1'];
-          _currentPage = 'Page 1';
-          _pageDataMap = {'Page 1': PageData(pageId: 'fallback_id')};
+      _pages = ['Attached Image'];
+      _currentPage = 'Attached Image';
+      
+      try {
+        http.Response imageResponse;
+        http.Response annResponse;
+
+        // 🔀 BRANCH 1: FETCHING INSPECTION IMAGES
+        if (widget.isInspectionImage) {
+          final String encodedKey = Uri.encodeComponent(widget.annotateImageKey!);
+          imageResponse = await _apiService.get('/inspection/document/image?key=$encodedKey');
+          
+          final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
+          annResponse = await _apiService.get('/inspection/document/annotationImage/image_json?InspectionDocumentImageJsonUrl=$jsonKey');
+        } 
+        // 🔀 BRANCH 2: FETCHING OBJECT IMAGES (Your existing code)
+        else {
+          imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
+          
+          final jsonKey = Uri.encodeComponent('${widget.annotateImageKey}/image.json');
+          annResponse = await _apiService.get('/canvas/imageDataFromS3?imageJsonUrl=$jsonKey');
         }
+        
+        if (imageResponse.statusCode == 200) {
+          final jsonResp = jsonDecode(imageResponse.body);
+          if (jsonResp['success'] == true && jsonResp['data'] != null) {
+            String b64 = jsonResp['data'];
+            if (b64.contains(',')) b64 = b64.split(',').last;
+            final ui.Image decodedImage = await _decodeBase64Image(b64);
+            
+            _pageDataMap = {
+              'Attached Image': PageData(
+                pageId: widget.annotateImageKey!,
+                backgroundImageBytes: base64Decode(b64),
+                width: decodedImage.width.toDouble(),
+                height: decodedImage.height.toDouble()
+              )
+            };
+          }
+        }
+
+        if (annResponse.statusCode == 200) {
+           final annData = jsonDecode(annResponse.body);
+           if (annData['success'] == true && annData['data'] != null && annData['data'].isNotEmpty) {
+             List<DrawingObject> loadedObjects = [];
+             final List items = annData['data'][0]['items'] ?? [];
+             
+             final double pWidth = _pageDataMap['Attached Image']!.width;
+             final double pHeight = _pageDataMap['Attached Image']!.height;
+
+             for (var item in items) {
+                DrawingType parsedType = _parseDrawingType(item['type']);
+                String? savedToolId = item['toolId'];
+                
+                List<DrawingObject>? matchedInternalShapes;
+
+                if (parsedType == DrawingType.customTool && savedToolId != null) {
+                  for (var group in _customToolGroups) {
+                    try {
+                      final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
+                      matchedInternalShapes = matchedTool.toolObjects;
+                      break;
+                    } catch(e) {} 
+                  }
+                }
+
+                loadedObjects.add(DrawingObject(
+                  type: parsedType,
+                  toolId: savedToolId,
+                  internalShapes: matchedInternalShapes,
+                  // 🚀 THE FIX: Use pWidth and pHeight instead of 816 / 1056
+                  start: Offset(item['start']['dx'] * pWidth, item['start']['dy'] * pHeight),
+                  end: Offset(item['end']['dx'] * pWidth, item['end']['dy'] * pHeight),
+                  text: item['text'],
+                  description: item['description'],
+                  strokeWidth: (item['strokeWidth'] ?? 2.0).toDouble(),
+                  tagIds: item['tagIds'] != null ? List<String>.from(item['tagIds']) : null,
+                  imageUrls: item['imageUrl'] != null ? List<String>.from(item['imageUrl']) : null,
+                  // 🚀 THE FIX: Use pWidth and pHeight for the points array as well
+                  points: (item['points'] as List?)?.map((p) => Offset(p['dx'] * pWidth, p['dy'] * pHeight)).toList(),
+                  color: item['color'] != null ? Color(item['color']) : Colors.red,
+                  fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
+                  borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
+                  opacity: (item['opacity'] ?? 1.0).toDouble(),
+                  rotation: (item['rotation'] ?? 0.0).toDouble(),
+                  fontSize: (item['fontSize'] ?? 24.0).toDouble(),
+                  isBold: item['isBold'] ?? false,
+                  isItalic: item['isItalic'] ?? false,
+                  isUnderline: item['isUnderline'] ?? false,
+                  isStrikethrough: item['isStrikethrough'] ?? false,
+                  isCallout: item['isCallout'] ?? false,
+                ));
+             }
+             setState(() { _pageDataMap['Attached Image']?.objects = loadedObjects; });
+           }
+        }
+      } catch (e) { debugPrint("Failed to load secure image: $e"); }
+    } 
+    else {
+      await _fetchPageList();
+      if (_pages.isEmpty) {
+        _pages = ['Page 1'];
+        _currentPage = 'Page 1';
+        _pageDataMap = {'Page 1': PageData(pageId: 'fallback_id')};
       }
       if (_pages.isNotEmpty) {
         await _fetchPageImage(_currentPage);
+        await _fetchSavedAnnotations(_currentPage);
       }
     }
-
     setState(() => _isLoadingDocument = false);
   }
-
-  Future<void> _fetchAttachedImage() async {
-    final pageData = _pageDataMap['Attached Image'];
-    if (pageData == null || pageData.backgroundImageBytes != null) return;
-
-    try {
-      http.Response imageResponse;
-      if (widget.isInspectionImage) {
-        final String encodedKey = Uri.encodeComponent(widget.annotateImageKey!);
-        imageResponse = await _apiService.get('/inspection/document/image?key=$encodedKey');
-      } else {
-        imageResponse = await _apiService.get('/customTool/tool/Image?key=${widget.annotateImageKey}');
-      }
-
-      if (imageResponse.statusCode == 200) {
-        final jsonResp = jsonDecode(imageResponse.body);
-        if (jsonResp['success'] == true && jsonResp['data'] != null) {
-          String b64 = jsonResp['data'];
-          if (b64.contains(',')) b64 = b64.split(',').last;
-          final ui.Image decodedImage = await _decodeBase64Image(b64);
-          
-          pageData.backgroundImageBytes = base64Decode(b64);
-          pageData.width = decodedImage.width.toDouble();
-          pageData.height = decodedImage.height.toDouble();
-
-          if (_rawDocumentData['image_list'] != null) {
-            final imgJson = (_rawDocumentData['image_list'] as List).firstWhere(
-              (img) => img['image_url'] == widget.annotateImageKey,
-              orElse: () => null
-            );
-            if (imgJson != null && imgJson['annotation_list'] != null) {
-              pageData.objects = _parseAnnotationsList(imgJson['annotation_list'], pageData.width, pageData.height);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Error loading attached image: $e");
-    }
-  }
-
+  
   Future<void> _fetchPageList() async {
     try {
       final response = await _apiService.get('/projectDocumentPage/project-document/${widget.documentId}');
@@ -598,125 +376,230 @@ class _CanvasScreenState extends State<CanvasScreen> {
         if (base64String.isNotEmpty) {
           pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
           final ui.Image decodedImage = await _decodeBase64Image(base64String);
-          
           pageData.width = decodedImage.width.toDouble();
           pageData.height = decodedImage.height.toDouble();
-
-          if (_rawDocumentData['page_list'] != null) {
-            final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
-              (p) => p['page_id'] == pageData.pageId, 
-              orElse: () => null
-            );
-            if (pageJson != null && pageJson['annotation_list'] != null) {
-              pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
-            }
-          }
         }
       }
     } catch (e) { debugPrint("Error loading page image: $e"); } 
     finally { setState(() => _isPageLoading = false); }
   }
+  
+  Future<void> _fetchSavedAnnotations(String pageName) async {
+    final pageData = _pageDataMap[pageName];
+    if (pageData == null || pageData.hasLoadedAnnotations) return;
 
-  // ==========================================
-  // IMAGE / S3 HELPERS
-  // ==========================================
-
-  Future<void> _uploadInspectionImage(String fileName, Uint8List bytes) async {
     try {
-      final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? widget.annotateImageKey ?? "";
-
-      final queryParams = {
-        "fileName": fileName, 
-        "project_id": widget.projectId, 
-        "inspection_id": widget.inspectionId,
-        "project_document_id": widget.documentId,
-        "page_id": currentPageId, 
-      };
-
-      final queryString = Uri(queryParameters: queryParams).query;
-      final response = await _apiService.get('/image/presigned-url?$queryString');
+      final String url = '/canvas/jsonDataFromS3?project_id=${widget.projectId}&page_name=${Uri.encodeComponent(pageName)}&project_document_id=${widget.documentId}&project_document_page_id=${pageData.pageId}&inspection_id=${widget.inspectionId}';
+      final response = await _apiService.get(url);
       final responseData = jsonDecode(response.body);
-      
-      if (responseData['signedUrl'] != null && responseData['key'] != null) {
-        final String signedUrl = responseData['signedUrl'];
-        final String s3Key = responseData['key'];
-        final String imageId = responseData['id'] ?? ""; 
-        
-        final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
-        
-        if (uploadResponse.statusCode == 200) {
-          
-          final encodedKey = Uri.encodeComponent(s3Key);
-          String previewBase64 = "";
-          bool isPreviewReady = false;
-          int attempts = 0;
-          const int maxAttempts = 10; 
 
-          while (!isPreviewReady && attempts < maxAttempts) {
-            attempts++;
-            final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
-            if (previewResponse.statusCode == 200) {
-              final previewData = jsonDecode(previewResponse.body);
-              if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
-                previewBase64 = previewData['data']['compressed_base64']; 
-                isPreviewReady = true;
-              } else throw Exception("Missing base64 data");
-            } else if (previewResponse.statusCode == 404) {
-              if (attempts < maxAttempts) await Future.delayed(const Duration(seconds: 2));
-            } else throw Exception("API returned error: ${previewResponse.statusCode}");
+      if (responseData['success'] == true && responseData['data'] != null) {
+        final List dataList = responseData['data'];
+        final pageJson = dataList.firstWhere((p) => p['page_name'] == pageName, orElse: () => null);
+
+        if (pageJson != null && pageJson['items'] != null) {
+          List<DrawingObject> loadedObjects = [];
+          for (var item in pageJson['items']) {
+            DrawingType parsedType = _parseDrawingType(item['type']);
+            String? savedToolId = item['toolId'];
+            
+            List<DrawingObject>? matchedInternalShapes;
+            
+            if (parsedType == DrawingType.customTool && savedToolId != null) {
+              for (var group in _customToolGroups) {
+                try {
+                  final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
+                  matchedInternalShapes = matchedTool.toolObjects;
+                  break;
+                } catch(e) {} 
+              }
+            }
+
+            final double pWidth = pageData.width;
+            final double pHeight = pageData.height;
+            
+            loadedObjects.add(DrawingObject(
+              type: parsedType,
+              toolId: savedToolId,
+              internalShapes: matchedInternalShapes, 
+              start: Offset((item['start']['dx'] ?? 0.0) * pWidth, (item['start']['dy'] ?? 0.0) * pHeight),
+              end: Offset((item['end']['dx'] ?? 0.0) * pWidth, (item['end']['dy'] ?? 0.0) * pHeight),
+              strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
+              text: item['text']?.isEmpty == true ? null : item['text'],
+              description: item['description'],
+              tagIds: List<String>.from(item['tagIds'] ?? []),
+              imageUrls: item['imageUrl'] != null ? List<dynamic>.from(item['imageUrl']) : null,
+              color: item['color'] != null ? Color(item['color']) : Colors.red[800]!,
+              fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
+              borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
+              opacity: (item['opacity'] ?? 1.0).toDouble(),
+              rotation: (item['rotation'] ?? 0.0).toDouble(),
+              fontSize: (item['fontSize'] ?? 24.0).toDouble(),
+              isBold: item['isBold'] ?? false,
+              isItalic: item['isItalic'] ?? false,
+              isUnderline: item['isUnderline'] ?? false,
+              isStrikethrough: item['isStrikethrough'] ?? false,
+              isCallout: item['isCallout'] ?? false,
+              points: item['points'] != null ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * pWidth, (p['dy'] ?? 0.0) * pHeight)).toList() : null,
+            ));
           }
-
-          if (!isPreviewReady) throw Exception("Image compression timeout");
-
-          setState(() {
-            // 🚀 THE FIX 4: Add the whole object directly to _inspectionImages!
-            _inspectionImages.add({
-              "image_id": imageId,
-              "image_url": s3Key,
-              "preview_image": previewBase64, 
-              "image_name": fileName,
-              "sort_order": _inspectionImages.length + 1,
-              "annotation_list": []
-            });
-
-            _rawDocumentData['image_list'] = List.from(_inspectionImages);
-            _hasUnsavedChanges = true;
-            _hasUnsavedImageChanges = true; 
-          });
-        } else {
-           throw Exception("Upload failed with status: ${uploadResponse.statusCode}");
+          setState(() { pageData.objects = loadedObjects; });
         }
       }
-    } catch(e) {
-      if (mounted) ToastService.show(context, message: "Failed to upload inspection image.", type: ToastType.error);
+      pageData.hasLoadedAnnotations = true;
+    } catch (e) { debugPrint("Error loading saved annotations: $e"); }
+  }
+
+  // List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects) {
+  List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects, double pWidth, double pHeight) {
+    List<Map<String, dynamic>> itemsList = [];
+    
+    for (var obj in objects) {
+      Map<String, dynamic> item = {
+        "type": _getDrawingTypeString(obj.type),
+        "start": {"dx": obj.start.dx / pWidth, "dy": obj.start.dy / pHeight},
+        "end": {"dx": obj.end.dx / pWidth, "dy": obj.end.dy / pHeight},
+        if (obj.type == DrawingType.customTool) "toolId": obj.toolId, 
+        "text": obj.text ?? "",
+        "description": obj.description ?? "",
+        "strokeWidth": obj.strokeWidth,
+        "tagIds": obj.tagIds ?? [],
+        "imageUrl": obj.imageUrls ?? [],
+        "color": obj.color.value,             
+        "fillColor": obj.fillColor.value,
+        "borderColor": obj.borderColor.value,
+        "opacity": obj.opacity,
+        "rotation": obj.rotation,
+        "fontSize": obj.fontSize,
+        "isBold": obj.isBold,
+        "isItalic": obj.isItalic,
+        "isUnderline": obj.isUnderline,
+        "isStrikethrough": obj.isStrikethrough,
+        "isCallout": obj.isCallout,
+      };
+
+      if (obj.points != null && obj.points!.isNotEmpty) {
+        item["points"] = obj.points!.map((p) => {"dx": p.dx / pWidth, "dy": p.dy / pHeight}).toList();
+      }
+      itemsList.add(item);
+    }
+    return itemsList;
+  }
+  
+  Future<void> _saveAnnotations() async {
+    setState(() => _isSaving = true);
+    _syncCurrentPageObjects(); 
+    
+    if (widget.annotateImageKey == null) {
+      await _saveInspectionLevelAnnotation();
+    }
+
+    try {
+      if (widget.annotateImageKey != null) {
+        final pageData = _pageDataMap['Attached Image'];
+        if (pageData == null) return;
+
+        final itemsList = _serializeObjects(pageData.objects, pageData.width, pageData.height);
+        List<Map<String, dynamic>> wrapperArray = [{"page_name": "Image Preview", "sort_order": 0, "items": itemsList}];
+        Map<String, dynamic> payload = {"imageS3": widget.annotateImageKey, "imageJsonData": jsonEncode(wrapperArray)};
+        
+        http.Response response;
+
+        if (widget.isInspectionImage) {
+           response = await _apiService.post('/inspection/document/annotationImage/image_json', payload);
+        } else {
+           response = await _apiService.post('/canvas/image/jsonData', payload);
+        }
+
+        final resData = jsonDecode(response.body);
+
+        if (resData['success'] == true) {
+          _hasUnsavedChanges = false;
+          if (mounted) ToastService.show(context, message: "Image Annotations saved successfully!", type: ToastType.success);
+        } else {
+          throw Exception(resData['message'] ?? 'Failed to save image annotations');
+        }
+      } 
+      else {
+        List<Future<void>> saveTasks = [];
+
+        for (String pageName in _pages) {
+          final pageData = _pageDataMap[pageName];
+          if (pageData != null && pageData.hasLoadedAnnotations) {
+            
+            // Add an asynchronous task to the list for parallel processing
+            saveTasks.add(() async {
+              final itemsList = _serializeObjects(pageData.objects, pageData.width, pageData.height);
+              List<Map<String, dynamic>> canvasDataObj = [
+                {"page_name": pageName, "sort_order": _pages.indexOf(pageName), "items": itemsList}
+              ];
+              
+              // 1. Get Pre-signed URL
+              final queryParams = {
+                "project_id": widget.projectId,
+                "inspection_id": widget.inspectionId,
+                "project_document_id": widget.documentId,
+                "page_id": pageData.pageId,
+              };
+              
+              final queryString = Uri(queryParameters: queryParams).query;
+              final presignResponse = await _apiService.get('/canvas/pre-sign/page?$queryString');
+              final presignData = jsonDecode(presignResponse.body);
+              
+              if (presignData['success'] != true || presignData['data'] == null || presignData['data']['signedUrl'] == null) {
+                throw Exception(presignData['message'] ?? "Failed to get upload URL for $pageName");
+              }
+              
+              final String signedUrl = presignData['data']['signedUrl'];
+              
+              // 2. Upload the JSON array directly to S3
+              final uploadResponse = await http.put(
+                Uri.parse(signedUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(canvasDataObj),
+              );
+              
+              if (uploadResponse.statusCode != 200 && uploadResponse.statusCode != 201) {
+                throw Exception("Failed to upload canvas data for $pageName");
+              }
+            }()); // <-- Immediately invoke the anonymous async function
+          }
+        }
+
+        // Wait for all pages to finish uploading in parallel
+        if (saveTasks.isNotEmpty) {
+          await Future.wait(saveTasks);
+        }
+        
+        _hasUnsavedChanges = false;
+        _hasUnsavedImageChanges = false;
+        if (mounted) ToastService.show(context, message: "All Annotations saved successfully!", type: ToastType.success);
+      }
+    } catch (e) {
+      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _uploadImageForObject(String fileName, Uint8List bytes) async {
     try {
-      final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? widget.annotateImageKey ?? "";
-
-      final queryParams = {
-        "fileName": fileName, 
-        "project_id": widget.projectId, 
-        "inspection_id": widget.inspectionId,
-        "project_document_id": widget.documentId,
-        "page_id": currentPageId, 
-      };
-
-      final queryString = Uri(queryParameters: queryParams).query;
-      final response = await _apiService.get('/image/presigned-url?$queryString');
+      final payload = {"file": fileName, "project_id": widget.projectId, "inspection_id": widget.inspectionId};
+      final response = await _apiService.post('/customTool/tool/Image/presignedUrl', payload);
       final responseData = jsonDecode(response.body);
       
       if (responseData['signedUrl'] != null && responseData['key'] != null) {
         final String signedUrl = responseData['signedUrl'];
         final String s3Key = responseData['key'];
-        final String imageId = responseData['id'] ?? "";
         
+        // 1. Upload to S3
         final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
         
         if (uploadResponse.statusCode == 200) {
+          
+          // 🚀 2. Strict Polling: Max 10 attempts, 2-sec delay, ONLY on 404
           final encodedKey = Uri.encodeComponent(s3Key);
+          
           String previewBase64 = "";
           bool isPreviewReady = false;
           int attempts = 0;
@@ -724,39 +607,55 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
           while (!isPreviewReady && attempts < maxAttempts) {
             attempts++;
+            
             final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
+            
             if (previewResponse.statusCode == 200) {
               final previewData = jsonDecode(previewResponse.body);
+              
               if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
                 previewBase64 = previewData['data']['compressed_base64']; 
                 isPreviewReady = true;
-              } else throw Exception("Missing base64 data");
-            } else if (previewResponse.statusCode == 404) {
-              if (attempts < maxAttempts) await Future.delayed(const Duration(seconds: 2));
-            } else throw Exception("API returned error: ${previewResponse.statusCode}");
+              } else {
+                throw Exception("Invalid 200 response: Missing base64 data");
+              }
+            } 
+            else if (previewResponse.statusCode == 404) {
+              // 🚀 If 404, wait 2 seconds and try again (unless limit reached)
+              if (attempts < maxAttempts) {
+                await Future.delayed(const Duration(seconds: 2));
+              }
+            } 
+            else {
+              // 🚀 Any other error code (500, 400, etc.) immediately aborts
+              throw Exception("API returned error code: ${previewResponse.statusCode}");
+            }
           }
 
-          if (!isPreviewReady) throw Exception("Image compression timeout");
+          // 🚀 If the loop finished and it's still not ready, the limit was reached
+          if (!isPreviewReady) {
+            throw Exception("Timeout: Image compression took too long (Limit Over)");
+          }
 
+          // 3. Save as an Array of Objects
           setState(() {
             if (_selectedCanvasObject != null) {
               _selectedCanvasObject!.imageUrls ??= [];
               
               _selectedCanvasObject!.imageUrls!.add({
-                "image_id": imageId,
-                "image_url": s3Key,
-                "preview_image": previewBase64,
-                "image_name": fileName,
-                "sort_order": _selectedCanvasObject!.imageUrls!.length + 1
+                "key": s3Key,
+                "preview_image": previewBase64 
               });
+              
               _getCurrentCanvasKey().currentState?.refreshCanvas(); 
             }
           });
         } else {
-           throw Exception("Upload failed with status: ${uploadResponse.statusCode}");
+           throw Exception("Object S3 upload failed with status: ${uploadResponse.statusCode}");
         }
       }
     } catch(e) {
+      // 🚀 THE FIX: Exact requested toast message for any failure in the chain
       if (mounted) ToastService.show(context, message: "Image upload failed", type: ToastType.error);
     }
   }
@@ -764,10 +663,54 @@ class _CanvasScreenState extends State<CanvasScreen> {
   Future<void> _deleteImageForObject(String s3Key) async {
     setState(() {
       if (_selectedCanvasObject != null && _selectedCanvasObject!.imageUrls != null) {
-        _selectedCanvasObject!.imageUrls!.removeWhere((img) => img['image_url'] == s3Key);
+        _selectedCanvasObject!.imageUrls!.remove(s3Key);
         _getCurrentCanvasKey().currentState?.refreshCanvas(); 
       }
     });
+  }
+
+  Future<void> _fetchCustomTools() async {
+    try {
+      setState(() => _isLoadingCustomTools = true);
+      final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
+      final responseData = jsonDecode(response.body);
+
+      if (responseData['success'] == true && responseData['data'] != null) {
+        List<CustomToolGroup> loadedGroups = [];
+        
+        for (var groupJson in responseData['data']) {
+          List<CustomTool> tools = [];
+          
+          if (groupJson['toolds'] != null) {
+            for (var toolJson in groupJson['toolds']) {
+              List<DrawingObject> parsedObjects = [];
+              
+              if (toolJson['imageJsonData'] != null) {
+                for (var item in toolJson['imageJsonData']) {
+                  parsedObjects.add(DrawingObject.fromJson(item));
+                }
+              }
+
+              tools.add(CustomTool(
+                toolId: toolJson['toolId'] ?? '', 
+                toolName: toolJson['toolName'] ?? 'Unknown Tool',
+                tagIds: List<String>.from(toolJson['tagIds'] ?? []),
+                toolObjects: parsedObjects,
+              ));
+            }
+          }
+          loadedGroups.add(CustomToolGroup(
+            toolGroup: groupJson['toolGroup'] ?? 'General', 
+            tools: tools
+          ));
+        }
+        setState(() => _customToolGroups = loadedGroups);
+      }
+    } catch (e) { 
+      debugPrint("Error fetching custom tools: $e"); 
+    } finally {
+      setState(() => _isLoadingCustomTools = false);
+    }
   }
 
   DrawingType _parseDrawingType(String? typeStr) {
@@ -830,6 +773,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+  // 🚀 NEW: Helper to get tool name directly from DrawingType
   String _getToolNameFromType(DrawingType type) {
     switch (type) {
       case DrawingType.pencil: return 'Pencil';
@@ -854,7 +798,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       case DrawingType.shingles: return 'Shingles';
       case DrawingType.insulation: return 'Insulation';
       case DrawingType.pin: return 'Pin';
-      default: return 'CustomTool';
+      default: return 'CustomTool'; // Fallback
     }
   }
 
@@ -869,16 +813,18 @@ class _CanvasScreenState extends State<CanvasScreen> {
       );
     }
 
+    // Calculate current index to manage arrow states
     int currentIndex = _pages.indexOf(_currentPage);
     bool hasPrevious = currentIndex > 0;
     bool hasNext = currentIndex < _pages.length - 1;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), 
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), // Adjusted for the icon buttons
       decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 🚀 Previous Page Arrow
           IconButton(
             icon: const Icon(Icons.chevron_left_rounded),
             iconSize: 20,
@@ -889,6 +835,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             onPressed: hasPrevious ? () => _switchPage(_pages[currentIndex - 1]) : null,
           ),
           
+          // 🚀 Existing Dropdown
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: DropdownButtonHideUnderline(
@@ -903,6 +850,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
             ),
           ),
 
+          // 🚀 Next Page Arrow
           IconButton(
             icon: const Icon(Icons.chevron_right_rounded),
             iconSize: 20,
@@ -919,7 +867,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
 
   Widget _buildLoadingOverlay(ThemeData theme) {
     return Container(
-      color: theme.colorScheme.surface.withOpacity(0.6), 
+      color: theme.colorScheme.surface.withOpacity(0.6), // Semi-transparent bg
       child: Center(
         child: Container(
           padding: const EdgeInsets.all(20),
@@ -996,8 +944,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+
   Future<void> _handleImageTap(String s3Key) async {
     bool shouldNavigate = false;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     if (_hasUnsavedImageChanges) {
       await showDialog(
@@ -1009,7 +960,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
           cancelLabel: "Close",
           confirmColor: Colors.green,
           onConfirm: () async {
-            await _saveAnnotations(); 
+            
+            await _saveAnnotations(); // Or whatever your save method is called
+            
+            // 🚀 2. Check the specific image flag to see if save was successful
             if (!_hasUnsavedImageChanges) {
               shouldNavigate = true;
             } else {
@@ -1019,9 +973,11 @@ class _CanvasScreenState extends State<CanvasScreen> {
         ),
       );
     } else {
+      // No unsaved image changes, safe to navigate immediately
       shouldNavigate = true;
     }
 
+    // Perform the navigation AFTER the dialog has safely closed
     if (shouldNavigate && mounted) {
       Navigator.push(
         context, 
@@ -1037,6 +993,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -1104,6 +1061,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
                         obj.opacity,
                       );
                     } else {
+                      // 🚀 MULTIPLE OBJECTS: Standard Stamp behavior
                       _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
                         'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
                         customToolId: tool.toolId,
@@ -1125,9 +1083,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               isLoadingTags: _isLoadingTags,
               inspectionDescription: _inspectionDescription,
               inspectionTagIds: _inspectionTagIds,
-              
-              // 🚀 THE FIX 5: Pass the rich object list to PropertiesPanel!
-              inspectionImageUrls: _inspectionImages,
+              inspectionImageUrls: _inspectionImageUrls,
               
               onInspectionDescriptionChanged: (val) {
                 setState(() => _inspectionDescription = val);
@@ -1149,6 +1105,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
                 } else {
                   await _uploadInspectionImage(fileName, bytes);
                 }
+                setState(() {
+                  _hasUnsavedImageChanges = true;
+                });
               },
               
               onImageDelete: (s3Key) async {
@@ -1156,11 +1115,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
                   await _deleteImageForObject(s3Key);
                 } else {
                   setState(() {
-                    // 🚀 THE FIX 6: Delete the full object from the new list
-                    _inspectionImages.removeWhere((img) => img['image_url'] == s3Key);
-                    _rawDocumentData['image_list'] = List.from(_inspectionImages);
+                    _inspectionImageUrls.remove(s3Key);
                     _hasUnsavedImageChanges = true;
-                    _hasUnsavedChanges = true;
                   }); 
                 }
               },
@@ -1196,6 +1152,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
               });
             },
           ),
+          // 2. THE FLOATING LOADER OVERLAY
           if (_isPageLoading || _isSaving)
             _buildLoadingOverlay(theme),
         ],
