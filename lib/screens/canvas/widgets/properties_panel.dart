@@ -400,10 +400,8 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           onPressed: _isUploading ? null : _showImageOptions,
-                          icon: _isUploading 
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.add_a_photo_outlined, size: 18), 
-                          label: Text(_isUploading ? "Uploading..." : "Upload Image"),
+                          icon: Icon(Icons.add_a_photo_outlined, size: 18), 
+                          label: Text("Upload Image"),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))

@@ -73,6 +73,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
   
   Uint8List? _pendingUploadBytes;
   String? _pendingUploadFileName;
+  
+  Map<String, String>? _uploadedImageMetadata;
 
   @override
   void initState() {
@@ -142,6 +144,9 @@ class _CanvasScreenState extends State<CanvasScreen> {
       return;
     }
 
+    // 🚀 THE FIX 1: Safely save current document drawings before opening the image!
+    _syncCurrentPageObjects();
+
     bool isInspection = _selectedCanvasObject == null;
     Map<String, dynamic>? imgData;
 
@@ -198,8 +203,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Future<void> _setupLocalImageOverlay(String fileName, Uint8List bytes, bool isInspection) async {
-    setState(() => _isPageLoading = true);
+    setState(() => _isUploadingImage = true); 
+    
     try {
+      // 🚀 THE FIX 1: Pass isInspection down to the upload function
+      final uploadedData = await _executeDirectS3Upload(fileName, bytes, isInspection);
+      
       final ui.Image decodedImage = await _decodeBytesToImage(bytes);
       final pageId = 'IMG_LOCAL_PENDING';
 
@@ -216,14 +225,17 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _isOverlayInspection = isInspection;
         _overlayParentObject = _selectedCanvasObject;
         _selectedCanvasObject = null; 
+        
         _pendingUploadBytes = bytes;
         _pendingUploadFileName = fileName;
+        _uploadedImageMetadata = uploadedData; 
+        
         _canvasKeys.remove(pageId);
-        _isPageLoading = false;
+        _isUploadingImage = false;
       });
     } catch (e) {
-      setState(() => _isPageLoading = false);
-      ToastService.show(context, message: "Failed to load local image.", type: ToastType.error);
+      setState(() => _isUploadingImage = false);
+      ToastService.show(context, message: "Failed to process image.", type: ToastType.error);
     }
   }
 
@@ -234,6 +246,10 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _overlayParentObject = null;
     _pendingUploadBytes = null;
     _pendingUploadFileName = null;
+    _uploadedImageMetadata = null;
+
+    // 🚀 THE FIX 3: Force the main document canvas to perfectly reload the saved objects!
+    _canvasKeys.remove(_currentPage);
   }
 
   void _discardImageAnnotations() {
@@ -265,65 +281,57 @@ class _CanvasScreenState extends State<CanvasScreen> {
       return;
     }
 
-    if (_pendingUploadBytes == null || _pendingUploadFileName == null) return;
+    if (_uploadedImageMetadata == null || _pendingUploadFileName == null) return;
 
-    setState(() => _isUploadingImage = true);
-
-    try {
-      final uploadedData = await _executeDirectS3Upload(_pendingUploadFileName!, _pendingUploadBytes!);
-      
-      final pageData = _pageDataMap['IMG_LOCAL_PENDING'];
-      List<Map<String, dynamic>> annotations = [];
-      if (pageData != null) {
-        annotations = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-      }
-
-      setState(() {
-        if (_isOverlayInspection) {
-          _inspectionImages.add({
-            "image_id": uploadedData['imageId'],
-            "image_url": uploadedData['s3Key'],
-            "preview_image": uploadedData['previewBase64'],
-            "image_name": _pendingUploadFileName,
-            "sort_order": _inspectionImages.length + 1,
-            "annotation_list": annotations
-          });
-          _rawDocumentData['image_list'] = List.from(_inspectionImages);
-        } else {
-          _overlayParentObject!.imageUrls ??= [];
-          _overlayParentObject!.imageUrls!.add({
-            "image_id": uploadedData['imageId'],
-            "image_url": uploadedData['s3Key'],
-            "preview_image": uploadedData['previewBase64'],
-            "image_name": _pendingUploadFileName,
-            "sort_order": _overlayParentObject!.imageUrls!.length + 1,
-            "annotation_list": annotations
-          });
-        }
-        
-        _hasUnsavedChanges = true;
-        _hasUnsavedImageChanges = true; 
-        _closeOverlay();
-      });
-      ToastService.show(context, message: "Image uploaded and annotations applied.", type: ToastType.success);
-
-    } catch (e) {
-      ToastService.show(context, message: "Failed to upload image.", type: ToastType.error);
-    } finally {
-      if (mounted) setState(() => _isUploadingImage = false);
+    final pageData = _pageDataMap['IMG_LOCAL_PENDING'];
+    List<Map<String, dynamic>> annotations = [];
+    if (pageData != null) {
+      annotations = _serializeObjects(pageData.objects, pageData.width, pageData.height);
     }
+
+    setState(() {
+      if (_isOverlayInspection) {
+        _inspectionImages.add({
+          "image_id": _uploadedImageMetadata!['imageId'],
+          "image_url": _uploadedImageMetadata!['s3Key'],
+          "preview_image": _uploadedImageMetadata!['previewBase64'],
+          "image_name": _pendingUploadFileName,
+          "sort_order": _inspectionImages.length + 1,
+          "annotation_list": annotations
+        });
+        _rawDocumentData['image_list'] = List.from(_inspectionImages);
+      } else {
+        _overlayParentObject!.imageUrls ??= [];
+        _overlayParentObject!.imageUrls!.add({
+          "image_id": _uploadedImageMetadata!['imageId'],
+          "image_url": _uploadedImageMetadata!['s3Key'],
+          "preview_image": _uploadedImageMetadata!['previewBase64'],
+          "image_name": _pendingUploadFileName,
+          "sort_order": _overlayParentObject!.imageUrls!.length + 1,
+          "annotation_list": annotations
+        });
+      }
+      
+      _hasUnsavedChanges = true;
+      _hasUnsavedImageChanges = true; 
+      _closeOverlay();
+    });
+    ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
   }
 
-  Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes) async {
+  Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes, bool isInspection) async {
     final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? "";
 
-    final queryParams = {
+    final Map<String, String> queryParams = {
       "fileName": fileName, 
       "project_id": widget.projectId, 
       "inspection_id": widget.inspectionId,
       "project_document_id": widget.documentId,
-      "page_id": currentPageId, 
     };
+
+    if (!isInspection && currentPageId.isNotEmpty) {
+      queryParams["page_id"] = currentPageId; 
+    }
 
     final queryString = Uri(queryParameters: queryParams).query;
     final response = await _apiService.get('/image/presigned-url?$queryString');
@@ -663,7 +671,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) { 
       debugPrint("Error fetching tags: $e"); 
     } finally {
-      // 🚀 RESTORED FINALLY BLOCK
       if (mounted) setState(() => _isLoadingTags = false);
     }
   }
@@ -700,7 +707,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     } catch (e) { 
       debugPrint("Error fetching custom tools: $e"); 
     } finally {
-      // 🚀 RESTORED FINALLY BLOCK
       if (mounted) setState(() => _isLoadingCustomTools = false);
     }
   }
@@ -983,8 +989,8 @@ class _CanvasScreenState extends State<CanvasScreen> {
       title = "Loading Annotations...";
       subtitle = "Applying drawings and details";
     } else if (_isUploadingImage) {
-      title = "Uploading Image...";
-      subtitle = "Saving securely to the cloud";
+      title = "Preparing Image..."; 
+      subtitle = "Configuring layouts and compressing layers"; 
     } else if (_isSaving) {
       title = "Saving Changes...";
       subtitle = "Syncing annotations with the server";
