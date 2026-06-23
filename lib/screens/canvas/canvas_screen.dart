@@ -144,7 +144,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
       return;
     }
 
-    // 🚀 THE FIX 1: Safely save current document drawings before opening the image!
     _syncCurrentPageObjects();
 
     bool isInspection = _selectedCanvasObject == null;
@@ -193,7 +192,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _isOverlayInspection = isInspection;
         _overlayParentObject = _selectedCanvasObject;
         _selectedCanvasObject = null; 
-        _canvasKeys.remove(pageId); 
         _isPageLoading = false;
       });
     } catch (e) {
@@ -203,12 +201,12 @@ class _CanvasScreenState extends State<CanvasScreen> {
   }
 
   Future<void> _setupLocalImageOverlay(String fileName, Uint8List bytes, bool isInspection) async {
+    _syncCurrentPageObjects();
+
     setState(() => _isUploadingImage = true); 
     
     try {
-      // 🚀 THE FIX 1: Pass isInspection down to the upload function
       final uploadedData = await _executeDirectS3Upload(fileName, bytes, isInspection);
-      
       final ui.Image decodedImage = await _decodeBytesToImage(bytes);
       final pageId = 'IMG_LOCAL_PENDING';
 
@@ -230,7 +228,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
         _pendingUploadFileName = fileName;
         _uploadedImageMetadata = uploadedData; 
         
-        _canvasKeys.remove(pageId);
         _isUploadingImage = false;
       });
     } catch (e) {
@@ -239,6 +236,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
+  // 🚀 BUG FIXED: Removed the destructive _canvasKeys.remove(_currentPage) so document stays exactly as you left it!
   void _closeOverlay() {
     _pageDataMap.remove('IMG_$_overlayImageKey');
     _overlayImageKey = null;
@@ -247,9 +245,6 @@ class _CanvasScreenState extends State<CanvasScreen> {
     _pendingUploadBytes = null;
     _pendingUploadFileName = null;
     _uploadedImageMetadata = null;
-
-    // 🚀 THE FIX 3: Force the main document canvas to perfectly reload the saved objects!
-    _canvasKeys.remove(_currentPage);
   }
 
   void _discardImageAnnotations() {
