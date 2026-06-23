@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:field_report_fe/models/project.dart';
 import 'package:field_report_fe/screens/projects/controllers/project_controller.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,7 @@ import '../../../utils/app_responsive.dart';
 import './upload_document_panel.dart';
 
 class ProjectDocuments extends StatefulWidget {
-    final String projectId;
+  final String projectId;
 
   const ProjectDocuments({super.key, required this.projectId});
 
@@ -18,15 +19,135 @@ class ProjectDocuments extends StatefulWidget {
   State<ProjectDocuments> createState() => _ProjectDocumentsState();
 }
 
-class _ProjectDocumentsState extends State<ProjectDocuments> {
+class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBindingObserver {
   String _searchQuery = "";
   final ApiService _apiService = ApiService();
+  
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); 
+    
+    // Listen for any data changes to naturally evaluate if we need to poll
+    projectController.addListener(_checkAndStartPolling); 
+    
     projectController.getAllDocuments(widget.projectId);
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    projectController.removeListener(_checkAndStartPolling);
+    _stopPolling();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkAndStartPolling();
+    } else {
+      _stopPolling();
+    }
+  }
+
+  // ==========================================
+  // 🌟 DATA-DRIVEN POLLING LOGIC
+  // ==========================================
+  
+  void _checkAndStartPolling() {
+    if (!mounted) return;
+    
+    // 🚀 THE FIX 1: Added .trim() just in case the API returns "processing " with a space
+    bool needsPolling = projectController.documents.any((doc) => 
+      doc.status.trim().toLowerCase() == 'processing'
+    );
+
+    if (needsPolling) {
+      if (_pollingTimer == null || !_pollingTimer!.isActive) {
+        _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+          
+          // 🚀 THE FIX 2: Removed ModalRoute check. go_router nested routes (ShellRoute) 
+          // make isCurrent return false even when visible, which was blocking the API call!
+          if (mounted) {
+            projectController.getAllDocuments(widget.projectId);
+          }
+          
+        });
+      }
+    } else {
+      _stopPolling(); 
+    }
+  }
+
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  // ==========================================
+  // 🌟 STATUS BADGE UI
+  // ==========================================
+  Widget _buildStatusBadge(String status, ThemeData theme) {
+    Color bgColor;
+    Color textColor;
+    String label = status;
+
+    switch (status.toLowerCase()) {
+      case 'processing':
+        bgColor = Colors.blue.withOpacity(0.1);
+        textColor = Colors.blue[800]!;
+        label = 'Processing';
+        break;
+      case 'completed':
+        bgColor = Colors.green.withOpacity(0.1);
+        textColor = Colors.green[800]!;
+        label = 'Completed';
+        break;
+      case 'failed':
+        bgColor = Colors.red.withOpacity(0.1);
+        textColor = Colors.red[800]!;
+        label = 'Failed';
+        break;
+      default:
+        bgColor = theme.colorScheme.surfaceContainerHighest;
+        textColor = theme.colorScheme.onSurfaceVariant;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status.toLowerCase() == 'processing') ...[
+            SizedBox(
+              width: 10, 
+              height: 10, 
+              child: CircularProgressIndicator(strokeWidth: 2, color: textColor)
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // NORMAL DATA & UI LOGIC
+  // ==========================================
 
   List<ProjectDocument> _getFilteredDocuments() {
     return projectController.documents.where((p) {
@@ -83,7 +204,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
   void _showUploadPanel() async {
     final isMobile = AppResponsive.isMobileScreen(context);
 
-    // Capture the result so we know if the upload succeeded!
     final didUpload = await (isMobile 
         ? showModalBottomSheet<bool>(
             context: context,
@@ -100,14 +220,14 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               clipBehavior: Clip.antiAlias,
               child: SizedBox(
-                width: 500, // Slightly narrower than inspections since it's just a file picker
+                width: 500, 
                 child: UploadDocumentPanel(projectId: widget.projectId),
               ),
             ),
           ));
 
-    // 🚀 If the panel returned true, automatically refresh the table!
     if (didUpload == true && mounted) {
+      // 🚀 Just fetch the documents! When the API returns, the listener handles the rest.
       projectController.getAllDocuments(widget.projectId);
     }
   }
@@ -125,7 +245,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
           children: [
             const SizedBox(height: 10),
             
-            // 🚀 1. Wrap the entire AppCard in Expanded
             Expanded(
               child: AppCard(
                 padding: EdgeInsets.zero,
@@ -136,7 +255,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                     _buildTopToolbar(theme),
                     const SizedBox(height: 10),
                     
-                    // 🚀 2. Wrap the Table in Expanded so it fills the rest of the card
                     Expanded(
                       child: ListenableBuilder(
                         listenable: projectController,
@@ -166,6 +284,15 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                                   style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                                 ),
                               ),
+                              
+                              TableColumn(
+                                title: 'Status',
+                                flex: 1,
+                                sortable: true,
+                                sortValue: (item) => item.status, 
+                                builder: (item) => _buildStatusBadge(item.status, theme), 
+                              ),
+
                               TableColumn(
                                 title: 'Created Date',
                                 flex: 2,
@@ -191,13 +318,11 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
                                   ],
                                 ),
                               ),
-                              
-                              // 🚀 3. ADDED isStickyRight to keep the delete button pinned!
                               TableColumn(
                                 title: "Actions",
                                 flex: 0,
-                                minWidth: 60, // Shrank since it's just one icon
-                                isStickyRight: true, // 🌟 The magic property
+                                minWidth: 60, 
+                                isStickyRight: true, 
                                 builder: (doc) => Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -232,7 +357,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
       padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 16), 
       child: Row(
         children: [
-          // Search Field
           Expanded(
             child: SearchField(
               width: isDesktop ? 350 : double.infinity,
@@ -241,7 +365,7 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
           ),
 
           if (isDesktop) const Spacer(),
-          if (!isDesktop) const SizedBox(width: 12), // Spacing for mobile
+          if (!isDesktop) const SizedBox(width: 12),
 
           if (isDesktop) ...[
             Tooltip(
@@ -268,11 +392,10 @@ class _ProjectDocumentsState extends State<ProjectDocuments> {
             const SizedBox(width: 16),
           ],
 
-          // 🚀 THE NEW UPLOAD BUTTON
           Button(
             label: isDesktop ? "Upload Document" : "Upload", 
             variant: ButtonVariant.filled,
-            icon: Icons.upload_file, // A nice distinct icon for document uploads!
+            icon: Icons.upload_file, 
             onPressed: () => _showUploadPanel(),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),

@@ -1,5 +1,5 @@
+import 'dart:async'; 
 import 'dart:convert';
-import 'package:field_report_fe/screens/auth/controllers/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
@@ -17,7 +17,7 @@ class CreateInspectionPanel extends StatefulWidget {
   State<CreateInspectionPanel> createState() => _CreateInspectionPanelState();
 }
 
-class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
+class _CreateInspectionPanelState extends State<CreateInspectionPanel> with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
   
   bool _isLoading = true;
@@ -25,14 +25,78 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
   List<dynamic> _inspections = [];
   bool _isCreating = false;
 
+  // 🚀 REPLACED TIMER WITH A ROBUST BOOLEAN FLAG
+  bool _isPolling = false;
+
+  // 🚀 COMPUTED CHECK FOR PROCESSING
+  bool get _isAnyDocumentProcessing {
+    return _documents.any((doc) => 
+      doc['status']?.toString().toLowerCase().trim() == 'processing'
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); 
     _fetchData();
   }
 
-  Future<void> _fetchData() async {
-    setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _isPolling = false; // Instantly kill the loop when the modal closes
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkAndStartPolling();
+    } else {
+      _isPolling = false; // Pause loop if app goes to background
+    }
+  }
+
+  // ==========================================
+  // 🌟 BULLETPROOF ASYNC POLLING LOGIC
+  // ==========================================
+  
+  void _checkAndStartPolling() {
+    if (!mounted) return;
+    
+    if (_isAnyDocumentProcessing) {
+      if (!_isPolling) {
+        _startPollingLoop();
+      }
+    } else {
+      _isPolling = false; // Instantly kill loop once all are completed
+    }
+  }
+
+  // 🚀 THE FIX: A dedicated async loop instead of a Timer
+  Future<void> _startPollingLoop() async {
+    _isPolling = true;
+    
+    while (_isPolling && mounted) {
+      // Wait 10 seconds before making the next call
+      await Future.delayed(const Duration(seconds: 10));
+      
+      // Double check if we should still be polling after the delay
+      if (!_isPolling || !mounted) break;
+      
+      await _fetchData(isPolling: true);
+    }
+  }
+
+  // ==========================================
+  // NORMAL DATA LOGIC
+  // ==========================================
+
+  Future<void> _fetchData({bool isPolling = false}) async {
+    if (!isPolling) {
+      setState(() => _isLoading = true);
+    }
     
     try {
       final responses = await Future.wait([
@@ -45,35 +109,32 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       final docData = jsonDecode(responses[0].body);
       final inspData = jsonDecode(responses[1].body);
 
-      // 1. Extract both lists
       List<dynamic> fetchedDocuments = docData['success'] == true ? (docData['data'] ?? []) : [];
       List<dynamic> fetchedInspections = inspData['success'] == true ? (inspData['data'] ?? []) : [];
 
-      // 2. Sort Inspections (Latest first)
       fetchedInspections.sort((a, b) {
         final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
-        
         return dateB.compareTo(dateA);
       });
 
-      // 🚀 3. NEW: Sort Documents (Latest first)
       fetchedDocuments.sort((a, b) {
-        // IMPORTANT: Ensure 'create_time' matches the exact key returned by your document API!
-        // If your API uses 'createdAt' or 'createDate' instead, change it here.
         final dateA = DateTime.tryParse(a['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
         final dateB = DateTime.tryParse(b['create_time']?.toString() ?? "") ?? DateTime.fromMillisecondsSinceEpoch(0);
-        
         return dateB.compareTo(dateA);
       });
 
       setState(() {
-        _documents = fetchedDocuments; // 🚀 Assign the newly sorted list
+        _documents = fetchedDocuments; 
         _inspections = fetchedInspections;
-        _isLoading = false;
+        if (!isPolling) _isLoading = false;
       });
+
+      // 🚀 Automatically evaluate if we need to start or stop the timer based on the new data
+      _checkAndStartPolling();
+
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && !isPolling) setState(() => _isLoading = false);
     }
   }
 
@@ -97,7 +158,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         if (responseData['success'] == true && responseData['data'] != null) {
           
           final String newInspectionId = responseData['data']['id'];
-          
           Navigator.pop(context, newInspectionId); 
           
         } else {
@@ -117,7 +177,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
     }
   }
 
-  // 🚀 CREATE FROM EXISTING INSPECTION
   Future<void> _createFromExistingInspection(String sourceInspectionId, String sourceName) async {
     if (_isCreating) return;
 
@@ -125,7 +184,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
 
     try {
       final payload = {
-        "name": "$sourceName (Copy)", // You can customize this default name!
+        "name": "$sourceName (Copy)", 
         "project_id": widget.projectId,
         "inspection_id": sourceInspectionId,
       };
@@ -140,10 +199,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
           
           final newInspectionId = responseData['data']['id'];
           
-          // 1. Close the popup
           Navigator.pop(context);
           
-          // 2. Redirect straight to the newly duplicated inspection!
           final exactUrl = '/projects/details/${widget.projectId}/inspections/$newInspectionId';
           context.go(exactUrl);
           
@@ -163,22 +220,79 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       }
     }
   }
+
+  // ==========================================
+  // 🌟 STATUS BADGE UI 
+  // ==========================================
+  Widget _buildStatusBadge(String? statusStr, ThemeData theme) {
+    final status = (statusStr ?? 'unknown').toLowerCase().trim();
+    Color bgColor;
+    Color textColor;
+    String label = statusStr ?? 'Unknown';
+
+    switch (status) {
+      case 'processing':
+        bgColor = Colors.blue.withOpacity(0.1);
+        textColor = Colors.blue[800]!;
+        label = 'Processing';
+        break;
+      case 'completed':
+        bgColor = Colors.green.withOpacity(0.1);
+        textColor = Colors.green[800]!;
+        label = 'Completed';
+        break;
+      case 'failed':
+        bgColor = Colors.red.withOpacity(0.1);
+        textColor = Colors.red[800]!;
+        label = 'Failed';
+        break;
+      default:
+        bgColor = theme.colorScheme.surfaceContainerHighest;
+        textColor = theme.colorScheme.onSurfaceVariant;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status == 'processing') ...[
+            SizedBox(
+              width: 8, 
+              height: 8, 
+              child: CircularProgressIndicator(strokeWidth: 2, color: textColor)
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // 1. Screen Disable (Blocks back button/swipes)
     return PopScope(
       canPop: !_isCreating,
-      // 2. Blocks all physical taps on the screen
       child: AbsorbPointer(
         absorbing: _isCreating,
         child: Stack(
           children: [
             
-            // --- YOUR EXACT EXISTING UI ---
             Container(
               color: colorScheme.surfaceContainer,
               child: Column(
@@ -209,26 +323,55 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               
-                              // 1. DOCUMENTS SECTION (With Create Button in Header)
+                              // 1. DOCUMENTS SECTION
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text("Documents", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                                   
-                                  // "Create inspection option at Documents header"
                                   Button(
                                     label: "Create Blank Inspection",
                                     variant: ButtonVariant.filled,
                                     icon: Icons.add,
-                                    onPressed: _documents.isEmpty ? null : () => _createNewInspection(),
+                                    // 🚀 Disable if ANY document is processing OR if the list is empty
+                                    onPressed: (_documents.isEmpty || _isAnyDocumentProcessing) 
+                                        ? null 
+                                        : () => _createNewInspection(),
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 16),
                               
+                              // 🚀 WARNING BANNER (Shows if any document is processing)
+                              if (_isAnyDocumentProcessing)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 16),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.amber.withOpacity(0.5)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 16, 
+                                        height: 16, 
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber[800])
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          "Some documents are currently processing. You can create a new inspection once all processing is complete.", 
+                                          style: TextStyle(color: Colors.amber[900], fontSize: 13, fontWeight: FontWeight.w500)
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
                               if (_documents.isEmpty)
-                                // Text("No template documents available.", style: TextStyle(color: colorScheme.secondary))
                                 Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
@@ -261,11 +404,11 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                                   ],
                                 )
                               else
-                                ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme)),
+                                ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme, theme)),
 
                               const SizedBox(height: 32),
 
-                              // 2. EXISTING INSPECTIONS SECTION (Create Button per row)
+                              // 2. EXISTING INSPECTIONS SECTION
                               Text("Use Existing Inspection", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                               const SizedBox(height: 16),
 
@@ -281,11 +424,10 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
               ),
             ),
 
-            // 🚀 3. Middle-of-Screen Loader Overlay WITH MESSAGE
             if (_isCreating)
               Positioned.fill(
                 child: Container(
-                  color: colorScheme.surfaceContainer.withOpacity(0.6), // Blurs/dims the background slightly
+                  color: colorScheme.surfaceContainer.withOpacity(0.6), 
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -301,7 +443,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
                         ]
                       ),
                       child: Column(
-                        mainAxisSize: MainAxisSize.min, // Keeps the box wrapped tightly around the content
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(color: colorScheme.primary),
                           const SizedBox(height: 16),
@@ -326,10 +468,11 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
     );
   }
 
-  Widget _buildDocumentCard(dynamic doc, ColorScheme colorScheme) {
+  Widget _buildDocumentCard(dynamic doc, ColorScheme colorScheme, ThemeData theme) {
     final date = DateTime.tryParse(doc['create_time'] ?? '');
     final dateStr = date != null ? DateFormat('dd MMM yyyy').format(date) : 'Unknown Date';
     final name = doc['document_name'] ?? doc['document_url']?.split('/').last ?? 'Unnamed Document';
+    final status = doc['status']; 
 
     return Card(
       elevation: 0,
@@ -341,14 +484,13 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
       child: ListTile(
         leading: Icon(Icons.description_outlined, color: colorScheme.primary),
         title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text("Created: $dateStr", style: TextStyle(fontSize: 12)),
-        // Optional: If you also want them to create FROM a specific document, add a trailing button here!
+        subtitle: Text("Created: $dateStr", style: const TextStyle(fontSize: 12)),
+        trailing: _buildStatusBadge(status, theme), 
       ),
     );
   }
 
   Widget _buildInspectionCard(dynamic insp, ColorScheme colorScheme) {
-    // 1. Safely extract the date and name so we have something to pass to the API
     final dateStr = insp['create_time'];
     final formattedDate = dateStr != null 
         ? DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.parse(dateStr)) 
@@ -370,7 +512,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> {
         title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.w500)),
         subtitle: Text("Created By: $name", style: const TextStyle(fontSize: 12)),
         
-        // 🚀 2. CALL THE NEW METHOD HERE
         trailing: Button(
           label: "Create",
           variant: ButtonVariant.outline,

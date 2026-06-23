@@ -58,6 +58,7 @@ class ProjectDocument {
   final String documentName;
   final DateTime createTime;
   final String createdBy;
+  final String status;
 
   ProjectDocument({
     required this.id,
@@ -66,6 +67,7 @@ class ProjectDocument {
     required this.documentName,
     required this.createTime,
     required this.createdBy,
+    required this.status
   });
 
   factory ProjectDocument.fromJson(Map<String, dynamic> json) {
@@ -76,6 +78,7 @@ class ProjectDocument {
       documentName: json['document_name'] ?? 'Unknown',
       createTime: DateTime.parse(json['create_time'] ?? DateTime.now().toIso8601String()),
       createdBy: json['created_by'] ?? 'Unknown',
+      status: json['status'] ?? ''
     );
   }
 }
