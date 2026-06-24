@@ -25,10 +25,12 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
   List<dynamic> _inspections = [];
   bool _isCreating = false;
 
-  // 🚀 REPLACED TIMER WITH A ROBUST BOOLEAN FLAG
   bool _isPolling = false;
+  
+  // 🚀 TRACK SELECTIONS
+  Set<String> _selectedDocumentIds = {};
+  bool _hasInitializedSelection = false;
 
-  // 🚀 COMPUTED CHECK FOR PROCESSING
   bool get _isAnyDocumentProcessing {
     return _documents.any((doc) => 
       doc['status']?.toString().toLowerCase().trim() == 'processing'
@@ -45,7 +47,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _isPolling = false; // Instantly kill the loop when the modal closes
+    _isPolling = false; 
     super.dispose();
   }
 
@@ -54,7 +56,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
     if (state == AppLifecycleState.resumed) {
       _checkAndStartPolling();
     } else {
-      _isPolling = false; // Pause loop if app goes to background
+      _isPolling = false; 
     }
   }
 
@@ -70,19 +72,16 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
         _startPollingLoop();
       }
     } else {
-      _isPolling = false; // Instantly kill loop once all are completed
+      _isPolling = false; 
     }
   }
 
-  // 🚀 THE FIX: A dedicated async loop instead of a Timer
   Future<void> _startPollingLoop() async {
     _isPolling = true;
     
     while (_isPolling && mounted) {
-      // Wait 10 seconds before making the next call
       await Future.delayed(const Duration(seconds: 10));
       
-      // Double check if we should still be polling after the delay
       if (!_isPolling || !mounted) break;
       
       await _fetchData(isPolling: true);
@@ -127,15 +126,35 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
       setState(() {
         _documents = fetchedDocuments; 
         _inspections = fetchedInspections;
+        
+        // 🚀 AUTO-SELECT COMPLETED DOCUMENTS ON FIRST LOAD ONLY
+        if (!_hasInitializedSelection && _documents.isNotEmpty) {
+          _selectedDocumentIds = _documents
+              .where((d) => d['status']?.toString().toLowerCase().trim() == 'completed')
+              .map((d) => d['id'].toString())
+              .toSet();
+          _hasInitializedSelection = true;
+        }
+
         if (!isPolling) _isLoading = false;
       });
 
-      // 🚀 Automatically evaluate if we need to start or stop the timer based on the new data
       _checkAndStartPolling();
 
     } catch (e) {
       if (mounted && !isPolling) setState(() => _isLoading = false);
     }
+  }
+
+  // 🚀 TOGGLE SINGLE CHECKBOX
+  void _toggleDocumentSelection(String id, bool? value) {
+    setState(() {
+      if (value == true) {
+        _selectedDocumentIds.add(id);
+      } else {
+        _selectedDocumentIds.remove(id);
+      }
+    });
   }
 
   Future<void> _createNewInspection() async {
@@ -144,9 +163,11 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
     setState(() => _isCreating = true);
 
     try {
+      // 🚀 UPDATED API PAYLOAD TO PASS SELECTED DOCUMENTS
       final payload = {
         "project_id": widget.projectId,
         "name": authController.user != null ? "${authController.user!.firstName} ${authController.user!.lastName}" : "",
+        "project_document_id_list": _selectedDocumentIds.toList(),
       };
 
       final response = await _apiService.post('/inspection/create', payload);
@@ -222,7 +243,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
   }
 
   // ==========================================
-  // 🌟 STATUS BADGE UI 
+  // 🌟 STATUS BADGE UI
   // ==========================================
   Widget _buildStatusBadge(String? statusStr, ThemeData theme) {
     final status = (statusStr ?? 'unknown').toLowerCase().trim();
@@ -286,6 +307,10 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // 🚀 CALCULATE SELECTION STATE FOR "SELECT ALL"
+    final completedDocs = _documents.where((d) => d['status']?.toString().toLowerCase().trim() == 'completed').toList();
+    final bool allCompletedSelected = completedDocs.isNotEmpty && completedDocs.every((d) => _selectedDocumentIds.contains(d['id']));
+
     return PopScope(
       canPop: !_isCreating,
       child: AbsorbPointer(
@@ -333,8 +358,8 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
                                     label: "Create Blank Inspection",
                                     variant: ButtonVariant.filled,
                                     icon: Icons.add,
-                                    // 🚀 Disable if ANY document is processing OR if the list is empty
-                                    onPressed: (_documents.isEmpty || _isAnyDocumentProcessing) 
+                                    // 🚀 DISABLED IF EMPTY, PROCESSING, OR NOTHING SELECTED
+                                    onPressed: (_documents.isEmpty || _isAnyDocumentProcessing || _selectedDocumentIds.isEmpty) 
                                         ? null 
                                         : () => _createNewInspection(),
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -343,7 +368,6 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
                               ),
                               const SizedBox(height: 16),
                               
-                              // 🚀 WARNING BANNER (Shows if any document is processing)
                               if (_isAnyDocumentProcessing)
                                 Container(
                                   margin: const EdgeInsets.only(bottom: 16),
@@ -403,8 +427,42 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
                                     ),
                                   ],
                                 )
-                              else
+                              else ...[
+                                
+                                // 🚀 SELECT ALL / UNSELECT ALL CONTROLS
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8.0, left: 4.0, right: 8.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Checkbox(
+                                            value: completedDocs.isEmpty ? false : allCompletedSelected,
+                                            onChanged: completedDocs.isEmpty ? null : (val) {
+                                              setState(() {
+                                                if (val == true) {
+                                                  _selectedDocumentIds.addAll(completedDocs.map((d) => d['id'].toString()));
+                                                } else {
+                                                  _selectedDocumentIds.removeAll(completedDocs.map((d) => d['id'].toString()));
+                                                }
+                                              });
+                                            },
+                                          ),
+                                          Text("Select All", style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                                        ],
+                                      ),
+                                      Text(
+                                        "${_selectedDocumentIds.length} Selected", 
+                                        style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold)
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // RENDER DOCUMENT CARDS
                                 ..._documents.map((doc) => _buildDocumentCard(doc, colorScheme, theme)),
+                              ],
 
                               const SizedBox(height: 32),
 
@@ -468,24 +526,49 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
     );
   }
 
+  // 🚀 UPDATED DOCUMENT CARD TO SUPPORT SELECTION
   Widget _buildDocumentCard(dynamic doc, ColorScheme colorScheme, ThemeData theme) {
     final date = DateTime.tryParse(doc['create_time'] ?? '');
     final dateStr = date != null ? DateFormat('dd MMM yyyy').format(date) : 'Unknown Date';
     final name = doc['document_name'] ?? doc['document_url']?.split('/').last ?? 'Unnamed Document';
-    final status = doc['status']; 
+    
+    final status = doc['status']?.toString().toLowerCase().trim() ?? 'unknown'; 
+    final docId = doc['id'].toString();
+
+    final isCompleted = status == 'completed';
+    final isSelected = _selectedDocumentIds.contains(docId);
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5)),
+        side: BorderSide(
+          color: isSelected ? colorScheme.primary : colorScheme.outlineVariant.withOpacity(0.5), 
+          width: isSelected ? 1.5 : 1.0
+        ),
       ),
       child: ListTile(
-        leading: Icon(Icons.description_outlined, color: colorScheme.primary),
-        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text("Created: $dateStr", style: const TextStyle(fontSize: 12)),
-        trailing: _buildStatusBadge(status, theme), 
+        onTap: isCompleted ? () => _toggleDocumentSelection(docId, !isSelected) : null,
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: isCompleted ? isSelected : false,
+              onChanged: isCompleted ? (val) => _toggleDocumentSelection(docId, val) : null,
+            ),
+            Icon(Icons.description_outlined, color: isCompleted ? colorScheme.primary : theme.disabledColor),
+          ],
+        ),
+        title: Text(
+          name, 
+          style: TextStyle(fontWeight: FontWeight.w500, color: isCompleted ? null : theme.disabledColor)
+        ),
+        subtitle: Text(
+          "Created: $dateStr", 
+          style: TextStyle(fontSize: 12, color: isCompleted ? null : theme.disabledColor)
+        ),
+        trailing: _buildStatusBadge(doc['status'], theme), 
       ),
     );
   }

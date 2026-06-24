@@ -271,7 +271,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
           _hasUnsavedChanges = true;
           _closeOverlay();
         });
-        ToastService.show(context, message: "Annotations applied.", type: ToastType.success);
+        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success);
       }
       return;
     }
@@ -311,7 +311,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
       _hasUnsavedImageChanges = true; 
       _closeOverlay();
     });
-    ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
+    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
   }
 
   Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes, bool isInspection) async {

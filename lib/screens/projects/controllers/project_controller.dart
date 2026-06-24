@@ -147,13 +147,17 @@ Future<void> getAllDocuments(String projectId) async {
         // 2. 🚀 Parse Project Document Images (The new code)
         final List projectDocuments = inspectionJson['project_document'] ?? [];
         for (var doc in projectDocuments) {
-          final List images = doc['inspection_document_image'] ?? [];
+          final List images = doc['canvasPageItemImages'] ?? [];
+          final List tagsJson = doc['canvasPageItemTags'] ?? [];
+          
+          final List<ProjectMediaTag> itemTags = 
+              tagsJson.map((t) => ProjectMediaTag.fromJson(t)).toList();
           
           for (var img in images) {
             itemsInThisInspection.add(ProjectMedia(
               id: "${doc['id']}_${img['id'] ?? itemsInThisInspection.length}",
               imageUrl: img['signedUrl'],
-              tags: [], // No tags provided in the JSON for document images
+              tags: itemTags,
             ));
           }
         }
