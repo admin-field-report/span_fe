@@ -6,21 +6,39 @@ class Project {
   final String name;
   final String description;
   final DateTime createDate;
+  final String clientId;
+  final String clientName;
 
   Project({
     required this.id,
     required this.name,
     required this.description,
     required this.createDate,
+    required this.clientId,
+    required this.clientName
   });
   
+  // factory Project.fromJson(Map<String, dynamic> json) {
+  //   return Project(
+  //     id: json['id'] ?? '',
+  //     name: json['name'] ?? '',
+  //     description: json['description'] ?? '',
+  //     clientId: json['client_id'] ?? '',
+  //     clientName: json['client'] ? json['client']['name'] : '',
+  //     createDate: json['create_time'] != null 
+  //         ? DateTime.parse(json['create_time']) 
+  //         : DateTime.now(),
+  //   );
+  // }
   factory Project.fromJson(Map<String, dynamic> json) {
     return Project(
       id: json['id'] ?? '',
       name: json['name'] ?? '',
       description: json['description'] ?? '',
+      clientId: json['client_id'] ?? '',
+      clientName: json['client']?['name'] ?? '', 
       createDate: json['create_time'] != null 
-          ? DateTime.parse(json['create_time']) 
+          ? (DateTime.tryParse(json['create_time']) ?? DateTime.now())
           : DateTime.now(),
     );
   }

@@ -9,7 +9,6 @@ import '../../widgets/confirmation/confirmation_remove.dart';
 import '../../models/project.dart';
 import './controllers/project_controller.dart';
 import './widgets/add_project_form.dart';
-import './widgets/edit_project_form.dart'; 
 import '../../core/api_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/utils.dart';
@@ -48,7 +47,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (context) => Center(
           child: Material(
             color: Colors.transparent,
-            child: AddProjectForm(isDesktop: true),
+            child: AddProjectForm(isDesktop: true), // No project passed = Create Mode
           ),
         ),
       );
@@ -63,7 +62,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
     }
   }
 
-  // 🚀 NEW: Method to show the Edit Project Form
+  // 🚀 REWIRED: Method to show the Edit Project Form
   void _showEditProject(BuildContext context, Project project) {
     final bool isDesktop = AppResponsive.isDesktopScreen(context);
 
@@ -74,7 +73,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (context) => Center(
           child: Material(
             color: Colors.transparent,
-            child: EditProjectForm(projectId: project.id),
+            child: AddProjectForm(isDesktop: true, project: project), // Pass project = Edit Mode
           ),
         ),
       );
@@ -84,7 +83,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        builder: (context) => EditProjectForm(projectId: project.id),
+        builder: (context) => AddProjectForm(isDesktop: false, project: project),
       );
     }
   }
@@ -148,9 +147,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
             _buildHeader(context, theme),
             const SizedBox(height: 10),
 
-            // 🚀 THE FIX: Wrap AppCard in Expanded!
-            // This forces the card to take up the remaining screen height, 
-            // which tells the CommonTable exactly when it needs to start scrolling.
             Expanded(
               child: AppCard(
                 padding: EdgeInsets.zero,
@@ -158,11 +154,8 @@ class _ProjectScreenState extends State<ProjectScreen> {
                   mainAxisSize: MainAxisSize.min, 
                   crossAxisAlignment: CrossAxisAlignment.stretch, 
                   children: [
-                    // 1. HEADER SECTION
                     _buildTopToolbar(theme),
                     
-                    // 2. TABLE SECTION
-                    // 🚀 SECOND FIX: Wrap the table in Expanded so it fills the rest of the AppCard
                     Expanded(
                       child: ListenableBuilder(
                         listenable: projectController,
@@ -207,19 +200,17 @@ class _ProjectScreenState extends State<ProjectScreen> {
                               TableColumn(
                                 title: "Actions",
                                 flex: 0,
-                                minWidth: 100, // Slightly widened to fit both icons
-                                isStickyRight: true, // Stick the actions column to the right
+                                minWidth: 100, 
+                                isStickyRight: true, 
                                 builder: (p) => Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // 🚀 NEW: Edit Button
                                     IconButton(
                                       icon: const Icon(Icons.edit_outlined, size: 20),
                                       color: colorScheme.primary,
                                       tooltip: "Edit Project",
                                       onPressed: () => _showEditProject(context, p),
                                     ),
-                                    // Existing Delete Button
                                     IconButton(
                                       icon: const Icon(Icons.delete_outline, size: 20),
                                       color: colorScheme.error,
@@ -313,7 +304,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
           ),
 
           if (isDesktop) const Spacer(),
-          // const Spacer(),
           if (isDesktop) 
             Button(
               label: "Add Project",

@@ -8,8 +8,9 @@ import './widgets/project_medias.dart';
 import './widgets/project_settings.dart';
 import '../../widgets/tab/tab.dart';
 import '../../core/api_service.dart';
-import './widgets/edit_project_form.dart'; 
 import '../../utils/utils.dart';
+import './widgets/add_project_form.dart'; 
+import '../../models/project.dart';
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;
@@ -30,6 +31,9 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
   final ApiService _apiService = ApiService();
   late TabController _tabController;
   final List<String> _sections = ['inspections', 'documents', 'media', 'reports'];
+  
+  // 🚀 STORE THE FULL PROJECT OBJECT IN STATE
+  Project? _currentProject;
   
   String _projectName = "Loading...";
   String? _clientName;
@@ -62,13 +66,10 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
       if (resData['success'] == true && resData['data'] != null) {
         if (mounted) {
           setState(() {
-            _projectName = resData['data']['name'] ?? 'Unnamed Project';
+            _currentProject = Project.fromJson(resData['data']);
             
-            if (resData['data']['client'] != null && resData['data']['client']['name'] != null) {
-              _clientName = resData['data']['client']['name'];
-            } else {
-              _clientName = null;
-            }
+            _projectName = _currentProject!.name;
+            _clientName = _currentProject!.clientName.isNotEmpty ? _currentProject!.clientName : null;
             
             _isLoadingProjectName = false;
           });
@@ -78,6 +79,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
           setState(() {
             _projectName = 'Unknown Project';
             _clientName = null;
+            _currentProject = null;
             _isLoadingProjectName = false;
           });
         }
@@ -88,14 +90,16 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         setState(() {
           _projectName = 'Error loading project';
           _clientName = null;
+          _currentProject = null;
           _isLoadingProjectName = false;
         });
       }
     }
   }
 
-  // 🚀 NEW: Method to open the Edit form and refresh data upon saving
   Future<void> _showEditProject() async {
+    if (_currentProject == null) return; // Safety check
+
     final bool isDesktop = AppResponsive.isDesktopScreen(context);
     bool? isUpdated = false;
 
@@ -106,7 +110,10 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         builder: (context) => Center(
           child: Material(
             color: Colors.transparent,
-            child: EditProjectForm(projectId: widget.projectId),
+            child: AddProjectForm(
+              isDesktop: true, 
+              project: _currentProject, // 🚀 TRIGGERS EDIT MODE
+            ),
           ),
         ),
       );
@@ -116,15 +123,14 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        builder: (context) => EditProjectForm(projectId: widget.projectId),
+        builder: (context) => AddProjectForm(
+          isDesktop: false, 
+          project: _currentProject, // 🚀 TRIGGERS EDIT MODE
+        ),
       );
     }
-
-    // If the form returned true (meaning a successful save), re-fetch the details!
-    if (isUpdated == true) {
-      setState(() => _isLoadingProjectName = true);
-      _fetchProjectDetails();
-    }
+    setState(() => _isLoadingProjectName = true);
+    _fetchProjectDetails();
   }
 
   void _updateUrl() {
@@ -142,7 +148,6 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     final isDesktop = AppResponsive.isDesktopScreen(context);
     final theme = Theme.of(context);
     
-    // 🚀 Only pass the projectId. The widget will handle the rest!
     final managerWidget = ProjectSettingsManager(projectId: projectId);
 
     if (isDesktop) {
@@ -195,7 +200,6 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.max, 
         children: [
-          // 🚀 HEADER SECTION
           _buildHeader(context, theme),
 
           AppTabBar(
@@ -204,7 +208,6 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
             horizontalPadding: 24.0,
           ),
 
-          // 🚀 THE FIX: Wrapped the Tab content in Expanded!
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: 0),
@@ -286,7 +289,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.person_outline, 
+                      Icons.business_rounded, 
                       size: 13, 
                       color: theme.colorScheme.onSurfaceVariant
                     ),
@@ -303,10 +306,8 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
             ],
           ),
 
-          // Pushes the settings button to the far right edge
           const Spacer(),
 
-          // The styled Settings Button
           Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceVariant.withOpacity(0.5),

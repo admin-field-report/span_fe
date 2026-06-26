@@ -6,6 +6,7 @@ import '../../templates/controllers/template_controller.dart';
 import '../controllers/project_controller.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
+import '../../../models/project.dart'; 
 
 class SelectableWrapper<T> implements SelectableItem<T> {
   @override
@@ -18,7 +19,13 @@ class SelectableWrapper<T> implements SelectableItem<T> {
 
 class AddProjectForm extends StatefulWidget {
   final bool isDesktop;
-  const AddProjectForm({super.key, this.isDesktop = false});
+  final Project? project; 
+
+  const AddProjectForm({
+    super.key, 
+    this.isDesktop = false, 
+    this.project,
+  });
 
   @override
   State<AddProjectForm> createState() => _AddProjectFormState();
@@ -27,74 +34,129 @@ class AddProjectForm extends StatefulWidget {
 class _AddProjectFormState extends State<AddProjectForm> {
   final ApiService _apiService = ApiService();
   final _formKey = GlobalKey<FormState>();
+  
   final _nameController = TextEditingController();
+  final _clientNameController = TextEditingController(); 
   final _descController = TextEditingController();
+  
   String? _selectedTemplateId;
-  bool _isCreating = false;
+  bool _isProcessing = false;
+
+  bool get isEditing => widget.project != null;
 
   @override
   void initState() {
     super.initState();
+    
+    // 🚀 ALWAYS load templates so the disabled dropdown can display the template's real name
     templateController.getAllTemplates();
+
+    if (isEditing) {
+      _nameController.text = widget.project!.name;
+      _descController.text = widget.project!.description;
+      _clientNameController.text = (widget.project as dynamic).clientName ?? '';
+      
+      // Safely attempt to pre-fill the template ID if your model includes it
+      try {
+        _selectedTemplateId = (widget.project as dynamic).templateId;
+      } catch (_) {}
+    }
   }
 
-  Future<void> createProject(BuildContext context) async {
-    setState(() => _isCreating = true);
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _clientNameController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> submitProject(BuildContext context) async {
+    setState(() => _isProcessing = true);
 
     try {
-      // 1. Call the first API to create the project
-      final response = await _apiService.post('/project/createProject', {
-        "name": _nameController.text.trim(),
-        "description": _descController.text.trim(),
-        "template_id": _selectedTemplateId,
-      });
-      
-      final Map<String, dynamic> responseData = jsonDecode(response.body); 
-
-      if (responseData['success'] == true) {
+      if (isEditing) {
+        // ==========================================
+        // 🌟 EDIT MODE: PATCH API
+        // ==========================================
+        final response = await _apiService.patch('/project/updateProject/${widget.project!.id}', {
+          "name": _nameController.text.trim(),
+          "client_name": _clientNameController.text.trim(),
+          "client_id": widget.project!.clientId,
+          "description": _descController.text.trim(),
+        });
         
-        // 🚀 EXTRACT THE NEW PROJECT ID
-        final dynamic data = responseData['data'];
-        final String newProjectId = data['id']?? "";
+        final Map<String, dynamic> responseData = jsonDecode(response.body); 
 
-        // 2. Call the second API to bind the project document
-        if (newProjectId.isNotEmpty && _selectedTemplateId != null) {
-          final docResponse = await _apiService.post('/projectDocument', {
-            "name": _nameController.text.trim(),
-            "project_id": newProjectId,
-            "template_id": _selectedTemplateId,
-          });
+        if (responseData['success'] == true) {
+          projectController.getAllProjects();
+          if (mounted) Navigator.pop(context);
           
-          final Map<String, dynamic> docResponseData = jsonDecode(docResponse.body);
-          
-          if (docResponseData['success'] != true) {
-            debugPrint("Warning: Project created, but document binding failed.");
-          }
+          ToastService.show(
+            context,
+            title: "Project Updated",
+            message: "Your project has been updated successfully.",
+            type: ToastType.success,
+          );      
+        } else {
+          throw Exception(responseData['message'] ?? 'Failed to update project');
         }
 
-        projectController.getAllProjects();
-        if (mounted) Navigator.pop(context);
-        
-        ToastService.show(
-          context,
-          title: "Project Created",
-          message: "Your project has been created and bound successfully.",
-          type: ToastType.success,
-        );      
       } else {
-        throw Exception(responseData['message'] ?? 'Failed to create project');
+        // ==========================================
+        // 🌟 CREATE MODE: POST API
+        // ==========================================
+        final response = await _apiService.post('/project/createProject', {
+          "name": _nameController.text.trim(),
+          "client_name": _clientNameController.text.trim(), 
+          "description": _descController.text.trim(),
+          "template_id": _selectedTemplateId,
+        });
+        
+        final Map<String, dynamic> responseData = jsonDecode(response.body); 
+
+        if (responseData['success'] == true) {
+          final dynamic data = responseData['data'];
+          final String newProjectId = data['id'] ?? "";
+
+          // Bind Document
+          if (newProjectId.isNotEmpty && _selectedTemplateId != null) {
+            final docResponse = await _apiService.post('/projectDocument', {
+              "name": _nameController.text.trim(),
+              "project_id": newProjectId,
+              "template_id": _selectedTemplateId,
+            });
+            
+            final Map<String, dynamic> docResponseData = jsonDecode(docResponse.body);
+            if (docResponseData['success'] != true) {
+              debugPrint("Warning: Project created, but document binding failed.");
+            }
+          }
+
+          projectController.getAllProjects();
+          if (mounted) Navigator.pop(context);
+          
+          ToastService.show(
+            context,
+            title: "Project Created",
+            message: "Your project has been created and bound successfully.",
+            type: ToastType.success,
+          );      
+        } else {
+          throw Exception(responseData['message'] ?? 'Failed to create project');
+        }
       }
     } catch (e) {
-      debugPrint("Create Project Error: $e");
+      debugPrint("Project Submit Error: $e");
       ToastService.show(
         context,
         title: "Error",
-        message: "Failed to create project.",
+        message: isEditing ? "Failed to update project." : "Failed to create project.",
         type: ToastType.error,
       );    
     } finally {
       if (mounted) {
-        setState(() => _isCreating = false);
+        setState(() => _isProcessing = false);
       }
     }
   }
@@ -110,7 +172,6 @@ class _AddProjectFormState extends State<AddProjectForm> {
           left: 24, 
           right: 24, 
           top: 24,
-          // Add extra padding at the bottom for mobile safe area
           bottom: widget.isDesktop ? 24 : MediaQuery.of(context).viewInsets.bottom + 32,
         ),
         decoration: BoxDecoration(
@@ -122,7 +183,7 @@ class _AddProjectFormState extends State<AddProjectForm> {
         child: Form(
           key: _formKey,
         child: Column(
-          mainAxisSize: MainAxisSize.min, // Constrains height to content
+          mainAxisSize: MainAxisSize.min, 
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(theme, colorScheme),
@@ -141,20 +202,35 @@ class _AddProjectFormState extends State<AddProjectForm> {
             ListenableBuilder(
               listenable: templateController,
               builder: (context, _) {
-                return FormControlSelect<String>(
-                  value: _selectedTemplateId,
-                  isLoading: templateController.isLoading,
-                  items: templateController.templates.map((t) => 
-                    SelectableWrapper(id: t.id, name: t.name)
-                  ).toList(),
-                  hintText: "Select Template",
-                  emptyText: "No templates found for this user",
-                  onChanged: (val) {
-                    setState(() => _selectedTemplateId = val);
-                  },
-                  // validator: (val) => val == null ? "Required" : null,
+                // 🚀 WRAPPED IN ABSORB POINTER & OPACITY TO VISUALLY/PHYSICALLY DISABLE IT
+                return AbsorbPointer(
+                  absorbing: isEditing,
+                  child: Opacity(
+                    opacity: isEditing ? 0.6 : 1.0,
+                    child: FormControlSelect<String>(
+                      value: _selectedTemplateId,
+                      isLoading: templateController.isLoading,
+                      items: templateController.templates.map((t) => 
+                        SelectableWrapper(id: t.id, name: t.name)
+                      ).toList(),
+                      hintText: "Select Template",
+                      emptyText: "No templates found",
+                      onChanged: (val) {
+                        setState(() => _selectedTemplateId = val);
+                      },
+                    ),
+                  ),
                 );
               },
+            ),
+            const SizedBox(height: 20),
+
+            _buildLabel("Client Name", theme),
+            FormControlTextField(
+              controller: _clientNameController,
+              hintText: "Enter client name...",
+              prefixIcon: Icons.business_rounded, 
+              validator: (v) => (v == null || v.isEmpty) ? "Required" : null, // 🚀 MADE MANDATORY
             ),
             const SizedBox(height: 20),
 
@@ -180,12 +256,11 @@ class _AddProjectFormState extends State<AddProjectForm> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text("New Project", 
+        Text(isEditing ? "Edit Project" : "New Project", 
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
             letterSpacing: -0.8,
           )),
-        // Close icon always available in top right for clarity
         IconButton(
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.close_rounded, size: 20),
@@ -210,27 +285,28 @@ class _AddProjectFormState extends State<AddProjectForm> {
   }
 
   Widget _buildActions(ColorScheme colorScheme) {
-    // Desktop: Bottom Right placement
+    final String btnText = isEditing ? "Save Changes" : "Create Project";
+
     if (widget.isDesktop) {
       return Row(
-        mainAxisAlignment: MainAxisAlignment.end, // Aligns to right
+        mainAxisAlignment: MainAxisAlignment.end, 
         children: [
           SizedBox(
             width: 120,
             child: Button(
               label: "Close",
               variant: ButtonVariant.outline,
-              onPressed: _isCreating ? null : () => Navigator.pop(context),
+              onPressed: _isProcessing ? null : () => Navigator.pop(context),
             ),
           ),
           const SizedBox(width: 12),
           SizedBox(
             width: 180,
             child: Button(
-              label: "Create Project",
-              isLoading: _isCreating,
+              label: btnText,
+              isLoading: _isProcessing,
               onPressed: () {
-                if (_formKey.currentState!.validate()) createProject(context);
+                if (_formKey.currentState!.validate()) submitProject(context);
               },
             ),
           ),
@@ -244,17 +320,17 @@ class _AddProjectFormState extends State<AddProjectForm> {
           child: Button(
             label: "Close",
             variant: ButtonVariant.outline,
-            onPressed: _isCreating ? null : () => Navigator.pop(context),
+            onPressed: _isProcessing ? null : () => Navigator.pop(context),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           flex: 2,
           child: Button(
-            label: "Create Project",
-            isLoading: _isCreating,
+            label: btnText,
+            isLoading: _isProcessing,
             onPressed: () {
-              if (_formKey.currentState!.validate()) createProject(context);
+              if (_formKey.currentState!.validate()) submitProject(context);
             },
           ),
         ),
