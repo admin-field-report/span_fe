@@ -178,6 +178,19 @@ class _ProjectScreenState extends State<ProjectScreen> {
                                 sortValue: (p) => p.name,
                                 builder: (p) => _buildProductCell(p, theme),
                               ),
+                               TableColumn(
+                                title: "Client Name",
+                                flex: 3,
+                                minWidth: 250,
+                                sortable: true,
+                                sortValue: (p) => p.clientName,
+                                builder: (p) => Text(
+                                  p.clientName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                                ),
+                              ),
                               TableColumn(
                                 title: "Description",
                                 flex: 3,
