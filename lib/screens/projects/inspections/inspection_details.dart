@@ -156,7 +156,9 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
       itemBuilder: (context, index) {
         final doc = documents[index];
         final docName = doc['document_name'] ?? 'Document ${index + 1}'; 
-        final docUrl = doc['document_url'] ?? '';
+        
+        // 🚀 Extract the description safely
+        final docDescription = doc['description']?.toString().trim() ?? ''; 
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -220,15 +222,27 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            docUrl.split('/').last, 
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withOpacity(0.5),
+                          
+                          // 🚀 NEW: Render the Document Summary with a "Summary:" label
+                          if (docDescription.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            RichText(
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              text: TextSpan(
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                                children: [
+                                  const TextSpan(
+                                    text: 'Summary: ', 
+                                    style: TextStyle(fontWeight: FontWeight.bold)
+                                  ),
+                                  TextSpan(text: docDescription),
+                                ],
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          ],
                         ],
                       ),
                     ),
