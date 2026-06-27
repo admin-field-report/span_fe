@@ -782,7 +782,7 @@ class CanvasState extends State<Canvas> {
     }
   }
 
-  void _showColorPicker(int mode) {
+  void _showColorPicker(GlobalKey anchorKey, ThemeData theme, int mode) {
     _saveSnapshot(); 
     final List<Color> pickerPresets = [
       const Color(0xFFFF5252), const Color(0xFFFF9800), const Color(0xFFFFEB3B), const Color(0xFFCDDC39), 
@@ -793,165 +793,268 @@ class CanvasState extends State<Canvas> {
 
     Color currentColor;
     double currentOpacity = 1.0;
+    String title = 'Color';
+    IconData icon = Icons.color_lens;
 
     switch(mode) {
-      case 0: currentColor = _pencilColor; currentOpacity = _pencilOpacity; break;
-      case 1: currentColor = _shapeLineColor; currentOpacity = _shapeOpacity; break;
-      case 2: currentColor = _shapeBorderColor; currentOpacity = _shapeOpacity; break;
-      case 3: currentColor = _shapeFillColor; currentOpacity = _shapeOpacity; break;
-      case 4: currentColor = _textColor; currentOpacity = _textOpacity; break;
-      case 5: currentColor = _textBorderColor; currentOpacity = _textOpacity; break;
-      case 6: currentColor = _textFillColor; currentOpacity = _textOpacity; break;
-      case 7: currentColor = _penFillColor; currentOpacity = _pencilOpacity; break;
+      case 0: currentColor = _pencilColor; currentOpacity = _pencilOpacity; title = 'Stroke color'; icon = Icons.edit; break;
+      case 1: currentColor = _shapeLineColor; currentOpacity = _shapeOpacity; title = 'Line color'; icon = Icons.palette_outlined; break;
+      case 2: currentColor = _shapeBorderColor; currentOpacity = _shapeOpacity; title = 'Border color'; icon = Icons.border_color; break;
+      case 3: currentColor = _shapeFillColor; currentOpacity = _shapeOpacity; title = 'Fill color'; icon = Icons.format_color_fill; break;
+      case 4: currentColor = _textColor; currentOpacity = _textOpacity; title = 'Text color'; icon = Icons.format_color_text; break;
+      case 5: currentColor = _textBorderColor; currentOpacity = _textOpacity; title = 'Border color'; icon = Icons.border_color; break;
+      case 6: currentColor = _textFillColor; currentOpacity = _textOpacity; title = 'Fill color'; icon = Icons.format_color_fill; break;
+      case 7: currentColor = _penFillColor; currentOpacity = _pencilOpacity; title = 'Fill color'; icon = Icons.format_color_fill; break;
       default: currentColor = Colors.black;
     }
     
     HSVColor hsvColor = HSVColor.fromColor(currentColor == Colors.transparent ? Colors.red : currentColor);
     double localOpacity = currentOpacity; 
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            void updateColor(Color newColor) {
-              setDialogState(() => hsvColor = HSVColor.fromColor(newColor));
-              setState(() {
-                if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
-                else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
-                else if (mode == 2) { 
-                  _shapeBorderColor = newColor; 
-                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
-                    _activeObject!.color = newColor; 
-                  }
-                } 
-                else if (mode == 3) { 
-                  _shapeFillColor = newColor; 
-                  if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
-                    _activeObject!.fillColor = newColor; 
-                  }
-                }
-                else if (mode == 4) { _textColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor; } 
-                else if (mode == 5) { _textBorderColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor; } 
-                else if (mode == 6) { _textFillColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor; } 
-                else if (mode == 7) { _penFillColor = newColor; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.fillColor = newColor; }
-              });
+    _showToolbarPopover(
+      anchorKey: anchorKey,
+      theme: theme,
+      title: title,
+      icon: icon,
+      width: 260, // 🚀 Slightly wider to fit the color grid comfortably
+      builder: (setPopoverState) {
+        
+        void updateColor(Color newColor) {
+          setPopoverState(() => hsvColor = HSVColor.fromColor(newColor));
+          setState(() {
+            if (mode == 0) { _pencilColor = newColor; if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.color = newColor; } 
+            else if (mode == 1) { _shapeLineColor = newColor; if (_activeObject?.type == DrawingType.line || _activeObject?.type == DrawingType.arrow) _activeObject!.color = newColor; } 
+            else if (mode == 2) { 
+              _shapeBorderColor = newColor; 
+              if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
+                _activeObject!.color = newColor; 
+              }
+            } 
+            else if (mode == 3) { 
+              _shapeFillColor = newColor; 
+              if (_activeObject != null && [DrawingType.rect, DrawingType.circle, DrawingType.polygon, DrawingType.brick, DrawingType.grid, DrawingType.horizontal, DrawingType.vertical, DrawingType.forwardDiag, DrawingType.reverseDiag, DrawingType.diamond, DrawingType.weave, DrawingType.dots, DrawingType.herringbone, DrawingType.concrete, DrawingType.shingles, DrawingType.insulation].contains(_activeObject!.type)) {
+                _activeObject!.fillColor = newColor; 
+              }
             }
+            else if (mode == 4) { _textColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.color = newColor; } 
+            else if (mode == 5) { _textBorderColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.borderColor = newColor; } 
+            else if (mode == 6) { _textFillColor = newColor; if (_activeObject?.type == DrawingType.text) _activeObject!.fillColor = newColor; } 
+            else if (mode == 7) { _penFillColor = newColor; if (_activeObject?.type == DrawingType.pen || _activeObject?.type == DrawingType.pencil) _activeObject!.fillColor = newColor; }
+          });
+        }
 
-            String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
-            const double squareWidth = 240.0; const double squareHeight = 200.0;
-            final bool showOpacity = (mode == 3 || mode == 6 || mode == 7);
-            final bool showNone = showOpacity;
+        String colorToHex(Color c) => c == Colors.transparent ? "NONE" : '#${c.value.toRadixString(16).substring(2).toUpperCase()}';
+        
+        // 🚀 Compact sizes for the popover
+        const double squareWidth = 236.0; 
+        const double squareHeight = 140.0;
+        final bool showOpacity = (mode == 3 || mode == 6 || mode == 7);
+        final bool showNone = showOpacity;
 
-            return AlertDialog(
-              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Hex & Preview Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  colorToHex(hsvColor.toColor()), 
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'monospace')
+                ),
+                Container(
+                  width: 24, height: 24,
+                  decoration: BoxDecoration(
+                    color: showOpacity ? hsvColor.toColor().withOpacity(localOpacity) : hsvColor.toColor(), 
+                    shape: BoxShape.circle, 
+                    border: Border.all(color: theme.colorScheme.outlineVariant), 
+                  ),
+                  child: hsvColor.toColor() == Colors.transparent ? const Icon(Icons.block, color: Colors.red, size: 14) : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            
+            // Saturation/Value Box
+            GestureDetector(
+              onPanDown: (details) {
+                double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
+                double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
+                updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
+              },
+              onPanUpdate: (details) {
+                double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
+                double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
+                updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
+              },
+              child: Stack(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 50, height: 50,
-                        decoration: BoxDecoration(color: showOpacity ? hsvColor.toColor().withOpacity(localOpacity) : hsvColor.toColor(), shape: BoxShape.circle, border: Border.all(color: Colors.grey.withOpacity(0.3)), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-                        child: hsvColor.toColor() == Colors.transparent ? const Icon(Icons.block, color: Colors.red) : null,
-                      ),
-                      const SizedBox(width: 15),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Selected Color", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                          Text(colorToHex(hsvColor.toColor()), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  GestureDetector(
-                    onPanDown: (details) {
-                      double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
-                      double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
-                      updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
-                    },
-                    onPanUpdate: (details) {
-                      double s = (details.localPosition.dx / squareWidth).clamp(0.0, 1.0);
-                      double v = (1.0 - (details.localPosition.dy / squareHeight)).clamp(0.0, 1.0);
-                      updateColor(hsvColor.withSaturation(s).withValue(v).toColor());
-                    },
-                    child: Stack(
-                      children: [
-                        Container(
-                          width: squareWidth, height: squareHeight,
-                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), gradient: LinearGradient(colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()])),
-                          child: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
-                        ),
-                        Positioned(
-                          left: (hsvColor.saturation * squareWidth) - 8, top: ((1 - hsvColor.value) * squareHeight) - 8,
-                          child: Container(width: 16, height: 16, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)])),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Container(
-                    width: 240, height: 12,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), gradient: const LinearGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red])),
-                    child: SliderTheme(data: SliderTheme.of(context).copyWith(trackHeight: 12, activeTrackColor: Colors.transparent, inactiveTrackColor: Colors.transparent, thumbColor: Colors.white), child: Slider(value: hsvColor.hue, min: 0, max: 360, onChanged: (v) => updateColor(hsvColor.withHue(v).toColor()))),
-                  ),
-                  const SizedBox(height: 16),
-                  if (showOpacity) ...[
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Opacity", style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)), Text("${(localOpacity * 100).toInt()}%", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))]),
-                    const SizedBox(height: 6),
-                    Container(
-                      width: 240, height: 12,
-                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.grey.withOpacity(0.3)), gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()])),
-                      child: Slider(
-                        value: localOpacity, min: 0.0, max: 1.0,
-                        onChanged: (v) {
-                          setDialogState(() => localOpacity = v);
-                          setState(() {
-                            if (mode == 3) {
-                              _shapeOpacity = v;
-                              if (_activeObject != null && _isStyledShapeType(_activeObject!.type)) {
-                                _activeObject!.opacity = v;
-                              }
-                            } else if (mode == 6) {
-                              _textOpacity = v;
-                              if (_activeObject?.type == DrawingType.text) {
-                                _activeObject!.opacity = v;
-                              }
-                            } else if (mode == 7) {
-                              _pencilOpacity = v;
-                              if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) {
-                                _activeObject!.opacity = v;
-                              }
-                            }
-                          });
-                        },
-                      ),
+                    width: squareWidth, height: squareHeight,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8), 
+                      gradient: LinearGradient(colors: [Colors.white, hsvColor.withSaturation(1).withValue(1).toColor()])
                     ),
-                    const SizedBox(height: 20),
-                  ],
-                  const Text("Preset Colors", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: 260,
-                    child: Wrap(
-                      alignment: WrapAlignment.center, spacing: 8, runSpacing: 8,
-                      children: [
-                        if (showNone)
-                          GestureDetector(onTap: () => updateColor(Colors.transparent), child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[200], child: const Icon(Icons.block, size: 16, color: Colors.red))),
-                        ...pickerPresets.map((color) => GestureDetector(
-                          onTap: () => updateColor(color),
-                          child: Container(width: 28, height: 28, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: hsvColor.toColor() == color ? Colors.blue : (color == Colors.white ? Colors.grey[300]! : Colors.transparent), width: 2))),
-                        )),
-                      ],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        gradient: const LinearGradient(colors: [Colors.transparent, Colors.black], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+                      )
+                    ),
+                  ),
+                  Positioned(
+                    left: (hsvColor.saturation * squareWidth) - 8, 
+                    top: ((1 - hsvColor.value) * squareHeight) - 8,
+                    child: Container(
+                      width: 16, height: 16, 
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle, 
+                        border: Border.all(color: Colors.white, width: 2), 
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]
+                      )
                     ),
                   ),
                 ],
               ),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Done", style: TextStyle(fontWeight: FontWeight.bold)))],
-            );
-          },
+            ),
+            const SizedBox(height: 14),
+            
+            // Hue Slider
+            Container(
+              width: squareWidth, height: 10,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(5), 
+                gradient: const LinearGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Color(0xFFFF00FF), Colors.red])
+              ),
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 10, 
+                  activeTrackColor: Colors.transparent, 
+                  inactiveTrackColor: Colors.transparent, 
+                  thumbColor: Colors.white,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                ), 
+                child: Slider(
+                  value: hsvColor.hue, 
+                  min: 0, 
+                  max: 360, 
+                  onChanged: (v) => updateColor(hsvColor.withHue(v).toColor())
+                )
+              ),
+            ),
+            const SizedBox(height: 14),
+            
+            // Opacity Slider
+            if (showOpacity) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+                children: [
+                  Text("Opacity", style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.bold)), 
+                  Text("${(localOpacity * 100).toInt()}%", style: TextStyle(fontSize: 11, color: theme.colorScheme.primary, fontWeight: FontWeight.bold))
+                ]
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: squareWidth, height: 10,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(5), 
+                  border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)), 
+                  gradient: LinearGradient(colors: [Colors.transparent, hsvColor.toColor()])
+                ),
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 10, 
+                    activeTrackColor: Colors.transparent, 
+                    inactiveTrackColor: Colors.transparent, 
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: localOpacity, min: 0.0, max: 1.0,
+                    onChanged: (v) {
+                      setPopoverState(() => localOpacity = v);
+                      setState(() {
+                        if (mode == 3) {
+                          _shapeOpacity = v;
+                          if (_activeObject != null && _isStyledShapeType(_activeObject!.type)) _activeObject!.opacity = v;
+                        } else if (mode == 6) {
+                          _textOpacity = v;
+                          if (_activeObject?.type == DrawingType.text) _activeObject!.opacity = v;
+                        } else if (mode == 7) {
+                          _pencilOpacity = v;
+                          if (_activeObject?.type == DrawingType.pencil || _activeObject?.type == DrawingType.pen) _activeObject!.opacity = v;
+                        }
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            // Presets
+            Text("Presets", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: squareWidth,
+              child: Wrap(
+                spacing: 8, runSpacing: 8, // Slightly more spacing for a cleaner look
+                children: [
+                  if (showNone)
+                    GestureDetector(
+                      onTap: () => updateColor(Colors.transparent), 
+                      child: Container(
+                        width: 24, height: 24,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceVariant,
+                          shape: BoxShape.circle,
+                          border: hsvColor.toColor() == Colors.transparent 
+                              ? Border.all(color: theme.colorScheme.primary, width: 2.0)
+                              : Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.3), width: 1.0),
+                        ),
+                        child: const Icon(Icons.block, size: 14, color: Colors.red),
+                      )
+                    ),
+                  
+                  ...pickerPresets.map((color) {
+                    final isSelected = hsvColor.toColor() == color;
+                    final isWhite = color == const Color(0xFFFFFFFF);
+                    
+                    return GestureDetector(
+                      onTap: () => updateColor(color),
+                      child: Container(
+                        width: 24, height: 24, 
+                        decoration: BoxDecoration(
+                          color: color, 
+                          shape: BoxShape.circle, 
+                          // 🚀 THE FIX: Only draw borders when necessary, preventing blurry antialiasing
+                          border: (isSelected || isWhite)
+                              ? Border.all(
+                                  color: isSelected ? theme.colorScheme.primary : Colors.grey.shade400, 
+                                  width: isSelected ? 2.0 : 1.0
+                                )
+                              : null,
+                          // 🚀 NEW: Add a crisp shadow so the dots pop off the surface
+                          boxShadow: [
+                            if (!isSelected) 
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.12),
+                                blurRadius: 3,
+                                spreadRadius: 0,
+                                offset: const Offset(0, 1.5),
+                              )
+                          ],
+                        )
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
@@ -2092,20 +2195,20 @@ class CanvasState extends State<Canvas> {
       if (_isFreehandType(object.type)) {
         actions.addAll([
           _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 0)),
-          _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: object.color, onTap: (_) => _showColorPicker(0)),
+          _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: object.color, onTap: (anchor) => _showColorPicker(anchor, theme, 0)),
           if (object.type == DrawingType.pen)
-            _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(7)),
+            _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 7)),
         ]);
       } else if (_isLineType(object.type)) {
         actions.addAll([
           _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
-          _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: object.color, onTap: (_) => _showColorPicker(1)),
+          _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: object.color, onTap: (anchor) => _showColorPicker(anchor, theme, 1)),
         ]);
       } else if (_isStyledShapeType(object.type)) {
         actions.addAll([
           _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
-          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.color, onTap: (_) => _showColorPicker(2)),
-          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(3)),
+          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.color, onTap: (anchor) => _showColorPicker(anchor, theme, 2)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 3)),
           if (object.type == DrawingType.dots)
             _toolbarAction(theme: theme, icon: Icons.blur_on, label: 'Dot density', onTap: (anchor) => _showDensityPopover(anchor, theme)),
         ]);
@@ -2114,9 +2217,9 @@ class CanvasState extends State<Canvas> {
           _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
           _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
           _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
-          _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: object.color, onTap: (_) => _showColorPicker(4)),
-          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.borderColor, onTap: (_) => _showColorPicker(5)),
-          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (_) => _showColorPicker(6)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: object.color, onTap: (anchor) => _showColorPicker(anchor, theme, 4)),
+          _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.borderColor, onTap: (anchor) => _showColorPicker(anchor, theme, 5)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 6)),
         ]);
       }
 
@@ -2132,20 +2235,20 @@ class CanvasState extends State<Canvas> {
     if (_isFreehandToolName(_selectedTool)) {
       actions.addAll([
         _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 0)),
-        _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: _pencilColor, onTap: (_) => _showColorPicker(0)),
+        _toolbarAction(theme: theme, icon: Icons.edit, label: 'Stroke color', swatch: _pencilColor, onTap: (anchor) => _showColorPicker(anchor, theme, 0)),
         if (_selectedTool == 'Pen')
-          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _penFillColor, onTap: (_) => _showColorPicker(7)),
+          _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _penFillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 7)),
       ]);
     } else if (_isLineToolName(_selectedTool)) {
       actions.addAll([
         _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
-        _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: _shapeLineColor, onTap: (_) => _showColorPicker(1)),
+        _toolbarAction(theme: theme, icon: Icons.palette_outlined, label: 'Line color', swatch: _shapeLineColor, onTap: (anchor) => _showColorPicker(anchor, theme, 1)),
       ]);
     } else if (_isFilledShapeToolName(_selectedTool)) {
       actions.addAll([
         _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Thickness', onTap: (anchor) => _showStrokePopover(anchor, theme, 1)),
-        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _shapeBorderColor, onTap: (_) => _showColorPicker(2)),
-        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _shapeFillColor, onTap: (_) => _showColorPicker(3)),
+        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _shapeBorderColor, onTap: (anchor) => _showColorPicker(anchor, theme, 2)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _shapeFillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 3)),
         if (_selectedTool == 'Dots')
           _toolbarAction(theme: theme, icon: Icons.blur_on, label: 'Dot density', onTap: (anchor) => _showDensityPopover(anchor, theme)),
       ]);
@@ -2154,9 +2257,9 @@ class CanvasState extends State<Canvas> {
         _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
         _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
         _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
-        _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: _textColor, onTap: (_) => _showColorPicker(4)),
-        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _textBorderColor, onTap: (_) => _showColorPicker(5)),
-        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _textFillColor, onTap: (_) => _showColorPicker(6)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: _textColor, onTap: (anchor) => _showColorPicker(anchor, theme, 4)),
+        _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _textBorderColor, onTap: (anchor) => _showColorPicker(anchor, theme, 5)),
+        _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _textFillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 6)),
       ]);
     }
 
