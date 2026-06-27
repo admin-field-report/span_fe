@@ -66,14 +66,14 @@ class CanvasState extends State<Canvas> {
   final GlobalKey _viewerKey = GlobalKey();
   
   bool _isFullScreen = false;
-  bool _showLeftPanel = false; 
+  bool _showLeftPanel = true; // 🚀 OPTIMIZATION: Open by default
 
   double _minScale = 0.1;
   double _maxScale = 5.0;
 
-  // STATE VARIABLES FOR RESIZABLE PANELS
-  double _leftPanelWidth = 250.0;
-  double _rightPanelWidth = 320.0;
+  // 🚀 OPTIMIZATION: Slimmed down default panel widths
+  double _leftPanelWidth = 220.0; 
+  double _rightPanelWidth = 260.0;
 
   String _selectedTool = 'Select';
 
@@ -156,9 +156,6 @@ class CanvasState extends State<Canvas> {
     final double dx = (size.width - (widget.width * initialScale)) / 2;
     final double dy = (size.height - (widget.height * initialScale)) / 2;
 
-    // 🚀 THE FIX: Dynamically set the zoom boundaries!
-    // Min scale lets them zoom out a tiny bit further than the "fit to screen" size
-    // Max scale gives them massive zoom-in capabilities (up to 20x the initial zoom)
     setState(() {
       _minScale = initialScale * 0.5; 
       _maxScale = math.max(5.0, initialScale * 20.0); 
@@ -379,38 +376,35 @@ class CanvasState extends State<Canvas> {
     if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
     if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note') return SystemMouseCursors.text;
     
-    // 🚀 THE FIX: If not hovering over a handle, show the crosshair for drawing tools!
     if (handle == ResizeHandle.none) {
       return _selectedTool == 'Select' 
           ? SystemMouseCursors.basic 
-          : SystemMouseCursors.precise; // Shows a precise crosshair (+) for drawing
+          : SystemMouseCursors.precise;
     }
 
-    // Standard handle cursors
     if (handle == ResizeHandle.body) return SystemMouseCursors.move;
     if (handle == ResizeHandle.rotation) return SystemMouseCursors.grab;
     if (handle == ResizeHandle.calloutKnee || handle == ResizeHandle.calloutTip) return SystemMouseCursors.move;
 
-    // Calculate true angle based on the handle's geometry + object rotation
     double rotation = _activeObject?.rotation ?? 0.0;
     double baseAngle = 0.0;
 
     switch (handle) {
       case ResizeHandle.centerLeft:
       case ResizeHandle.centerRight:
-        baseAngle = 0.0; // Horizontal axis (-)
+        baseAngle = 0.0; 
         break;
       case ResizeHandle.topLeft:
       case ResizeHandle.bottomRight:
-        baseAngle = math.pi / 4; // 45 degrees (\ axis)
+        baseAngle = math.pi / 4; 
         break;
       case ResizeHandle.topCenter:
       case ResizeHandle.bottomCenter:
-        baseAngle = math.pi / 2; // 90 degrees (| axis)
+        baseAngle = math.pi / 2; 
         break;
       case ResizeHandle.topRight:
       case ResizeHandle.bottomLeft:
-        baseAngle = 3 * math.pi / 4; // 135 degrees (/ axis)
+        baseAngle = 3 * math.pi / 4; 
         break;
       default:
         return SystemMouseCursors.basic;
@@ -439,11 +433,9 @@ class CanvasState extends State<Canvas> {
   }
   
   ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    // 🚀 THE FIX: Calculate scale factor based on document size compared to standard A4 (1056px)
     double scaleFactor = math.max(widget.width, widget.height) / 1056.0;
     if (scaleFactor < 1.0) scaleFactor = 1.0;
 
-    // 🚀 Multiply the base 25px size by the scale factor
     final double hSize = 25.0 * scaleFactor; 
     
     final localP = _toLocalSpace(p, obj);
@@ -459,7 +451,6 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
         if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
       } else {
-        // 🚀 Multiply the rotation offset (40px) by the scale factor
         Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - (40 * scaleFactor));
         if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
@@ -476,7 +467,6 @@ class CanvasState extends State<Canvas> {
       }
     }
     
-    // 🚀 Scale the body grab-distances as well
     if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
       if (_distToSegment(localP, obj.start, obj.end) < (15 * scaleFactor)) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
@@ -644,7 +634,6 @@ class CanvasState extends State<Canvas> {
           }
 
         } else if (_activeObject!.type == DrawingType.line || _activeObject!.type == DrawingType.arrow) {
-          // 🚀 THE FIX FOR ROTATED LINES
           final oldCenter = _activeObject!.center;
           final localP = _toLocalSpace(pos, _activeObject!);
           
@@ -672,7 +661,6 @@ class CanvasState extends State<Canvas> {
           _activeObject!.end = newGlobalCenter + halfSize;
           
         } else {
-          // 🚀 THE FIX FOR ALL ROTATED SHAPES
           final oldCenter = _activeObject!.center;
           final localP = _toLocalSpace(pos, _activeObject!);
           
@@ -694,7 +682,6 @@ class CanvasState extends State<Canvas> {
           double newWidth = right - left;
           double newHeight = bottom - top;
 
-          // Prevent negative/inverted sizes which break rendering
           if (newWidth < 10) {
             newWidth = 10;
             if (_activeHandle == ResizeHandle.topLeft || _activeHandle == ResizeHandle.bottomLeft || _activeHandle == ResizeHandle.centerLeft) left = right - 10;
@@ -706,10 +693,8 @@ class CanvasState extends State<Canvas> {
             else bottom = top + 10;
           }
 
-          // 1. Find where the new center is in the local unrotated space
           Offset newLocalCenter = Offset(left + newWidth / 2, top + newHeight / 2);
 
-          // 2. Rotate that new local center back into the true Global space
           final double cosA = math.cos(_activeObject!.rotation);
           final double sinA = math.sin(_activeObject!.rotation);
           final double dcx = newLocalCenter.dx - oldCenter.dx;
@@ -720,7 +705,6 @@ class CanvasState extends State<Canvas> {
             oldCenter.dy + (sinA * dcx + cosA * dcy)
           );
 
-          // 3. Assign the final dimensions around the new true pivot point!
           _activeObject!.start = newGlobalCenter - Offset(newWidth / 2, newHeight / 2);
           _activeObject!.end = newGlobalCenter + Offset(newWidth / 2, newHeight / 2);
         }
@@ -748,7 +732,6 @@ class CanvasState extends State<Canvas> {
   }
 
   Offset _clampToCanvas(Offset pos) {
-    // 🚀 THE FIX: Use dynamic width and height instead of 816/1056
     return Offset(
       pos.dx.clamp(0.0, widget.width),
       pos.dy.clamp(0.0, widget.height),
@@ -1102,65 +1085,88 @@ class CanvasState extends State<Canvas> {
     );
   }
 
+  // 🚀 OPTIMIZATION: Slimmer, denser folder structure for tools
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
     final isMobile = AppResponsive.isMobileScreen(context);
     
-    return ExpansionTile(
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 13)),
-      initiallyExpanded: initiallyExpanded,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: isMobile ? 4 : 3,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-              childAspectRatio: 1.0,
-            ),
-            itemCount: tools.length,
-            itemBuilder: (context, index) {
-              final tool = tools[index];
-              final isSelected = _selectedTool == tool.name;
-              return InkWell(
-                onTap: () {
-                  setState(() {
-                    if (_selectedTool == tool.name) {
-                      _selectedTool = 'Select';
-                    } else {
-                      _selectedTool = tool.name;
-                    }
+    return Theme(
+      data: theme.copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12)),
+        initiallyExpanded: initiallyExpanded,
+        visualDensity: VisualDensity.compact,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 0.0),
+        childrenPadding: EdgeInsets.zero,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8.0, 0, 8.0, 8.0),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4, // 🚀 Tighter 4-column layout
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 4,
+                childAspectRatio: 1.0,
+              ),
+              itemCount: tools.length,
+              itemBuilder: (context, index) {
+                final tool = tools[index];
+                final isSelected = _selectedTool == tool.name;
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (_selectedTool == tool.name) {
+                        _selectedTool = 'Select';
+                      } else {
+                        _selectedTool = tool.name;
+                      }
+                      
+                      for (var obj in _drawingObjects) obj.isSelected = false;
+                      _activeObject = null;
+                      widget.onSelectionChanged?.call(null); 
+                    });
                     
-                    for (var obj in _drawingObjects) obj.isSelected = false;
-                    _activeObject = null;
-                    widget.onSelectionChanged?.call(null); 
-                  });
-                  
-                  widget.onToolChanged?.call(_selectedTool); 
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant.withOpacity(0.5), width: isSelected ? 2 : 1),
-                    borderRadius: BorderRadius.circular(8),
-                    color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
+                    widget.onToolChanged?.call(_selectedTool); 
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant.withOpacity(0.5), 
+                        width: isSelected ? 1.5 : 1
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                      color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          tool.icon, 
+                          size: isMobile ? 14 : 16, 
+                          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7)
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          tool.name, 
+                          style: TextStyle(
+                            fontSize: 8, 
+                            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface
+                          ), 
+                          textAlign: TextAlign.center, 
+                          maxLines: 1, 
+                          overflow: TextOverflow.ellipsis
+                        ),
+                      ],
+                    ),
                   ),
-                  padding: const EdgeInsets.all(4),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(tool.icon, size: isMobile ? 16 : 20, color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7)),
-                      const SizedBox(height: 4),
-                      Text(tool.name, style: TextStyle(fontSize: isMobile ? 8 : 9, color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        )
-      ],
+                );
+              },
+            ),
+          )
+        ],
+      ),
     );
   }
 
@@ -1202,13 +1208,13 @@ class CanvasState extends State<Canvas> {
                         _ToolItem("Polygon", Icons.change_history),
                         _ToolItem("Line", Icons.show_chart),
                         _ToolItem("Arrow", Icons.arrow_outward),
-                      ]),
+                      ], initiallyExpanded: true),
                       
                       _buildToolCategory(theme, "Text", [
                         _ToolItem("Text", Icons.title),
                         _ToolItem("Callout", Icons.chat_bubble_outline),
                         _ToolItem("Note", Icons.sticky_note_2),
-                      ]),
+                      ], initiallyExpanded: true),
                       
                       _buildToolCategory(theme, "Patterns", [
                         _ToolItem("Brick", Icons.view_module),
@@ -1224,11 +1230,11 @@ class CanvasState extends State<Canvas> {
                         _ToolItem("Shingles", Icons.roofing),
                         _ToolItem("Insulation", Icons.waves),
                         _ToolItem("Dots", Icons.scatter_plot),
-                      ]),
+                      ], initiallyExpanded: true),
 
                       _buildToolCategory(theme, "Additional Tools", [
                         _ToolItem("Pin", Icons.place),
-                      ]),
+                      ], initiallyExpanded: true),
                     ],
                   ),
                   if (hasCustomTab) widget.customTabContent!,
@@ -2262,7 +2268,6 @@ class CanvasState extends State<Canvas> {
                                           onPointerUp: _handlePointerUp,
                                           
                                           child: Container(
-                                            // 🚀 THE FIX: Dynamic dimensions instead of hardcoded 816x1056
                                             width: widget.width,  
                                             height: widget.height, 
                                             decoration: BoxDecoration(
@@ -2275,7 +2280,6 @@ class CanvasState extends State<Canvas> {
                                               objects: _drawingObjects, 
                                               preview: _currentPreview,
                                               backgroundImageBytes: widget.initialBackgroundImage,
-                                              // 🚀 THE FIX: Pass dynamic dimensions to CanvasPaper
                                               width: widget.width,
                                               height: widget.height,                                         
                                             ),

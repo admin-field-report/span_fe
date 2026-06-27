@@ -152,7 +152,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
-                    flex: 3,
+                    flex: 4,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(0, 15.0, 0, 0),
                       child: _buildCanvasSection(theme, isExpanded: true),
