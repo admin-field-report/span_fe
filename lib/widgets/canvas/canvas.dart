@@ -438,10 +438,16 @@ class CanvasState extends State<Canvas> {
 
     final double hSize = 25.0 * scaleFactor; 
     
+    // 🚀 THE FIX: Push the resize handles 20px away from the shape
+    final double handlePadding = 20.0 * scaleFactor;
+    
     final localP = _toLocalSpace(p, obj);
     final r = obj.rect;
 
     if (obj.isSelected) {
+      // Create a padded bounding box exclusively for the resize handles
+      final Rect paddedRect = r.inflate(handlePadding);
+
       if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
         if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
@@ -451,22 +457,27 @@ class CanvasState extends State<Canvas> {
         if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
         if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
       } else {
-        Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - (40 * scaleFactor));
+        // 🚀 We use paddedRect here so the handles sit further outside!
+        Offset rotPos = Offset(paddedRect.topCenter.dx, paddedRect.topCenter.dy - (40 * scaleFactor));
         if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
         if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
-          if ((localP - r.topLeft).distance < hSize) return ResizeHandle.topLeft;
-          if ((localP - r.topCenter).distance < hSize) return ResizeHandle.topCenter;
-          if ((localP - r.topRight).distance < hSize) return ResizeHandle.topRight;
-          if ((localP - r.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
-          if ((localP - r.centerRight).distance < hSize) return ResizeHandle.centerRight;
-          if ((localP - r.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
-          if ((localP - r.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
-          if ((localP - r.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
+          if ((localP - paddedRect.topLeft).distance < hSize) return ResizeHandle.topLeft;
+          if ((localP - paddedRect.topCenter).distance < hSize) return ResizeHandle.topCenter;
+          if ((localP - paddedRect.topRight).distance < hSize) return ResizeHandle.topRight;
+          if ((localP - paddedRect.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
+          if ((localP - paddedRect.centerRight).distance < hSize) return ResizeHandle.centerRight;
+          if ((localP - paddedRect.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
+          if ((localP - paddedRect.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
+          if ((localP - paddedRect.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
         }
       }
+      
+      // 🚀 MOVE GRAB: Strictly inside the actual un-padded object body bounds.
+      if (r.contains(localP)) return ResizeHandle.body;
     }
     
+    // --- Unselected Hit Tests ---
     if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
       if (_distToSegment(localP, obj.start, obj.end) < (15 * scaleFactor)) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
@@ -667,15 +678,21 @@ class CanvasState extends State<Canvas> {
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
           
+          // 🚀 MUST match the padding used in _getHitHandle to calculate math correctly
+          double scaleFactor = math.max(widget.width, widget.height) / 1056.0;
+          if (scaleFactor < 1.0) scaleFactor = 1.0;
+          final double padding = 20.0 * scaleFactor;
+          
+          // Reverse the padding from the pointer's location to find the true shape edge
           switch (_activeHandle) {
-            case ResizeHandle.topLeft: left = localP.dx; top = localP.dy; break;
-            case ResizeHandle.topCenter: top = localP.dy; break;
-            case ResizeHandle.topRight: right = localP.dx; top = localP.dy; break;
-            case ResizeHandle.centerLeft: left = localP.dx; break;
-            case ResizeHandle.centerRight: right = localP.dx; break;
-            case ResizeHandle.bottomLeft: left = localP.dx; bottom = localP.dy; break;
-            case ResizeHandle.bottomCenter: bottom = localP.dy; break;
-            case ResizeHandle.bottomRight: right = localP.dx; bottom = localP.dy; break;
+            case ResizeHandle.topLeft: left = localP.dx + padding; top = localP.dy + padding; break;
+            case ResizeHandle.topCenter: top = localP.dy + padding; break;
+            case ResizeHandle.topRight: right = localP.dx - padding; top = localP.dy + padding; break;
+            case ResizeHandle.centerLeft: left = localP.dx + padding; break;
+            case ResizeHandle.centerRight: right = localP.dx - padding; break;
+            case ResizeHandle.bottomLeft: left = localP.dx + padding; bottom = localP.dy - padding; break;
+            case ResizeHandle.bottomCenter: bottom = localP.dy - padding; break;
+            case ResizeHandle.bottomRight: right = localP.dx - padding; bottom = localP.dy - padding; break;
             default: break;
           }
 
