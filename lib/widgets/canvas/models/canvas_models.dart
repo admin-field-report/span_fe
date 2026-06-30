@@ -247,6 +247,32 @@ class PageData {
   }); 
 }
 
+class TagGroup {
+  final String id;
+  final String name;
+  final List<ProjectTag> tags;
+
+  TagGroup({
+    required this.id, 
+    required this.name, 
+    required this.tags,
+  });
+
+  factory TagGroup.fromJson(Map<String, dynamic> json) {
+    var tagItemsJson = json['tag_group_items'] as List? ?? [];
+    
+    List<ProjectTag> parsedTags = tagItemsJson
+        .map((tagJson) => ProjectTag.fromJson(tagJson))
+        .toList();
+
+    return TagGroup(
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unnamed Group',
+      tags: parsedTags,
+    );
+  }
+}
+
 class ProjectTag {
   final String id;
   final String name;

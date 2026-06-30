@@ -6,10 +6,11 @@ import 'dart:typed_data';
 import 'dart:convert';
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
+import '../../../models/project.dart'; 
 
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
-  final List<ProjectTag> availableTags;
+  final List<TagGroup> availableTags;
   final bool isLoadingTags;
   
   final String? inspectionDescription;
@@ -27,12 +28,12 @@ class PropertiesPanel extends StatefulWidget {
 
   final bool allowImageUpload;
   final bool showImageSection; 
-  final bool isInspectionLevel; // 🚀 NEW: Controls if "Inspection Details" should render when no object is selected
+  final bool isInspectionLevel; 
    
   const PropertiesPanel({
     super.key,
     required this.activeObject,
-    required this.availableTags,
+    required this.availableTags, 
     required this.isLoadingTags,
     this.inspectionDescription,
     this.inspectionTagIds,
@@ -47,7 +48,7 @@ class PropertiesPanel extends StatefulWidget {
     required this.onImageTap,
     this.allowImageUpload = true,
     this.showImageSection = true, 
-    this.isInspectionLevel = true, // 🚀 Default is true
+    this.isInspectionLevel = true, 
   });
 
   @override
@@ -56,6 +57,9 @@ class PropertiesPanel extends StatefulWidget {
 
 class _PropertiesPanelState extends State<PropertiesPanel> {
   late TextEditingController _descController;
+  
+  final ScrollController _tagsScrollController = ScrollController();
+  
   DrawingObject? _trackedObject;
   
   bool _isUploading = false; 
@@ -115,6 +119,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   void dispose() {
     _descController.removeListener(_onTextChanged);
     _descController.dispose();
+    _tagsScrollController.dispose(); 
     _imageCache.clear();
     super.dispose();
   }
@@ -277,7 +282,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    // 🚀 THE FIX: If no object is selected AND we are not at the inspection level, show the placeholder!
     if (widget.activeObject == null && !widget.isInspectionLevel) {
       return Container(
         width: 300,
@@ -331,66 +335,138 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
 
                   Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  
-                  if (widget.availableTags.isEmpty && !widget.isLoadingTags) 
-                    Text("No tags available.", style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey)),
 
                   if (widget.isLoadingTags) 
-                    const Center(child: CircularProgressIndicator()),
-                  
-                  Wrap(
-                    spacing: 8, 
-                    runSpacing: 8,
-                    children: widget.availableTags.map((tag) {
-                      final isSelected = tagIds.contains(tag.id);
-                      final Color foregroundColor = isSelected ? Colors.white : tag.color;
-
-                      return InkWell(
-                        onTap: () => _toggleTag(tag.id), 
-                        borderRadius: BorderRadius.circular(16),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isSelected ? tag.color : Colors.transparent,
-                            border: Border.all(
-                              color: tag.color,
-                              width: 1.5,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              isSelected
-                                  ? Icon(Icons.check, size: 14, color: foregroundColor)
-                                  : Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: BoxDecoration(
-                                        color: tag.color,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                              const SizedBox(width: 6),
-                              Text(
-                                tag.name,
-                                style: TextStyle(
-                                  color: foregroundColor,
-                                  fontSize: 13,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: CircularProgressIndicator(color: theme.colorScheme.primary),
+                      ),
+                    )
+                  else if (widget.availableTags.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
+                        child: Text(
+                          "No tag groups available.",
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                      ),
+                    )
+                  else
+                    // 🚀 The scrollable tag area with matching layout
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 260), 
+                      child: RawScrollbar(
+                        controller: _tagsScrollController,
+                        thumbVisibility: true,
+                        radius: const Radius.circular(8),
+                        child: SingleChildScrollView(
+                          controller: _tagsScrollController,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.only(right: 12.0), // Padding only on right for scrollbar
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: widget.availableTags.map((tagGroup) {
+                              
+                              return Container(
+                                width: double.infinity, 
+                                margin: const EdgeInsets.only(bottom: 16.0), 
+                                padding: const EdgeInsets.all(16.0), 
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant.withOpacity(0.5), 
+                                    width: 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12), 
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      tagGroup.name, 
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant, 
+                                        fontSize: 13, 
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    
+                                    tagGroup.tags.isEmpty
+                                        ? Text(
+                                            "No tags available",
+                                            style: TextStyle(
+                                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                                              fontSize: 12,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          )
+                                        : Wrap(
+                                            spacing: 8, 
+                                            runSpacing: 8,
+                                            children: tagGroup.tags.map((tag) {
+                                              final isSelected = tagIds.contains(tag.id);
+                                              final Color foregroundColor = isSelected ? Colors.white : tag.color;
+
+                                              // Standard consistent chip design
+                                              return InkWell(
+                                                onTap: () => _toggleTag(tag.id), 
+                                                borderRadius: BorderRadius.circular(16),
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(milliseconds: 200),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isSelected ? tag.color : Colors.transparent,
+                                                    border: Border.all(
+                                                      color: tag.color,
+                                                      width: 1.5,
+                                                    ),
+                                                    borderRadius: BorderRadius.circular(16),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      isSelected
+                                                          ? Icon(Icons.check, size: 14, color: foregroundColor)
+                                                          : Container(
+                                                              width: 10,
+                                                              height: 10,
+                                                              decoration: BoxDecoration(
+                                                                color: tag.color,
+                                                                shape: BoxShape.circle,
+                                                              ),
+                                                            ),
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        tag.name,
+                                                        style: TextStyle(
+                                                          color: foregroundColor,
+                                                          fontSize: 12,
+                                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            }).toList(),
+                                          )
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
 
                   if (widget.showImageSection) ...[
                     if (widget.allowImageUpload || imageUrls.isNotEmpty) ...[
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
                       Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                     ],

@@ -58,7 +58,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
   List<String> _pages = [];
   String _currentPage = ''; 
   Map<String, PageData> _pageDataMap = {};
-  List<ProjectTag> _availableTags = [];
+  List<TagGroup> _availableTagGroups = [];
   bool _isLoadingTags = false;
 
   // 🌟 NEW: INSPECTION LEVEL STATE 🌟
@@ -201,19 +201,22 @@ void _switchPage(String newPage) async {
 
   Future<void> _fetchAvailableTags() async {
     try {
-      setState(() => _isLoadingTags = true);
-      final response = await _apiService.get('/project/tags/${widget.projectId}');
+      final response = await _apiService.get('/projectTagGroup/${widget.projectId}?includeTags=true');
       final responseData = jsonDecode(response.body);
 
-      if (responseData['success'] == true && responseData['data'] != null) {
+      if (responseData['success'] == true && responseData['data'] != null && mounted) {
         setState(() {
-          _availableTags = (responseData['data'] as List)
-              .map((tagJson) => ProjectTag.fromJson(tagJson))
+          // 🚀 Now it's incredibly simple to parse the whole grouped structure!
+          _availableTagGroups = (responseData['data'] as List)
+              .map((groupJson) => TagGroup.fromJson(groupJson))
               .toList();
         });
       }
-    } catch (e) { debugPrint("Error fetching tags: $e"); }
-    finally { setState(() => _isLoadingTags = false); }
+    } catch (e) { 
+      debugPrint("Error fetching tags: $e"); 
+    } finally {
+      if (mounted) setState(() => _isLoadingTags = false);
+    }
   }
 
   Future<void> _initializeCanvas() async {
@@ -1079,7 +1082,7 @@ void _switchPage(String newPage) async {
 
             customRightPanel: PropertiesPanel(
               activeObject: _selectedCanvasObject, 
-              availableTags: _availableTags,
+              availableTags: _availableTagGroups,
               isLoadingTags: _isLoadingTags,
               inspectionDescription: _inspectionDescription,
               inspectionTagIds: _inspectionTagIds,
