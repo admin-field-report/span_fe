@@ -9,6 +9,7 @@ import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './upload_document_panel.dart';
+import './document_pdf_viewer.dart'; 
 
 class ProjectDocuments extends StatefulWidget {
   final String projectId;
@@ -29,10 +30,7 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
-    
-    // Listen for any data changes to naturally evaluate if we need to poll
     projectController.addListener(_checkAndStartPolling); 
-    
     projectController.getAllDocuments(widget.projectId);
   }
 
@@ -53,14 +51,9 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
     }
   }
 
-  // ==========================================
-  // 🌟 DATA-DRIVEN POLLING LOGIC
-  // ==========================================
-  
   void _checkAndStartPolling() {
     if (!mounted) return;
     
-    // 🚀 THE FIX 1: Added .trim() just in case the API returns "processing " with a space
     bool needsPolling = projectController.documents.any((doc) => 
       doc.status.trim().toLowerCase() == 'processing'
     );
@@ -68,13 +61,9 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
     if (needsPolling) {
       if (_pollingTimer == null || !_pollingTimer!.isActive) {
         _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-          
-          // 🚀 THE FIX 2: Removed ModalRoute check. go_router nested routes (ShellRoute) 
-          // make isCurrent return false even when visible, which was blocking the API call!
           if (mounted) {
             projectController.getAllDocuments(widget.projectId);
           }
-          
         });
       }
     } else {
@@ -87,9 +76,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
     _pollingTimer = null;
   }
 
-  // ==========================================
-  // 🌟 STATUS BADGE UI
-  // ==========================================
   Widget _buildStatusBadge(String status, ThemeData theme) {
     Color bgColor;
     Color textColor;
@@ -144,10 +130,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
       ),
     );
   }
-
-  // ==========================================
-  // NORMAL DATA & UI LOGIC
-  // ==========================================
 
   List<ProjectDocument> _getFilteredDocuments() {
     return projectController.documents.where((p) {
@@ -227,7 +209,6 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
           ));
 
     if (didUpload == true && mounted) {
-      // 🚀 Just fetch the documents! When the API returns, the listener handles the rest.
       projectController.getAllDocuments(widget.projectId);
     }
   }
@@ -264,6 +245,26 @@ class _ProjectDocumentsState extends State<ProjectDocuments> with WidgetsBinding
                             isLoading: projectController.isDocumentsLoading,
                             data: displayData,
                             showCheckboxes: false,
+                            // 🚀 ADDED ROW TAP TO OPEN THE PDF VIEWER
+                            onRowTap: (doc) {
+                              if (doc.status.toLowerCase() == 'completed') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => DocumentPdfViewerScreen(
+                                      documentId: doc.id,
+                                      documentName: doc.documentName,
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                ToastService.show(
+                                  context, 
+                                  message: "Document is still processing.", 
+                                  type: ToastType.warning
+                                );
+                              }
+                            },
                             columns: [
                               TableColumn(
                                 title: 'Sr No.',

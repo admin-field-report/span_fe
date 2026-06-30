@@ -53,6 +53,7 @@ dependencies:
   markdown: ^7.3.1
   image_picker: ^1.2.2
   url_launcher: ^6.3.2
+  syncfusion_flutter_pdfviewer: ^33.2.13
 
 dev_dependencies:
   flutter_test:
