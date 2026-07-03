@@ -359,7 +359,7 @@ class _CreateInspectionPanelState extends State<CreateInspectionPanel> with Widg
                                     variant: ButtonVariant.filled,
                                     icon: Icons.add,
                                     // 🚀 DISABLED IF EMPTY, PROCESSING, OR NOTHING SELECTED
-                                    onPressed: (_documents.isEmpty || _isAnyDocumentProcessing || _selectedDocumentIds.isEmpty) 
+                                    onPressed: (_documents.isEmpty || _selectedDocumentIds.isEmpty) 
                                         ? null 
                                         : () => _createNewInspection(),
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
