@@ -555,7 +555,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text("Tag Groups", style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                IconButton(icon: const Icon(Icons.add_circle_outline), color: theme.colorScheme.primary, onPressed: _showCreateGroupDialog)
+                Button(
+                  label: "Create",
+                  variant: ButtonVariant.filled,
+                  icon: Icons.create_new_folder_outlined,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  onPressed: _showCreateGroupDialog,
+                ),
               ],
             ),
           ),

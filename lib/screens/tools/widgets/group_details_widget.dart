@@ -144,7 +144,7 @@ class _GroupDetailsWidgetState extends State<GroupDetailsWidget> {
       children: [
         Button(
           label: "Manage Tools",
-          variant: ButtonVariant.outline,
+          variant: ButtonVariant.filled,
           icon: Icons.settings,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           onPressed: () {

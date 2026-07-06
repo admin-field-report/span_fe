@@ -177,7 +177,7 @@ class _ToolsManagerScreenState extends State<ToolsManagerScreen> {
                       Text("Tools Management", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                       Button(
                         label: "Create Tool",
-                        variant: ButtonVariant.outline,
+                        variant: ButtonVariant.filled,
                         icon: Icons.add,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         isLoading: _toolController.isGroupsLoading || _tagController.isGroupsLoading,
