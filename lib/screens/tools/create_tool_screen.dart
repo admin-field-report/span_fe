@@ -1,5 +1,4 @@
 import 'package:field_report_fe/services/toast_service.dart';
-import 'package:field_report_fe/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../widgets/button/button.dart';
@@ -25,7 +24,7 @@ class CreateToolScreen extends StatefulWidget {
   final List<ToolGroup> availableGroups;
   final List<AppTagGroup> availableTagGroups;
   final bool isTagGroupsLoading;
-  final bool isToolGroupsLoading; // 🚀 ADDED: Loading state for tool groups
+  final bool isToolGroupsLoading; 
   final String? initialGroupId;
 
   const CreateToolScreen({
@@ -33,7 +32,7 @@ class CreateToolScreen extends StatefulWidget {
     required this.availableGroups,
     required this.availableTagGroups,
     this.isTagGroupsLoading = false,
-    this.isToolGroupsLoading = false, // Default to false
+    this.isToolGroupsLoading = false, 
     this.initialGroupId,
   });
 
@@ -52,23 +51,22 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
   String? _selectedGroupId;
   final Set<String> _selectedTagIds = {};
 
+  int _currentStep = 0;
+
   @override
   void initState() {
     super.initState();
     _checkAndSetInitialGroup();
   }
 
-  // 🚀 FIX: This acts as the "Listener". It fires whenever the parent passes new data.
   @override
   void didUpdateWidget(CreateToolScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // If the available groups list changed (e.g., API finished loading), check again
     if (widget.availableGroups != oldWidget.availableGroups && _selectedGroupId == null) {
       _checkAndSetInitialGroup();
     }
   }
 
-  // Helper method to set the group safely
   void _checkAndSetInitialGroup() {
     if (widget.initialGroupId != null && widget.availableGroups.any((g) => g.id == widget.initialGroupId)) {
       setState(() {
@@ -124,30 +122,9 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            bool isMobile = AppResponsive.isMobileScreen(context);
-            Widget formFields = _buildFormFields(theme);
-            Widget stickyFooter = _buildStickyFooter(theme);
+            bool isDesktop = constraints.maxWidth >= 1024;
 
-            if (isMobile) {
-              return Column(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(10.0, 10.0, 10.0, 10.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildCanvasSection(theme, isExpanded: false),
-                          const SizedBox(height: 32),
-                          formFields,
-                        ],
-                      ),
-                    ),
-                  ),
-                  stickyFooter,
-                ],
-              );
-            } else {
+            if (isDesktop) {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -155,7 +132,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                     flex: 4,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(0, 15.0, 0, 0),
-                      child: _buildCanvasSection(theme, isExpanded: true),
+                      child: _buildCanvasSection(theme, isExpanded: true, isDesktop: true),
                     ),
                   ),
                   Container(width: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
@@ -166,13 +143,42 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
                         Expanded(
                           child: SingleChildScrollView(
                             padding: const EdgeInsets.all(15.0),
-                            child: formFields,
+                            child: _buildFormFields(theme, isDesktop: true),
                           ),
                         ),
-                        stickyFooter,
+                        _buildStickyFooter(theme, isDesktop: true),
                       ],
                     ),
                   ),
+                ],
+              );
+            } else {
+              return Column(
+                children: [
+                  Expanded(
+                    child: Stepper(
+                      type: StepperType.horizontal,
+                      currentStep: _currentStep,
+                      elevation: 0,
+                      controlsBuilder: (context, details) => const SizedBox.shrink(),
+                      steps: [
+                        Step(
+                          title: const Text("Canvas"),
+                          isActive: _currentStep >= 0,
+                          state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+                          // 🚀 PASSED CONSTRAINTS DOWN: This allows the canvas to calculate the exact remaining height
+                          content: _buildCanvasSection(theme, isExpanded: false, isDesktop: false, availableHeight: constraints.maxHeight),
+                        ),
+                        Step(
+                          title: const Text("Details"),
+                          isActive: _currentStep >= 1,
+                          state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+                          content: _buildFormFields(theme, isDesktop: false),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildStickyFooter(theme, isDesktop: false),
                 ],
               );
             }
@@ -182,15 +188,24 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  Widget _buildCanvasSection(ThemeData theme, {required bool isExpanded}) {
+  // 🚀 Added `availableHeight` to dynamically stretch the canvas to the footer
+  Widget _buildCanvasSection(ThemeData theme, {required bool isExpanded, required bool isDesktop, double? availableHeight}) {
+    
+    double? canvasHeight;
+    if (!isExpanded && availableHeight != null) {
+      canvasHeight = (availableHeight - 230).clamp(300.0, double.infinity);
+    }
+  
     Widget canvasContainer = Container(
       width: double.infinity, 
-      height: isExpanded ? null : 500, 
+      height: isExpanded ? null : canvasHeight, 
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(),
       child: Canvas(
         key: _canvasKey,
         leftActions: const [], rightActions: const [],
+        height: canvasHeight ?? 1056,
+        width: 816,
       ),
     );
 
@@ -201,32 +216,49 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const SizedBox(width: 10),
-            const Text("1. Draw Tool", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-              child: const Text("Required", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
-            )
-          ],
-        ),
-        const SizedBox(height: 12),
+        if (isDesktop) ...[
+          Row(
+            children: [
+              const SizedBox(width: 10),
+              const Text("1. Draw Tool", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                child: const Text("Required", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+          const SizedBox(height: 12),
+        ] else ...[
+           Row(
+            children: [
+              const Text("Draw Tool", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                child: const Text("Required", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
         canvasContainer, 
       ],
     );
   }
 
-  Widget _buildFormFields(ThemeData theme) {
+  Widget _buildFormFields(ThemeData theme, {required bool isDesktop}) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("2. Tool Details", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
+          if (isDesktop) ...[
+            const Text("2. Tool Details", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+          ],
           
           const Text("Tool Name *", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -241,7 +273,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
           const Text("Tool Group *", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           
-          // 🚀 SHOW LOADER OR SELECT DROPDOWN FOR TOOL GROUPS
           if (widget.isToolGroupsLoading)
             Container(
               height: 48,
@@ -275,7 +306,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
             
           const SizedBox(height: 32),
 
-          const Text("3. Tags (Optional)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          Text(isDesktop ? "3. Tags (Optional)" : "Tags (Optional)", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
 
           if (widget.isTagGroupsLoading)
@@ -399,7 +430,7 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 
-  Widget _buildStickyFooter(ThemeData theme) {
+  Widget _buildStickyFooter(ThemeData theme, {required bool isDesktop}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -414,19 +445,38 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
         child: Row(
           children: [
             Button(
-              label: "Cancel",
+              label: (!isDesktop && _currentStep == 1) ? "Back" : "Cancel",
               variant: ButtonVariant.outline,
-              onPressed: _isLoading ? null : () => Navigator.pop(context), 
+              onPressed: _isLoading ? null : () {
+                if (!isDesktop && _currentStep == 1) {
+                  setState(() => _currentStep = 0);
+                } else {
+                  Navigator.pop(context);
+                }
+              }, 
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Button(
-                label: _isLoading ? "Saving..." : "Save Tool", 
+                label: (!isDesktop && _currentStep == 0) 
+                    ? "Continue" 
+                    : (_isLoading ? "Saving..." : "Save Tool"), 
                 variant: ButtonVariant.filled,
-                icon: Icons.check,
+                icon: (!isDesktop && _currentStep == 0) ? null : Icons.check,
                 isLoading: _isLoading, 
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 24),
-                onPressed: _isLoading ? null : _saveTool, 
+                onPressed: _isLoading ? null : () {
+                  if (!isDesktop && _currentStep == 0) {
+                    final canvasState = _canvasKey.currentState;
+                    if (canvasState == null || canvasState.objects.isEmpty) {
+                      ToastService.show(context, message: "Please draw a tool on the canvas before continuing.", type: ToastType.error);
+                      return;
+                    }
+                    setState(() => _currentStep = 1);
+                  } else {
+                    _saveTool();
+                  }
+                }, 
               ),
             ),
           ],
@@ -435,8 +485,6 @@ class _CreateToolScreenState extends State<CreateToolScreen> {
     );
   }
 }
-
-
 
 class CreateToolGroupPanel extends StatefulWidget {
   final List<ToolGroup> existingGroups;
