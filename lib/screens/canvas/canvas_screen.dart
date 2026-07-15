@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
@@ -15,6 +16,11 @@ import '../../../widgets/confirmation/confirmation_remove.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
+import '../../widgets/breadcrumb/breadcrumb.dart';
+
+import '../projects/controllers/project_controller.dart';
+import '../projects/controllers/inspection_controller.dart';
+
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
@@ -1092,7 +1098,7 @@ class _CanvasScreenState extends State<CanvasScreen> {
     }
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -1103,152 +1109,226 @@ class _CanvasScreenState extends State<CanvasScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: Stack(
-        children: [
-          custom_canvas.Canvas(
-            key: _getCurrentCanvasKey(),
-            initialBackgroundImage: activePageData?.backgroundImageBytes,
-            initialObjects: activePageData?.objects ?? [],
-
-            width: activePageData?.width ?? 816.0,
-            height: activePageData?.height ?? 1056.0,
-
-            onToolChanged: (toolName) {
-              if (toolName != 'CustomTool' && _selectedCustomTool != null) {
-                setState(() => _selectedCustomTool = null);
-              }
-            },
-            customTabLabel: "Custom Tools",
-            customTabContent: CustomToolsPanel(
-              groups: _customToolGroups,
-              isLoading: _isLoadingCustomTools,
-              selectedTool: _selectedCustomTool,
-              onToolSelected: (tool) {
-                setState(() {
-                  if (_selectedCustomTool?.toolId == tool.toolId) {
-                    _selectedCustomTool = null;
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      'Select', 2.0, Colors.black, Colors.transparent, 1.0,
-                    );
-                  } else {
-                    _selectedCustomTool = tool;
-
-                    if (tool.toolObjects.length == 1) {
-                      final obj = tool.toolObjects.first;
-                      final nativeToolName = _getToolNameFromType(obj.type);
-                      
-                      _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                        nativeToolName, 
-                        obj.strokeWidth, 
-                        obj.color, 
-                        obj.fillColor ?? Colors.transparent, 
-                        obj.opacity,
-                      );
-                    } else {
-                      _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                        'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                        customToolId: tool.toolId,
-                        customToolShapes: tool.toolObjects, 
-                      );
-                    }
-                  }
-                });
-              },
-              onClose: () {
-                setState(() => _selectedCustomTool = null);
-                _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-              },
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            
+            // 🚀 BREADCRUMB HEADER INJECTED HERE
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: _buildHeader(context, theme), 
             ),
 
-            customRightPanel: PropertiesPanel(
-              activeObject: _selectedCanvasObject, 
-              availableTags: _availableTagGroups,
-              isLoadingTags: _isLoadingTags,
-              inspectionDescription: _inspectionDescription,
-              inspectionTagIds: _inspectionTagIds,
-              inspectionImageUrls: _inspectionImages,
-              
-              isInspectionLevel: !isImageOpen, 
-              allowImageUpload: !isImageOpen,
-              showImageSection: !isImageOpen,
+            // 🚀 YOUR ORIGINAL STACK & CANVAS (COMPLETELY UNTOUCHED)
+            Expanded(
+              child: Stack(
+                children: [
+                  custom_canvas.Canvas(
+                    key: _getCurrentCanvasKey(),
+                    initialBackgroundImage: activePageData?.backgroundImageBytes,
+                    initialObjects: activePageData?.objects ?? [],
 
-              onInspectionDescriptionChanged: (val) {
-                setState(() => _inspectionDescription = val);
-                _hasUnsavedChanges = true;
-              },
-              onInspectionTagsChanged: (val) {
-                setState(() => _inspectionTagIds = val);
-                _hasUnsavedChanges = true;
-              },
+                    width: activePageData?.width ?? 816.0,
+                    height: activePageData?.height ?? 1056.0,
 
-              onUpdate: () {
-                _hasUnsavedChanges = true;
-                _getCurrentCanvasKey().currentState?.refreshCanvas();
-              },
-              
-              onImageUpload: (fileName, bytes) async {
-                await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
-              },
-              
-              onImageDelete: (s3Key) async {
-                if (_selectedCanvasObject != null) {
-                  await _deleteImageForObject(s3Key);
+                    onToolChanged: (toolName) {
+                      if (toolName != 'CustomTool' && _selectedCustomTool != null) {
+                        setState(() => _selectedCustomTool = null);
+                      }
+                    },
+                    customTabLabel: "Custom Tools",
+                    customTabContent: CustomToolsPanel(
+                      groups: _customToolGroups,
+                      isLoading: _isLoadingCustomTools,
+                      selectedTool: _selectedCustomTool,
+                      onToolSelected: (tool) {
+                        setState(() {
+                          if (_selectedCustomTool?.toolId == tool.toolId) {
+                            _selectedCustomTool = null;
+                            _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                              'Select', 2.0, Colors.black, Colors.transparent, 1.0,
+                            );
+                          } else {
+                            _selectedCustomTool = tool;
+
+                            if (tool.toolObjects.length == 1) {
+                              final obj = tool.toolObjects.first;
+                              final nativeToolName = _getToolNameFromType(obj.type);
+                              
+                              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                                nativeToolName, 
+                                obj.strokeWidth, 
+                                obj.color, 
+                                obj.fillColor ?? Colors.transparent, 
+                                obj.opacity,
+                              );
+                            } else {
+                              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+                                'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+                                customToolId: tool.toolId,
+                                customToolShapes: tool.toolObjects, 
+                              );
+                            }
+                          }
+                        });
+                      },
+                      onClose: () {
+                        setState(() => _selectedCustomTool = null);
+                        _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
+                      },
+                    ),
+
+                    customRightPanel: PropertiesPanel(
+                      activeObject: _selectedCanvasObject, 
+                      availableTags: _availableTagGroups,
+                      isLoadingTags: _isLoadingTags,
+                      inspectionDescription: _inspectionDescription,
+                      inspectionTagIds: _inspectionTagIds,
+                      inspectionImageUrls: _inspectionImages,
+                      
+                      isInspectionLevel: !isImageOpen, 
+                      allowImageUpload: !isImageOpen,
+                      showImageSection: !isImageOpen,
+
+                      onInspectionDescriptionChanged: (val) {
+                        setState(() => _inspectionDescription = val);
+                        _hasUnsavedChanges = true;
+                      },
+                      onInspectionTagsChanged: (val) {
+                        setState(() => _inspectionTagIds = val);
+                        _hasUnsavedChanges = true;
+                      },
+
+                      onUpdate: () {
+                        _hasUnsavedChanges = true;
+                        _getCurrentCanvasKey().currentState?.refreshCanvas();
+                      },
+                      
+                      onImageUpload: (fileName, bytes) async {
+                        await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
+                      },
+                      
+                      onImageDelete: (s3Key) async {
+                        if (_selectedCanvasObject != null) {
+                          await _deleteImageForObject(s3Key);
+                        } else {
+                          setState(() {
+                            _inspectionImages.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
+                            _rawDocumentData['image_list'] = List.from(_inspectionImages);
+                            _hasUnsavedImageChanges = true;
+                            _hasUnsavedChanges = true;
+                          }); 
+                        }
+                      },
+                      
+                      onImageTap: _handleImageTap,
+                      onClose: () {
+                        setState(() => _selectedCanvasObject = null);
+                        _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
+                      },
+                    ),
+
+                    showCloseButton: _overlayImageKey == null,
+                    onClosePressed: _handleClose,
+                    leftActions: [],
+                    rightActions: _overlayImageKey != null 
+                        ? [
+                            Button(
+                              label: "Discard", 
+                              variant: ButtonVariant.outline, 
+                              onPressed: _discardImageAnnotations
+                            ),
+                            const SizedBox(width: 8),
+                            Button(
+                              label: "Done", 
+                              onPressed: _saveImageAnnotationsToMemory
+                            ),
+                          ] 
+                        : [
+                            _buildPageSelector(theme),
+                            const SizedBox(width: 12),
+                            CanvasToolbarActionButton(
+                              tooltip: "Save Annotations",
+                              icon: Icons.save_outlined,
+                              onTap: _saveAnnotations,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+
+                    onSelectionChanged: (selectedObject) {
+                      setState(() {
+                        _selectedCanvasObject = selectedObject;
+                        if (selectedObject != null) _hasUnsavedChanges = true;
+                      });
+                    },
+                  ),
+                  
+                  if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
+                    _buildLoadingOverlay(theme),
+                ],
+              ),
+            ),
+          ],
+        ),
+      )
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, ThemeData theme) {
+    final projectName = projectController.currentProject?.name ?? "Project Details";
+    final projectId = projectController.currentProject?.id ?? "";
+
+    String inspectionLabel = "Inspection details";
+    final activeInspection = inspectionController.currentInspection;
+    
+    if (activeInspection != null) {
+      final rawDate = activeInspection.createTime; 
+      final parsedDate = rawDate is DateTime ? rawDate : DateTime.tryParse(rawDate.toString());
+      if (parsedDate != null) {
+        inspectionLabel = "Inspection - ${DateFormat('dd MMM yyyy').format(parsedDate)}";
+      }
+    }
+
+    String documentName = "Document Viewer";
+    try {
+      final doc = inspectionController.documents.firstWhere(
+        (d) => d['id'].toString() == widget.documentId 
+      );
+      documentName = doc['document_name'] ?? "Document Viewer";
+    } catch (_) {}
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppBreadcrumbs(
+          items: [
+            BreadcrumbItem(
+              label: "Projects",
+              onTap: () => context.go('/projects'),
+            ),
+            BreadcrumbItem(
+              label: projectName,
+              onTap: () {
+                if (projectId.isNotEmpty) {
+                  context.go('/projects/details/$projectId/inspections');
                 } else {
-                  setState(() {
-                    _inspectionImages.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
-                    _rawDocumentData['image_list'] = List.from(_inspectionImages);
-                    _hasUnsavedImageChanges = true;
-                    _hasUnsavedChanges = true;
-                  }); 
+                  Navigator.of(context).pop();
                 }
               },
-              
-              onImageTap: _handleImageTap,
-              onClose: () {
-                setState(() => _selectedCanvasObject = null);
-                _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-              },
             ),
-
-            showCloseButton: _overlayImageKey == null,
-            onClosePressed: _handleClose,
-            leftActions: [],
-            rightActions: _overlayImageKey != null 
-                ? [
-                    Button(
-                      label: "Discard", 
-                      variant: ButtonVariant.outline, 
-                      onPressed: _discardImageAnnotations
-                    ),
-                    const SizedBox(width: 8),
-                    Button(
-                      label: "Done", 
-                      onPressed: _saveImageAnnotationsToMemory
-                    ),
-                  ] 
-                : [
-                    _buildPageSelector(theme),
-                    const SizedBox(width: 12),
-                    CanvasToolbarActionButton(
-                      tooltip: "Save Annotations",
-                      icon: Icons.save_outlined,
-                      onTap: _saveAnnotations,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-
-            onSelectionChanged: (selectedObject) {
-              setState(() {
-                _selectedCanvasObject = selectedObject;
-                if (selectedObject != null) _hasUnsavedChanges = true;
-              });
-            },
-          ),
-          
-          if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
-            _buildLoadingOverlay(theme),
-        ],
-      )
+            BreadcrumbItem(
+              label: inspectionLabel,
+              onTap: () => Navigator.of(context).pop(), 
+            ),
+            BreadcrumbItem(
+              label: documentName,
+            ),
+          ],
+        ),
+        // Note: I removed the back arrow and title text from this header
+        // since your original Canvas handles close actions internally via `onClosePressed`
+      ],
     );
   }
 }

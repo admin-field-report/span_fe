@@ -20,53 +20,58 @@ class AppBreadcrumbs extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: items.asMap().entries.map((entry) {
-        final index = entry.key;
-        final item = entry.value;
-        final isLast = index == items.length - 1;
+    // 🚀 THE FIX: Wrap the Row in a SingleChildScrollView so long trails don't crash the app
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(), // Gives a nice native bounce effect
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: items.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          final isLast = index == items.length - 1;
 
-        return Row(
-          children: [
-            MouseRegion(
-              cursor: item.onTap != null && !isLast 
-                  ? SystemMouseCursors.click 
-                  : SystemMouseCursors.basic,
-              child: InkWell(
-                onTap: isLast ? null : item.onTap,
-                borderRadius: BorderRadius.circular(4),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Text(
-                    item.label,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: isLast 
-                          ? colorScheme.onSurface 
-                          : colorScheme.onSurfaceVariant.withOpacity(0.7),
-                      fontWeight: isLast ? FontWeight.w600 : FontWeight.normal,
+          return Row(
+            children: [
+              MouseRegion(
+                cursor: item.onTap != null && !isLast 
+                    ? SystemMouseCursors.click 
+                    : SystemMouseCursors.basic,
+                child: InkWell(
+                  onTap: isLast ? null : item.onTap,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text(
+                      item.label,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: isLast 
+                            ? colorScheme.onSurface 
+                            : colorScheme.onSurfaceVariant.withOpacity(0.7),
+                        fontWeight: isLast ? FontWeight.w600 : FontWeight.normal,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            
-            // The Dot Separator from your reference
-            if (!isLast)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Container(
-                  width: 3,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+              
+              // The Dot Separator
+              if (!isLast)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Container(
+                    width: 3,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    ),
                   ),
                 ),
-              ),
-          ],
-        );
-      }).toList(),
+            ],
+          );
+        }).toList(),
+      ),
     );
   }
 }
