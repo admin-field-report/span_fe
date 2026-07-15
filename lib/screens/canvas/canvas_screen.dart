@@ -1,33 +1,27 @@
 import 'dart:convert';
-import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/api_service.dart';
-import '../../services/toast_service.dart';
-
-import '../../../widgets/canvas/canvas.dart' as custom_canvas;
-import '../../../widgets/canvas/models/canvas_models.dart';
-import '../../../widgets/button/button.dart';
-import '../../../widgets/confirmation/confirmation_remove.dart';
-import 'widgets/properties_panel.dart';
-import 'widgets/custom_tools_panel.dart';
-import 'widgets/custom_action_button.dart';
+import '../../core/storage_service.dart';
+import '../../utils/app_responsive.dart';
 import '../../widgets/breadcrumb/breadcrumb.dart';
-
+import '../../widgets/confirmation/confirmation_remove.dart';
 import '../projects/controllers/project_controller.dart';
 import '../projects/controllers/inspection_controller.dart';
 
+import 'canvas_document_pane.dart';
+import 'models/canvas_tab.dart';
+import 'web/before_unload_guard.dart';
+import 'widgets/canvas_tab_strip.dart';
 
 class CanvasScreen extends StatefulWidget {
   final String documentId;
   final String projectId;
   final String inspectionId;
   final String page;
-  final String? annotateImageKey; 
+  final String? annotateImageKey;
 
   const CanvasScreen({
     super.key,
@@ -43,1029 +37,183 @@ class CanvasScreen extends StatefulWidget {
 }
 
 class _CanvasScreenState extends State<CanvasScreen> {
-  final ApiService _apiService = ApiService();
-  final Map<String, GlobalKey<custom_canvas.CanvasState>> _canvasKeys = {};
+  late List<CanvasTab> _tabs;
+  late String _activeDocumentId;
+  final Map<String, GlobalKey<CanvasDocumentPaneState>> _paneKeys = {};
+  final BeforeUnloadGuard _beforeUnloadGuard = BeforeUnloadGuard();
 
-  bool _isInitializing = true; 
-  bool _isPageLoading = false;
-  bool _isLoadingAnnotations = false; 
-  bool _isUploadingImage = false;
-  bool _isSaving = false;
-  bool _isFirstLoadComplete = false; 
+  String get _storageKey => 'canvas_tabs_${widget.inspectionId}';
 
-  bool _hasUnsavedChanges = false;
-  bool _hasUnsavedImageChanges = false;
-
-  DrawingObject? _selectedCanvasObject;
-  List<CustomToolGroup> _customToolGroups = [];
-  bool _isLoadingCustomTools = true;
-  CustomTool? _selectedCustomTool;
-
-  Map<String, dynamic> _rawDocumentData = {}; 
-
-  List<String> _pages = [];
-  String _currentPage = ''; 
-  Map<String, PageData> _pageDataMap = {};
-  List<TagGroup> _availableTagGroups = [];
-  bool _isLoadingTags = false;
-
-  String _inspectionDescription = "";
-  List<String> _inspectionTagIds = [];
-  List<dynamic> _inspectionImages = [];
-
-  String? _overlayImageKey;
-  bool _isOverlayInspection = false;
-  DrawingObject? _overlayParentObject;
-  
-  Uint8List? _pendingUploadBytes;
-  String? _pendingUploadFileName;
-  
-  Map<String, String>? _uploadedImageMetadata;
+  bool get _hasAnyUnsavedChanges =>
+      _paneKeys.values.any((key) => key.currentState?.hasUnsavedChanges ?? false);
 
   @override
   void initState() {
     super.initState();
-    _initializeCanvas();
-  }
+    _restoreOrSeedTabs();
+    if (_tabs.isNotEmpty) _persistSession();
 
-  GlobalKey<custom_canvas.CanvasState> _getCurrentCanvasKey() {
-    String activeKey = _overlayImageKey != null ? 'IMG_$_overlayImageKey' : _currentPage;
-    if (activeKey.isEmpty) return GlobalKey<custom_canvas.CanvasState>();
-    
-    _canvasKeys.putIfAbsent(activeKey, () => GlobalKey<custom_canvas.CanvasState>());
-    return _canvasKeys[activeKey]!;
-  }
-
-  void _syncCurrentPageObjects() {
-    String activeKey = _overlayImageKey != null ? 'IMG_$_overlayImageKey' : _currentPage;
-    if (activeKey.isEmpty) return;
-    
-    final key = _getCurrentCanvasKey();
-    if (key.currentState != null && _pageDataMap.containsKey(activeKey)) {
-      _pageDataMap[activeKey]!.objects = key.currentState!.objects;
-    }
-  }
-
-  void _switchPage(String newPage) async {
-    if (_overlayImageKey != null || widget.annotateImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
-      return; 
-    }
-
-    _syncCurrentPageObjects(); 
-    setState(() {
-      _isPageLoading = true;
-      _currentPage = newPage;
-      _selectedCanvasObject = null;
+    inspectionController.fetchInspectionDetails(widget.inspectionId).then((_) {
+      if (mounted) _pruneStaleTabs();
     });
-    
-    await _fetchPageImage(newPage);
-    
-    if (mounted) {
-      setState(() => _isPageLoading = false);
-    }
-  }
-
-  Future<ui.Image> _decodeBase64Image(String base64Str) async {
-    String cleanBase64 = base64Str.contains(',') ? base64Str.split(',').last : base64Str;
-    final Uint8List bytes = base64Decode(cleanBase64);
-    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    return frame.image;
-  }
-
-  Future<ui.Image> _decodeBytesToImage(Uint8List bytes) async {
-    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
-    final ui.FrameInfo frame = await codec.getNextFrame();
-    return frame.image;
-  }
-
-  // ==========================================
-  // 🌟 IN-MEMORY IMAGE ANNOTATION LOGIC
-  // ==========================================
-
-  Future<void> _handleImageTap(String s3Key) async {
-    if (_overlayImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
-      return;
+    if (widget.projectId.isNotEmpty) {
+      projectController.fetchProjectDetails(widget.projectId);
     }
 
-    _syncCurrentPageObjects();
-
-    bool isInspection = _selectedCanvasObject == null;
-    Map<String, dynamic>? imgData;
-
-    if (isInspection) {
-      imgData = _inspectionImages.firstWhere(
-        (img) => img['image_url'] == s3Key || img['key'] == s3Key, 
-        orElse: () => null
-      );
-    } else {
-      imgData = _selectedCanvasObject!.imageUrls?.firstWhere(
-        (img) => img['image_url'] == s3Key || img['key'] == s3Key, 
-        orElse: () => null
-      );
-    }
-
-    if (imgData == null || imgData['preview_image'] == null || imgData['preview_image'].isEmpty) {
-      ToastService.show(context, message: "Image preview not available.", type: ToastType.error);
-      return;
-    }
-
-    setState(() => _isPageLoading = true);
-
-    try {
-      String base64Preview = imgData['preview_image'];
-      String cleanBase64 = base64Preview.contains(',') ? base64Preview.split(',').last : base64Preview;
-      
-      final ui.Image decodedImage = await _decodeBase64Image(cleanBase64);
-      final pageId = 'IMG_$s3Key';
-
-      final pageData = PageData(
-        pageId: pageId,
-        backgroundImageBytes: base64Decode(cleanBase64),
-        width: decodedImage.width.toDouble(),
-        height: decodedImage.height.toDouble(),
-      );
-
-      if (imgData['annotation_list'] != null) {
-        pageData.objects = _parseAnnotationsList(imgData['annotation_list'], pageData.width, pageData.height);
-      }
-
-      setState(() {
-        _pageDataMap[pageId] = pageData;
-        _overlayImageKey = s3Key;
-        _isOverlayInspection = isInspection;
-        _overlayParentObject = _selectedCanvasObject;
-        _selectedCanvasObject = null; 
-        _isPageLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isPageLoading = false);
-      ToastService.show(context, message: "Failed to load image preview.", type: ToastType.error);
-    }
+    // 🚀 Warn on browser refresh/close/back if any tab has unsaved work. No-op
+    // outside web. Browsers don't allow a custom-styled dialog here — this
+    // triggers the browser's own generic "leave site?" confirmation, not ours.
+    _beforeUnloadGuard.install(() => _hasAnyUnsavedChanges);
   }
 
-  Future<void> _setupLocalImageOverlay(String fileName, Uint8List bytes, bool isInspection) async {
-    _syncCurrentPageObjects();
-
-    setState(() => _isUploadingImage = true); 
-    
-    try {
-      final uploadedData = await _executeDirectS3Upload(fileName, bytes, isInspection);
-      final ui.Image decodedImage = await _decodeBytesToImage(bytes);
-      final pageId = 'IMG_LOCAL_PENDING';
-
-      final pageData = PageData(
-        pageId: pageId,
-        backgroundImageBytes: bytes,
-        width: decodedImage.width.toDouble(),
-        height: decodedImage.height.toDouble(),
-      );
-
-      setState(() {
-        _pageDataMap[pageId] = pageData;
-        _overlayImageKey = 'LOCAL_PENDING';
-        _isOverlayInspection = isInspection;
-        _overlayParentObject = _selectedCanvasObject;
-        _selectedCanvasObject = null; 
-        
-        _pendingUploadBytes = bytes;
-        _pendingUploadFileName = fileName;
-        _uploadedImageMetadata = uploadedData; 
-        
-        _isUploadingImage = false;
-      });
-    } catch (e) {
-      setState(() => _isUploadingImage = false);
-      ToastService.show(context, message: "Failed to process image.", type: ToastType.error);
-    }
+  @override
+  void dispose() {
+    _beforeUnloadGuard.dispose();
+    super.dispose();
   }
 
-  // 🚀 BUG FIXED: Removed the destructive _canvasKeys.remove(_currentPage) so document stays exactly as you left it!
-  void _closeOverlay() {
-    _pageDataMap.remove('IMG_$_overlayImageKey');
-    _overlayImageKey = null;
-    _selectedCanvasObject = _overlayParentObject; 
-    _overlayParentObject = null;
-    _pendingUploadBytes = null;
-    _pendingUploadFileName = null;
-    _uploadedImageMetadata = null;
-  }
+  // 🚀 Restores this inspection's open tabs from localStorage (survives a browser
+  // refresh) instead of relying on the URL, which only ever encodes one document.
+  void _restoreOrSeedTabs() {
+    List<CanvasTab> restoredTabs = [];
+    String? restoredActive;
 
-  void _discardImageAnnotations() {
-    setState(() {
-      _closeOverlay();
-    });
-  }
-
-  Future<void> _saveImageAnnotationsToMemory() async {
-    _syncCurrentPageObjects();
-
-    if (_overlayImageKey != 'LOCAL_PENDING') {
-      final pageData = _pageDataMap['IMG_$_overlayImageKey'];
-      if (pageData != null) {
-        final serialized = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-        setState(() {
-          if (_isOverlayInspection) {
-            final imgIndex = _inspectionImages.indexWhere((img) => img['image_url'] == _overlayImageKey || img['key'] == _overlayImageKey);
-            if (imgIndex != -1) _inspectionImages[imgIndex]['annotation_list'] = serialized;
-          } else if (_overlayParentObject != null && _overlayParentObject!.imageUrls != null) {
-            final imgIndex = _overlayParentObject!.imageUrls!.indexWhere((img) => img['image_url'] == _overlayImageKey || img['key'] == _overlayImageKey);
-            if (imgIndex != -1) _overlayParentObject!.imageUrls![imgIndex]['annotation_list'] = serialized;
-          }
-          _hasUnsavedChanges = true;
-          _closeOverlay();
-        });
-        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success);
-      }
-      return;
-    }
-
-    if (_uploadedImageMetadata == null || _pendingUploadFileName == null) return;
-
-    final pageData = _pageDataMap['IMG_LOCAL_PENDING'];
-    List<Map<String, dynamic>> annotations = [];
-    if (pageData != null) {
-      annotations = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-    }
-
-    setState(() {
-      if (_isOverlayInspection) {
-        _inspectionImages.add({
-          "image_id": _uploadedImageMetadata!['imageId'],
-          "image_url": _uploadedImageMetadata!['s3Key'],
-          "preview_image": _uploadedImageMetadata!['previewBase64'],
-          "image_name": _pendingUploadFileName,
-          "sort_order": _inspectionImages.length + 1,
-          "annotation_list": annotations
-        });
-        _rawDocumentData['image_list'] = List.from(_inspectionImages);
-      } else {
-        _overlayParentObject!.imageUrls ??= [];
-        _overlayParentObject!.imageUrls!.add({
-          "image_id": _uploadedImageMetadata!['imageId'],
-          "image_url": _uploadedImageMetadata!['s3Key'],
-          "preview_image": _uploadedImageMetadata!['previewBase64'],
-          "image_name": _pendingUploadFileName,
-          "sort_order": _overlayParentObject!.imageUrls!.length + 1,
-          "annotation_list": annotations
-        });
-      }
-      
-      _hasUnsavedChanges = true;
-      _hasUnsavedImageChanges = true; 
-      _closeOverlay();
-    });
-    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
-  }
-
-  Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes, bool isInspection) async {
-    final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? "";
-
-    final Map<String, String> queryParams = {
-      "fileName": fileName, 
-      "project_id": widget.projectId, 
-      "inspection_id": widget.inspectionId,
-      "project_document_id": widget.documentId,
-    };
-
-    if (!isInspection && currentPageId.isNotEmpty) {
-      queryParams["page_id"] = currentPageId; 
-    }
-
-    final queryString = Uri(queryParameters: queryParams).query;
-    final response = await _apiService.get('/image/presigned-url?$queryString');
-    final responseData = jsonDecode(response.body);
-    
-    if (responseData['signedUrl'] != null && responseData['key'] != null) {
-      final String signedUrl = responseData['signedUrl'];
-      final String s3Key = responseData['key'];
-      final String imageId = responseData['id'] ?? ""; 
-      
-      final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
-      
-      if (uploadResponse.statusCode == 200) {
-        final encodedKey = Uri.encodeComponent(s3Key);
-        String previewBase64 = "";
-        bool isPreviewReady = false;
-        int attempts = 0;
-        const int maxAttempts = 10; 
-
-        while (!isPreviewReady && attempts < maxAttempts) {
-          attempts++;
-          final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
-          if (previewResponse.statusCode == 200) {
-            final previewData = jsonDecode(previewResponse.body);
-            if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
-              previewBase64 = previewData['data']['compressed_base64']; 
-              isPreviewReady = true;
-            } else throw Exception("Missing base64 data");
-          } else if (previewResponse.statusCode == 404) {
-            if (attempts < maxAttempts) await Future.delayed(const Duration(seconds: 2));
-          } else throw Exception("API returned error: ${previewResponse.statusCode}");
-        }
-
-        if (!isPreviewReady) throw Exception("Image compression timeout");
-
-        return {
-          "imageId": imageId,
-          "s3Key": s3Key,
-          "previewBase64": previewBase64
-        };
-      } else {
-         throw Exception("Upload failed with status: ${uploadResponse.statusCode}");
-      }
-    } else {
-       throw Exception("Failed to get presigned URL");
-    }
-  }
-
-
-  // ==========================================
-  // 🌟 UNIFIED GET API
-  // ==========================================
-  
-  Future<void> _fetchAllDocumentData() async {
-    try {
-      final queryParams = {
-        "project_id": widget.projectId,
-        "inspection_id": widget.inspectionId,
-        "project_document_id": widget.documentId,
-      };
-      
-      final queryString = Uri(queryParameters: queryParams).query;
-      final presignResponse = await _apiService.get('/canvas/pre-sign/inspection/read?$queryString');
-      final presignData = jsonDecode(presignResponse.body);
-
-      if (presignData['success'] == true && presignData['data'] != null) {
-        final String signedUrl = presignData['data'];
-
-        final s3Response = await http.get(Uri.parse(signedUrl));
-
-        if (s3Response.statusCode == 200) {
-          final data = jsonDecode(s3Response.body);
-          _rawDocumentData = data; 
-
-          setState(() {
-            _inspectionDescription = data['description'] ?? "";
-            _inspectionTagIds = List<String>.from(data['tag_id_list'] ?? []);
-            
-            _inspectionImages.clear();
-            if (data['image_list'] != null) {
-              _inspectionImages = List<dynamic>.from(data['image_list']);
-            }
-          });
-
-          if (widget.annotateImageKey != null) {
-            _pages.clear();
-            _pageDataMap.clear();
-            
-            _pages = ['Attached Image'];
-            _currentPage = 'Attached Image';
-            final pageData = PageData(pageId: widget.annotateImageKey!);
-            
-            var targetImageJson;
-            if (data['image_list'] != null) {
-              for (var img in data['image_list']) {
-                if (img['image_url'] == widget.annotateImageKey) {
-                  targetImageJson = img;
-                  break;
-                }
-              }
-            }
-
-            if (targetImageJson != null) {
-              final String base64String = targetImageJson['preview_image'] ?? '';
-              if (base64String.isNotEmpty && base64String != "base64") {
-                pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-                final ui.Image decodedImage = await _decodeBase64Image(base64String);
-                pageData.width = decodedImage.width.toDouble();
-                pageData.height = decodedImage.height.toDouble();
-              } else {
-                pageData.width = 816.0;
-                pageData.height = 1056.0;
-              }
-              pageData.objects = _parseAnnotationsList(targetImageJson['annotation_list'], pageData.width, pageData.height);
-            }
-            pageData.hasLoadedAnnotations = true;
-            _pageDataMap['Attached Image'] = pageData;
-            
-          } else {
-            if (data['page_list'] != null) {
-              for (var pageJson in data['page_list']) {
-                final String pageId = pageJson['page_id'] ?? '';
-                
-                PageData? pageData;
-                for (var pd in _pageDataMap.values) {
-                  if (pd.pageId == pageId) {
-                    pageData = pd;
-                    break;
-                  }
-                }
-
-                if (pageData != null) {
-                  pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
-                  pageData.hasLoadedAnnotations = true;
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Error loading document data from S3: $e");
-    }
-  }
-
-  List<DrawingObject> _parseAnnotationsList(List<dynamic>? annList, double pWidth, double pHeight) {
-    List<DrawingObject> loadedObjects = [];
-    if (annList == null) return loadedObjects;
-
-    for (var item in annList) {
-      DrawingType parsedType = _parseDrawingType(item['type']);
-      String? savedToolId = item['toolId'];
-      
-      List<DrawingObject>? matchedInternalShapes;
-      if (parsedType == DrawingType.customTool && savedToolId != null) {
-        for (var group in _customToolGroups) {
-          try {
-            final matchedTool = group.tools.firstWhere((t) => t.toolId == savedToolId);
-            matchedInternalShapes = matchedTool.toolObjects;
-            break;
-          } catch(e) {} 
-        }
-      }
-      
-      loadedObjects.add(DrawingObject(
-        type: parsedType,
-        toolId: savedToolId,
-        internalShapes: matchedInternalShapes, 
-        start: Offset((item['start']['dx'] ?? 0.0) * pWidth, (item['start']['dy'] ?? 0.0) * pHeight),
-        end: Offset((item['end']['dx'] ?? 0.0) * pWidth, (item['end']['dy'] ?? 0.0) * pHeight),
-        strokeWidth: (item['strokeWidth'] ?? 2).toDouble(),
-        text: item['text']?.isEmpty == true ? null : item['text'],
-        description: item['description'],
-        tagIds: List<String>.from(item['tagIds'] ?? []),
-        imageUrls: item['image_list'] != null ? List<dynamic>.from(item['image_list']) : null,
-        color: item['color'] != null ? Color(item['color']) : Colors.red[800]!,
-        fillColor: item['fillColor'] != null ? Color(item['fillColor']) : Colors.transparent,
-        borderColor: item['borderColor'] != null ? Color(item['borderColor']) : Colors.transparent,
-        opacity: (item['opacity'] ?? 1.0).toDouble(),
-        rotation: (item['rotation'] ?? 0.0).toDouble(),
-        fontSize: (item['fontSize'] ?? 24.0).toDouble(),
-        isBold: item['isBold'] ?? false,
-        isItalic: item['isItalic'] ?? false,
-        isUnderline: item['isUnderline'] ?? false,
-        isStrikethrough: item['isStrikethrough'] ?? false,
-        isCallout: item['isCallout'] ?? false,
-        points: item['points'] != null ? (item['points'] as List).map((p) => Offset((p['dx'] ?? 0.0) * pWidth, (p['dy'] ?? 0.0) * pHeight)).toList() : null,
-      ));
-    }
-    return loadedObjects;
-  }
-
-  // ==========================================
-  // UNIFIED SAVING API
-  // ==========================================
-
-  List<Map<String, dynamic>> _serializeObjects(List<DrawingObject> objects, double pWidth, double pHeight) {
-    List<Map<String, dynamic>> itemsList = [];
-    for (var obj in objects) {
-      List<Map<String, dynamic>> nestedImageList = [];
-      if (obj.imageUrls != null) {
-        for (var i = 0; i < obj.imageUrls!.length; i++) {
-          var img = obj.imageUrls![i];
-          if (img is Map) {
-            nestedImageList.add({
-              "image_id": img["image_id"] ?? "",
-              "image_url": img["image_url"] ?? img["key"] ?? "",
-              "preview_image": img["preview_image"] ?? "",
-              "image_name": img["image_name"] ?? "",
-              "sort_order": img["sort_order"] ?? (i + 1),
-              "annotation_list": img["annotation_list"] ?? []
-            });
-          }
-        }
-      }
-
-      Map<String, dynamic> item = {
-        "type": _getDrawingTypeString(obj.type),
-        "start": {"dx": obj.start.dx / pWidth, "dy": obj.start.dy / pHeight},
-        "end": {"dx": obj.end.dx / pWidth, "dy": obj.end.dy / pHeight},
-        if (obj.type == DrawingType.customTool) "toolId": obj.toolId, 
-        "text": obj.text ?? "",
-        "description": obj.description ?? "",
-        "strokeWidth": obj.strokeWidth,
-        "tagIds": obj.tagIds ?? [],
-        "image_list": nestedImageList, 
-        "color": obj.color.value,             
-        "fillColor": obj.fillColor.value,
-        "borderColor": obj.borderColor.value,
-        "opacity": obj.opacity,
-        "rotation": obj.rotation,
-        "fontSize": obj.fontSize,
-        "isBold": obj.isBold,
-        "isItalic": obj.isItalic,
-        "isUnderline": obj.isUnderline,
-        "isStrikethrough": obj.isStrikethrough,
-        "isCallout": obj.isCallout,
-      };
-
-      if (obj.points != null && obj.points!.isNotEmpty) {
-        item["points"] = obj.points!.map((p) => {"dx": p.dx / pWidth, "dy": p.dy / pHeight}).toList();
-      }
-      itemsList.add(item);
-    }
-    return itemsList;
-  }
-  
-  Future<void> _saveAnnotations() async {
-    setState(() => _isSaving = true);
-    _syncCurrentPageObjects(); 
-
-    try {
-      Map<String, dynamic> masterPayload = Map<String, dynamic>.from(_rawDocumentData);
-      
-      masterPayload['project_document_id'] = widget.documentId;
-      masterPayload['description'] = _inspectionDescription;
-      masterPayload['tag_id_list'] = _inspectionTagIds;
-      masterPayload['image_list'] = List.from(_inspectionImages);
-
-      List<dynamic> currentPageList = List.from(masterPayload['page_list'] ?? []);
-      for (int i = 0; i < _pages.length; i++) {
-        final String pageName = _pages[i];
-        final pageData = _pageDataMap[pageName];
-
-        if (pageData != null) {
-          final serializedObjects = _serializeObjects(pageData.objects, pageData.width, pageData.height);
-          int existingIndex = currentPageList.indexWhere((p) => p['page_id'] == pageData.pageId);
-          
-          if (existingIndex != -1) {
-            currentPageList[existingIndex]['annotation_list'] = serializedObjects;
-          } else {
-            currentPageList.add({
-              "page_id": pageData.pageId,
-              "page_name": pageName,
-              "sort_order": i + 1,
-              "annotation_list": serializedObjects
-            });
-          }
-        }
-      }
-      masterPayload['page_list'] = currentPageList;
-
-      final queryParams = {
-        "project_id": widget.projectId,
-        "inspection_id": widget.inspectionId,
-        "project_document_id": widget.documentId,
-      };
-      
-      final queryString = Uri(queryParameters: queryParams).query;
-      final presignResponse = await _apiService.get('/canvas/pre-sign/inspection/write?$queryString');
-      final presignData = jsonDecode(presignResponse.body);
-
-      if (presignData['success'] == true && presignData['data'] != null) {
-        final String signedUrl = presignData['data']['signedUrl'] ?? presignData['data'];
-
-        final putResponse = await http.put(
-          Uri.parse(signedUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(masterPayload),
-        );
-
-        if (putResponse.statusCode == 200 || putResponse.statusCode == 201) {
-          _hasUnsavedChanges = false;
-          _hasUnsavedImageChanges = false;
-          _rawDocumentData = masterPayload; 
-          
-          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success);
-        } else {
-          throw Exception("Failed to upload document data to S3. Status: ${putResponse.statusCode}");
-        }
-      } else {
-        throw Exception(presignData['message'] ?? "Failed to get secure upload URL.");
-      }
-      
-    } catch (e) {
-      debugPrint("Save Error: $e");
-      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  // ==========================================
-  // INITIALIZATION
-  // ==========================================
-
-  Future<void> _fetchAvailableTags() async {
-    try {
-      final response = await _apiService.get('/projectTagGroup/${widget.projectId}?includeTags=true');
-      final responseData = jsonDecode(response.body);
-
-      if (responseData['success'] == true && responseData['data'] != null && mounted) {
-        setState(() {
-          // 🚀 Now it's incredibly simple to parse the whole grouped structure!
-          _availableTagGroups = (responseData['data'] as List)
-              .map((groupJson) => TagGroup.fromJson(groupJson))
-              .toList();
-        });
-      }
-    } catch (e) { 
-      debugPrint("Error fetching tags: $e"); 
-    } finally {
-      if (mounted) setState(() => _isLoadingTags = false);
-    }
-  }
-
-  Future<void> _fetchCustomTools() async {
-    try {
-      final response = await _apiService.get('/customTool/project/tool/${widget.projectId}');
-      final responseData = jsonDecode(response.body);
-
-      if (responseData['success'] == true && responseData['data'] != null && mounted) {
-        List<CustomToolGroup> loadedGroups = [];
-        for (var groupJson in responseData['data']) {
-          List<CustomTool> tools = [];
-          if (groupJson['toolds'] != null) {
-            for (var toolJson in groupJson['toolds']) {
-              List<DrawingObject> parsedObjects = [];
-              if (toolJson['imageJsonData'] != null) {
-                for (var item in toolJson['imageJsonData']) {
-                  parsedObjects.add(DrawingObject.fromJson(item));
-                }
-              }
-              tools.add(CustomTool(
-                toolId: toolJson['toolId'] ?? '', 
-                toolName: toolJson['toolName'] ?? 'Unknown Tool',
-                tagIds: List<String>.from(toolJson['tagIds'] ?? []),
-                toolObjects: parsedObjects,
-              ));
-            }
-          }
-          loadedGroups.add(CustomToolGroup(toolGroup: groupJson['toolGroup'] ?? 'General', tools: tools));
-        }
-        setState(() => _customToolGroups = loadedGroups);
-      }
-    } catch (e) { 
-      debugPrint("Error fetching custom tools: $e"); 
-    } finally {
-      if (mounted) setState(() => _isLoadingCustomTools = false);
-    }
-  }
-
-  Future<void> _initializeCanvas() async {
-    setState(() => _isInitializing = true);
-    
-    _fetchAvailableTags(); 
-    _fetchCustomTools(); 
-    
-    if (widget.annotateImageKey != null) {
-      await _fetchAllDocumentData();
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-          _isFirstLoadComplete = true;
-        });
-      }
-    } else {
-      await _fetchPageList();
-      if (_pages.isEmpty) {
-        _pages = ['Page 1'];
-        _currentPage = 'Page 1';
-        _pageDataMap = {'Page 1': PageData(pageId: 'fallback_id')};
-      }
-
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-          _isPageLoading = true;
-        });
-      }
-
-      await _fetchPageImage(_currentPage);
-
-      if (mounted) {
-        setState(() {
-          _isPageLoading = false;
-          _isLoadingAnnotations = true;
-          _isFirstLoadComplete = true; 
-        });
-      }
-
-      await _fetchAllDocumentData();
-
-      if (mounted) {
-        setState(() {
-          _canvasKeys.remove(_currentPage);
-          _isLoadingAnnotations = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _fetchPageList() async {
-    try {
-      final response = await _apiService.get('/projectDocumentPage/project-document/${widget.documentId}');
-      final responseData = jsonDecode(response.body);
-
-      if (responseData['success'] == true && responseData['data'] != null) {
-        final List pagesData = responseData['data'];
-        _pages.clear();
-        _pageDataMap.clear();
-
-        for (var page in pagesData) {
-          final String pageId = page['id'];
-          final String pageName = page['name'] ?? 'Page ${page['page_number']}';
-          _pages.add(pageName);
-          _pageDataMap[pageName] = PageData(pageId: pageId); 
-        }
-
-        if (_pages.isNotEmpty) {
-          String targetPage = 'Page ${widget.page}';
-          _currentPage = _pages.contains(targetPage) ? targetPage : _pages.first;
-        }
-      }
-    } catch (e) { debugPrint("Error loading page list: $e"); }
-  }
-
-  Future<void> _fetchPageImage(String pageName) async {
-    final pageData = _pageDataMap[pageName];
-    if (pageData == null || pageData.backgroundImageBytes != null) return;
-
-    try {
-      final response = await _apiService.get('/projectDocumentPage/project-document-page-pdf/${pageData.pageId}');
-      final responseData = jsonDecode(response.body);
-
-      if (responseData['success'] == true && responseData['data'] != null) {
-        final String base64String = responseData['data']['image'] ?? '';
-        if (base64String.isNotEmpty) {
-          pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-          final ui.Image decodedImage = await _decodeBase64Image(base64String);
-          
-          pageData.width = decodedImage.width.toDouble();
-          pageData.height = decodedImage.height.toDouble();
-
-          if (_rawDocumentData['page_list'] != null) {
-            final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
-              (p) => p['page_id'] == pageData.pageId, 
-              orElse: () => null
-            );
-            if (pageJson != null && pageJson['annotation_list'] != null) {
-              pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
-            }
-          }
-          
-          _canvasKeys.remove(pageName);
-        }
-      }
-    } catch (e) { debugPrint("Error loading page image: $e"); } 
-  }
-
-  Future<void> _deleteImageForObject(String s3Key) async {
-    setState(() {
-      if (_selectedCanvasObject != null && _selectedCanvasObject!.imageUrls != null) {
-        _selectedCanvasObject!.imageUrls!.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
-        _getCurrentCanvasKey().currentState?.refreshCanvas(); 
-      }
-    });
-  }
-
-  DrawingType _parseDrawingType(String? typeStr) {
-    switch (typeStr) {
-      case 'rectangle': return DrawingType.rect;
-      case 'circle': return DrawingType.circle;
-      case 'polygon': return DrawingType.polygon;
-      case 'line': return DrawingType.line;
-      case 'arrow': return DrawingType.arrow;
-      case 'text': return DrawingType.text;
-      case 'pencil': return DrawingType.pencil;
-      case 'pen': return DrawingType.pen;
-      case 'pin': return DrawingType.pin;
-      case 'customTool': return DrawingType.customTool;
-      case 'brick': return DrawingType.brick;
-      case 'grid': return DrawingType.grid;
-      case 'horizontal': return DrawingType.horizontal;
-      case 'vertical': return DrawingType.vertical;
-      case 'forwardDiag': return DrawingType.forwardDiag;
-      case 'reverseDiag': return DrawingType.reverseDiag;
-      case 'diamond': return DrawingType.diamond;
-      case 'weave': return DrawingType.weave;
-      case 'dots': return DrawingType.dots;
-      case 'herringbone': return DrawingType.herringbone;
-      case 'concrete': return DrawingType.concrete;
-      case 'shingles': return DrawingType.shingles;
-      case 'insulation': return DrawingType.insulation;
-      case 'rect': return DrawingType.rect; 
-      case 'customtool': return DrawingType.customTool;
-      default: return DrawingType.rect;
-    }
-  }
-  
-  String _getDrawingTypeString(DrawingType type) {
-    switch (type) {
-      case DrawingType.rect: return 'rectangle';
-      case DrawingType.circle: return 'circle';
-      case DrawingType.polygon: return 'polygon'; 
-      case DrawingType.line: return 'line';
-      case DrawingType.arrow: return 'arrow';
-      case DrawingType.text: return 'text';
-      case DrawingType.pencil: return 'pencil';
-      case DrawingType.pen: return 'pen';
-      case DrawingType.pin: return 'pin';
-      case DrawingType.customTool: return 'customTool';
-      case DrawingType.brick: return 'brick';
-      case DrawingType.grid: return 'grid';
-      case DrawingType.horizontal: return 'horizontal';
-      case DrawingType.vertical: return 'vertical';
-      case DrawingType.forwardDiag: return 'forwardDiag';
-      case DrawingType.reverseDiag: return 'reverseDiag';
-      case DrawingType.diamond: return 'diamond';
-      case DrawingType.weave: return 'weave';
-      case DrawingType.dots: return 'dots';
-      case DrawingType.herringbone: return 'herringbone';
-      case DrawingType.concrete: return 'concrete';
-      case DrawingType.shingles: return 'shingles';
-      case DrawingType.insulation: return 'insulation';
-      default: return 'rectangle';
-    }
-  }
-
-  String _getToolNameFromType(DrawingType type) {
-    switch (type) {
-      case DrawingType.pencil: return 'Pencil';
-      case DrawingType.pen: return 'Pen';
-      case DrawingType.rect: return 'Rect';
-      case DrawingType.circle: return 'Circle';
-      case DrawingType.polygon: return 'Polygon';
-      case DrawingType.line: return 'Line';
-      case DrawingType.arrow: return 'Arrow';
-      case DrawingType.text: return 'Text';
-      case DrawingType.brick: return 'Brick';
-      case DrawingType.grid: return 'Grid';
-      case DrawingType.horizontal: return 'Horizontal';
-      case DrawingType.vertical: return 'Vertical';
-      case DrawingType.forwardDiag: return 'Forward';
-      case DrawingType.reverseDiag: return 'Reverse';
-      case DrawingType.weave: return 'Weave';
-      case DrawingType.diamond: return 'Diamond';
-      case DrawingType.dots: return 'Dots';
-      case DrawingType.herringbone: return 'Herringbone';
-      case DrawingType.concrete: return 'Concrete';
-      case DrawingType.shingles: return 'Shingles';
-      case DrawingType.insulation: return 'Insulation';
-      case DrawingType.pin: return 'Pin';
-      default: return 'CustomTool';
-    }
-  }
-
-  Widget _buildPageSelector(ThemeData theme) {
-    if (_pages.isEmpty) return const SizedBox.shrink();
-    
-    if (_pages.length <= 1) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
-        child: Text(_currentPage, style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
-      );
-    }
-
-    int currentIndex = _pages.indexOf(_currentPage);
-    bool hasPrevious = currentIndex > 0;
-    bool hasNext = currentIndex < _pages.length - 1;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), 
-      decoration: BoxDecoration(color: theme.colorScheme.surfaceVariant.withOpacity(0.3), borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left_rounded),
-            iconSize: 20,
-            color: hasPrevious ? theme.colorScheme.primary : theme.disabledColor,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            splashRadius: 16,
-            onPressed: hasPrevious ? () => _switchPage(_pages[currentIndex - 1]) : null,
-          ),
-          
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _currentPage,
-                icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: theme.colorScheme.primary),
-                style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
-                borderRadius: BorderRadius.circular(8),
-                items: _pages.map((page) => DropdownMenuItem(value: page, child: Text(page))).toList(),
-                onChanged: (v) => v != null ? _switchPage(v) : null,
+    final String? saved = StorageService.getString(_storageKey);
+    if (saved != null) {
+      try {
+        final decoded = jsonDecode(saved) as Map<String, dynamic>;
+        restoredTabs = (decoded['tabs'] as List<dynamic>? ?? [])
+            .map(
+              (t) => CanvasTab(
+                documentId: t['documentId'].toString(),
+                page: (t['page'] ?? '1').toString(),
               ),
-            ),
-          ),
+            )
+            .toList();
+        restoredActive = decoded['active']?.toString();
+      } catch (_) {
+        restoredTabs = [];
+      }
+    }
 
-          IconButton(
-            icon: const Icon(Icons.chevron_right_rounded),
-            iconSize: 20,
-            color: hasNext ? theme.colorScheme.primary : theme.disabledColor,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            splashRadius: 16,
-            onPressed: hasNext ? () => _switchPage(_pages[currentIndex + 1]) : null,
-          ),
-        ],
-      ),
+    final bool hasInitialDocument = widget.documentId.isNotEmpty;
+
+    if (restoredTabs.isEmpty) {
+      // No saved session (first-ever visit for this inspection). Seed from whatever
+      // document was just clicked, if any — otherwise there's nothing to show
+      // (handled by the empty state in build()).
+      _tabs = hasInitialDocument
+          ? [CanvasTab(documentId: widget.documentId, page: widget.page)]
+          : [];
+      _activeDocumentId = widget.documentId;
+      return;
+    }
+
+    _tabs = restoredTabs;
+
+    if (hasInitialDocument &&
+        !_tabs.any((t) => t.documentId == widget.documentId)) {
+      // A document not part of the saved session was explicitly opened (e.g. a fresh
+      // click from Inspection Details) — add it alongside the restored tabs and focus it.
+      _tabs.add(CanvasTab(documentId: widget.documentId, page: widget.page));
+      _activeDocumentId = widget.documentId;
+    } else {
+      // Plain refresh (no `extra` — it doesn't survive a hard reload): restore
+      // whichever tab was actually focused before the refresh.
+      final String fallback = hasInitialDocument
+          ? widget.documentId
+          : _tabs.first.documentId;
+      _activeDocumentId =
+          (restoredActive != null &&
+              _tabs.any((t) => t.documentId == restoredActive))
+          ? restoredActive
+          : fallback;
+    }
+  }
+
+  void _persistSession() {
+    final payload = jsonEncode({
+      'tabs': _tabs
+          .map((t) => {'documentId': t.documentId, 'page': t.page})
+          .toList(),
+      'active': _activeDocumentId,
+    });
+    StorageService.setString(_storageKey, payload);
+  }
+
+  // Drops tabs for documents no longer assigned to this inspection, once the real
+  // document list has loaded. The tab that was actually navigated to is never pruned.
+  void _pruneStaleTabs() {
+    final validIds = inspectionController.documents
+        .map((d) => d['id'].toString())
+        .toSet();
+    if (validIds.isEmpty) return;
+
+    final int before = _tabs.length;
+    _tabs.removeWhere(
+      (t) =>
+          t.documentId != widget.documentId && !validIds.contains(t.documentId),
+    );
+
+    if (_tabs.isEmpty && widget.documentId.isNotEmpty) {
+      _tabs = [CanvasTab(documentId: widget.documentId, page: widget.page)];
+    }
+    if (_tabs.isNotEmpty &&
+        !_tabs.any((t) => t.documentId == _activeDocumentId)) {
+      _activeDocumentId = _tabs.first.documentId;
+    }
+
+    if (_tabs.length != before) {
+      setState(() {});
+      _persistSession();
+    }
+  }
+
+  GlobalKey<CanvasDocumentPaneState> _keyFor(String documentId) {
+    return _paneKeys.putIfAbsent(
+      documentId,
+      () => GlobalKey<CanvasDocumentPaneState>(),
     );
   }
 
-  Widget _buildLoadingOverlay(ThemeData theme) {
-    String title = "Loading...";
-    String subtitle = "Please wait...";
-
-    if (_isInitializing) {
-      title = widget.annotateImageKey != null ? "Initializing Image..." : "Initializing Document...";
-      subtitle = "Fetching document structure";
-    } else if (_isPageLoading) {
-      title = widget.annotateImageKey != null ? "Loading Image..." : "Loading Page...";
-      subtitle = "Rendering visual layout";
-    } else if (_isLoadingAnnotations) {
-      title = "Loading Annotations...";
-      subtitle = "Applying drawings and details";
-    } else if (_isUploadingImage) {
-      title = "Preparing Image..."; 
-      subtitle = "Configuring layouts and compressing layers"; 
-    } else if (_isSaving) {
-      title = "Saving Changes...";
-      subtitle = "Syncing annotations with the server";
+  // Mirrors CanvasTabStrip's own label lookup so the confirmation dialog can
+  // name exactly which document(s) have unsaved work.
+  String _documentNameFor(String documentId) {
+    try {
+      final doc = inspectionController.documents.firstWhere(
+        (d) => d['id'].toString() == documentId,
+      );
+      final name = doc['document_name'];
+      return (name != null && name.toString().trim().isNotEmpty)
+          ? name.toString()
+          : 'Document';
+    } catch (_) {
+      return 'Document';
     }
-
-    final double bgOpacity = _isFirstLoadComplete ? 0.7 : 1.0;
-
-    return Container(
-      color: theme.scaffoldBackgroundColor.withOpacity(bgOpacity), 
-      child: Center(
-        child: Container(
-          width: 320, 
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface, 
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min, 
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer.withOpacity(0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: CircularProgressIndicator(
-                  color: theme.colorScheme.primary,
-                  strokeWidth: 4,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                title, 
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle, 
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
-  Future<void> _handleClose() async {
-    if (!_hasUnsavedChanges) {
-      _executeRefreshAndClose();
-      return;
+  List<String> get _unsavedDocumentIds => _tabs
+      .where((t) => _paneKeys[t.documentId]?.currentState?.hasUnsavedChanges ?? false)
+      .map((t) => t.documentId)
+      .toList();
+
+  String _unsavedChangesDescription(List<String> documentIds) {
+    final names = documentIds.map(_documentNameFor).toList();
+    if (names.length == 1) {
+      return "\"${names.first}\" has unsaved changes that will be permanently lost if you continue.";
     }
-    
+    final bulleted = names.map((n) => "• $n").join("\n");
+    return "These documents have unsaved changes that will be permanently lost if you continue:\n$bulleted";
+  }
+
+  Future<bool> _confirmDiscardChanges(String description) async {
     bool shouldClose = false;
 
     await showDialog(
       context: context,
       builder: (context) => ConfirmationDialog(
         title: "Exit Without Saving?",
-        description: "Are you sure you want to exit? Any unsaved changes will be permanently lost.",
+        description: description,
         confirmLabel: "Exit",
         cancelLabel: "Cancel",
         confirmColor: Colors.red,
@@ -1075,260 +223,361 @@ class _CanvasScreenState extends State<CanvasScreen> {
       ),
     );
 
-    if (shouldClose && mounted) {
-      _executeRefreshAndClose();
+    return shouldClose;
+  }
+
+  // Guards in-app navigation (breadcrumb taps) the same way tab/canvas closes
+  // are guarded — only runs `navigate` once any unsaved changes are confirmed.
+  Future<void> _guardedNavigate(VoidCallback navigate) async {
+    final unsavedIds = _unsavedDocumentIds;
+    if (unsavedIds.isEmpty) {
+      navigate();
+      return;
+    }
+
+    if (await _confirmDiscardChanges(_unsavedChangesDescription(unsavedIds)) && mounted) {
+      navigate();
     }
   }
 
-  void _executeRefreshAndClose() {
+  Future<void> _requestCloseTab(String documentId) async {
+    final bool hasUnsaved =
+        _paneKeys[documentId]?.currentState?.hasUnsavedChanges ?? false;
+
+    if (!hasUnsaved) {
+      _closeTab(documentId);
+      return;
+    }
+
+    if (await _confirmDiscardChanges(_unsavedChangesDescription([documentId])) && mounted) {
+      _closeTab(documentId);
+    }
+  }
+
+  // 🚀 Single "close the whole canvas" affordance — checks every open tab, not
+  // just the active one, since the per-tab close buttons no longer live inside
+  // the canvas itself.
+  Future<void> _requestGlobalClose() async {
+    final unsavedIds = _unsavedDocumentIds;
+    if (unsavedIds.isEmpty) {
+      _exitCanvas();
+      return;
+    }
+
+    if (await _confirmDiscardChanges(_unsavedChangesDescription(unsavedIds)) && mounted) {
+      _exitCanvas();
+    }
+  }
+
+  void _closeTab(String documentId) {
+    if (_tabs.length <= 1) {
+      _exitCanvas();
+      return;
+    }
+
+    final closingIndex = _tabs.indexWhere((t) => t.documentId == documentId);
+    if (closingIndex == -1) return;
+
+    final bool wasActive = _activeDocumentId == documentId;
+
+    setState(() {
+      _tabs.removeAt(closingIndex);
+      _paneKeys.remove(documentId);
+      if (wasActive) {
+        _activeDocumentId =
+            _tabs[(closingIndex - 1).clamp(0, _tabs.length - 1)].documentId;
+      }
+    });
+    _persistSession();
+  }
+
+  void _exitCanvas() {
+    StorageService.remove(_storageKey);
+
     final extra = GoRouterState.of(context).extra;
-    
+
     if (extra is Function) {
-      extra(); 
-    } else if (extra is Map<String, dynamic> && extra['onRefresh'] is Function) {
+      extra();
+    } else if (extra is Map<String, dynamic> &&
+        extra['onRefresh'] is Function) {
       extra['onRefresh']();
     }
 
     if (extra is Map<String, dynamic> && extra['returnUrl'] != null) {
-       context.go(extra['returnUrl']);
+      context.go(extra['returnUrl']);
     } else if (Navigator.of(context).canPop()) {
-       Navigator.of(context).pop();
+      Navigator.of(context).pop();
     } else {
-       context.go('/'); 
+      context.go('/');
     }
   }
 
-@override
-  Widget build(BuildContext context) {
+  Future<void> _openTabPicker() async {
+    final candidates = inspectionController.documents
+        .where((d) => !_tabs.any((t) => t.documentId == d['id'].toString()))
+        .toList();
+
     final theme = Theme.of(context);
 
-    final bool isImageOpen = _overlayImageKey != null || widget.annotateImageKey != null;
-    final String activeCanvasKey = _overlayImageKey != null ? 'IMG_$_overlayImageKey' : _currentPage;
-    final PageData? activePageData = _pageDataMap[activeCanvasKey];
+    await showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
+          child: Container(
+            color: theme.colorScheme.surfaceContainer,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Open Document",
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: candidates.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Text(
+                            "All documents are already open.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: candidates.length,
+                          itemBuilder: (context, index) {
+                            final doc = candidates[index];
+                            final String docId = doc['id'].toString();
+                            final String docName =
+                                doc['document_name'] ?? 'Document ${index + 1}';
+
+                            return ListTile(
+                              leading: Icon(
+                                Icons.picture_as_pdf_rounded,
+                                color: theme.colorScheme.primary,
+                              ),
+                              title: Text(docName),
+                              onTap: () {
+                                setState(() {
+                                  _tabs.add(
+                                    CanvasTab(documentId: docId, page: '1'),
+                                  );
+                                  _activeDocumentId = docId;
+                                });
+                                _persistSession();
+                                Navigator.pop(context);
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreadcrumb(BuildContext context, ThemeData theme) {
+    final projectName =
+        projectController.currentProject?.name ?? "Project Details";
+    final projectId = projectController.currentProject?.id ?? "";
+
+    String inspectionLabel = "Inspection details";
+    final activeInspection = inspectionController.currentInspection;
+
+    if (activeInspection != null) {
+      final rawDate = activeInspection.createTime;
+      final parsedDate = rawDate is DateTime
+          ? rawDate
+          : DateTime.tryParse(rawDate.toString());
+      if (parsedDate != null) {
+        inspectionLabel =
+            "Inspection - ${DateFormat('dd MMM yyyy').format(parsedDate)}";
+      }
+    }
+
+    return AppBreadcrumbs(
+      items: [
+        BreadcrumbItem(
+          label: "Projects",
+          onTap: () => _guardedNavigate(() => context.go('/projects')),
+        ),
+        BreadcrumbItem(
+          label: projectName,
+          onTap: () => _guardedNavigate(() {
+            if (projectId.isNotEmpty) {
+              context.go('/projects/details/$projectId/inspections');
+            } else {
+              Navigator.of(context).pop();
+            }
+          }),
+        ),
+        BreadcrumbItem(
+          label: inspectionLabel,
+          onTap: () => _guardedNavigate(() => Navigator.of(context).pop()),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderRow(BuildContext context, ThemeData theme) {
+    final bool isWeb = AppResponsive.isWeb;
+    final double iconSize = isWeb ? 18 : 14;
+    final double borderRadius = isWeb ? 8 : 5;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: _buildBreadcrumb(context, theme)),
+        Padding(
+          padding: const EdgeInsets.only(top: 10, right: 4),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+              borderRadius: BorderRadius.circular(borderRadius),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Tooltip(
+              message: "Close",
+              child: InkWell(
+                borderRadius: BorderRadius.circular(borderRadius),
+                onTap: _requestGlobalClose,
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.close_rounded, size: iconSize),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.description_outlined,
+            size: 48,
+            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "No document selected",
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Open a document from Inspection Details to start annotating.",
+            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            
-            // 🚀 BREADCRUMB HEADER INJECTED HERE
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: _buildHeader(context, theme), 
-            ),
-
-            // 🚀 YOUR ORIGINAL STACK & CANVAS (COMPLETELY UNTOUCHED)
-            Expanded(
-              child: Stack(
+        child: ListenableBuilder(
+          listenable: Listenable.merge([
+            projectController,
+            inspectionController,
+          ]),
+          builder: (context, _) {
+            if (_tabs.isEmpty) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  custom_canvas.Canvas(
-                    key: _getCurrentCanvasKey(),
-                    initialBackgroundImage: activePageData?.backgroundImageBytes,
-                    initialObjects: activePageData?.objects ?? [],
-
-                    width: activePageData?.width ?? 816.0,
-                    height: activePageData?.height ?? 1056.0,
-
-                    onToolChanged: (toolName) {
-                      if (toolName != 'CustomTool' && _selectedCustomTool != null) {
-                        setState(() => _selectedCustomTool = null);
-                      }
-                    },
-                    customTabLabel: "Custom Tools",
-                    customTabContent: CustomToolsPanel(
-                      groups: _customToolGroups,
-                      isLoading: _isLoadingCustomTools,
-                      selectedTool: _selectedCustomTool,
-                      onToolSelected: (tool) {
-                        setState(() {
-                          if (_selectedCustomTool?.toolId == tool.toolId) {
-                            _selectedCustomTool = null;
-                            _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                              'Select', 2.0, Colors.black, Colors.transparent, 1.0,
-                            );
-                          } else {
-                            _selectedCustomTool = tool;
-
-                            if (tool.toolObjects.length == 1) {
-                              final obj = tool.toolObjects.first;
-                              final nativeToolName = _getToolNameFromType(obj.type);
-                              
-                              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                                nativeToolName, 
-                                obj.strokeWidth, 
-                                obj.color, 
-                                obj.fillColor ?? Colors.transparent, 
-                                obj.opacity,
-                              );
-                            } else {
-                              _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                                'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                                customToolId: tool.toolId,
-                                customToolShapes: tool.toolObjects, 
-                              );
-                            }
-                          }
-                        });
-                      },
-                      onClose: () {
-                        setState(() => _selectedCustomTool = null);
-                        _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-                      },
-                    ),
-
-                    customRightPanel: PropertiesPanel(
-                      activeObject: _selectedCanvasObject, 
-                      availableTags: _availableTagGroups,
-                      isLoadingTags: _isLoadingTags,
-                      inspectionDescription: _inspectionDescription,
-                      inspectionTagIds: _inspectionTagIds,
-                      inspectionImageUrls: _inspectionImages,
-                      
-                      isInspectionLevel: !isImageOpen, 
-                      allowImageUpload: !isImageOpen,
-                      showImageSection: !isImageOpen,
-
-                      onInspectionDescriptionChanged: (val) {
-                        setState(() => _inspectionDescription = val);
-                        _hasUnsavedChanges = true;
-                      },
-                      onInspectionTagsChanged: (val) {
-                        setState(() => _inspectionTagIds = val);
-                        _hasUnsavedChanges = true;
-                      },
-
-                      onUpdate: () {
-                        _hasUnsavedChanges = true;
-                        _getCurrentCanvasKey().currentState?.refreshCanvas();
-                      },
-                      
-                      onImageUpload: (fileName, bytes) async {
-                        await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
-                      },
-                      
-                      onImageDelete: (s3Key) async {
-                        if (_selectedCanvasObject != null) {
-                          await _deleteImageForObject(s3Key);
-                        } else {
-                          setState(() {
-                            _inspectionImages.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
-                            _rawDocumentData['image_list'] = List.from(_inspectionImages);
-                            _hasUnsavedImageChanges = true;
-                            _hasUnsavedChanges = true;
-                          }); 
-                        }
-                      },
-                      
-                      onImageTap: _handleImageTap,
-                      onClose: () {
-                        setState(() => _selectedCanvasObject = null);
-                        _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
-                      },
-                    ),
-
-                    showCloseButton: _overlayImageKey == null,
-                    onClosePressed: _handleClose,
-                    leftActions: [],
-                    rightActions: _overlayImageKey != null 
-                        ? [
-                            Button(
-                              label: "Discard", 
-                              variant: ButtonVariant.outline, 
-                              onPressed: _discardImageAnnotations
-                            ),
-                            const SizedBox(width: 8),
-                            Button(
-                              label: "Done", 
-                              onPressed: _saveImageAnnotationsToMemory
-                            ),
-                          ] 
-                        : [
-                            _buildPageSelector(theme),
-                            const SizedBox(width: 12),
-                            CanvasToolbarActionButton(
-                              tooltip: "Save Annotations",
-                              icon: Icons.save_outlined,
-                              onTap: _saveAnnotations,
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-
-                    onSelectionChanged: (selectedObject) {
-                      setState(() {
-                        _selectedCanvasObject = selectedObject;
-                        if (selectedObject != null) _hasUnsavedChanges = true;
-                      });
-                    },
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 12, 0),
+                    child: _buildHeaderRow(context, theme),
                   ),
-                  
-                  if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
-                    _buildLoadingOverlay(theme),
+                  Expanded(child: _buildEmptyState(theme)),
                 ],
-              ),
-            ),
-          ],
+              );
+            }
+
+            final activeIndex = _tabs
+                .indexWhere((t) => t.documentId == _activeDocumentId)
+                .clamp(0, _tabs.length - 1);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: _buildHeaderRow(context, theme),
+                ),
+                CanvasTabStrip(
+                  tabs: _tabs,
+                  activeDocumentId: _activeDocumentId,
+                  documents: inspectionController.documents,
+                  onTabSelected: (id) {
+                    setState(() => _activeDocumentId = id);
+                    _persistSession();
+                  },
+                  onTabClosed: _requestCloseTab,
+                  onAddTab: _openTabPicker,
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: activeIndex,
+                    children: _tabs
+                        .map(
+                          (tab) => CanvasDocumentPane(
+                            key: _keyFor(tab.documentId),
+                            projectId: widget.projectId,
+                            inspectionId: widget.inspectionId,
+                            documentId: tab.documentId,
+                            page: tab.page,
+                            annotateImageKey:
+                                tab.documentId == widget.documentId
+                                ? widget.annotateImageKey
+                                : null,
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
-      )
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, ThemeData theme) {
-    final projectName = projectController.currentProject?.name ?? "Project Details";
-    final projectId = projectController.currentProject?.id ?? "";
-
-    String inspectionLabel = "Inspection details";
-    final activeInspection = inspectionController.currentInspection;
-    
-    if (activeInspection != null) {
-      final rawDate = activeInspection.createTime; 
-      final parsedDate = rawDate is DateTime ? rawDate : DateTime.tryParse(rawDate.toString());
-      if (parsedDate != null) {
-        inspectionLabel = "Inspection - ${DateFormat('dd MMM yyyy').format(parsedDate)}";
-      }
-    }
-
-    String documentName = "Document Viewer";
-    try {
-      final doc = inspectionController.documents.firstWhere(
-        (d) => d['id'].toString() == widget.documentId 
-      );
-      documentName = doc['document_name'] ?? "Document Viewer";
-    } catch (_) {}
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppBreadcrumbs(
-          items: [
-            BreadcrumbItem(
-              label: "Projects",
-              onTap: () => context.go('/projects'),
-            ),
-            BreadcrumbItem(
-              label: projectName,
-              onTap: () {
-                if (projectId.isNotEmpty) {
-                  context.go('/projects/details/$projectId/inspections');
-                } else {
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-            BreadcrumbItem(
-              label: inspectionLabel,
-              onTap: () => Navigator.of(context).pop(), 
-            ),
-            BreadcrumbItem(
-              label: documentName,
-            ),
-          ],
-        ),
-        // Note: I removed the back arrow and title text from this header
-        // since your original Canvas handles close actions internally via `onClosePressed`
-      ],
+      ),
     );
   }
 }

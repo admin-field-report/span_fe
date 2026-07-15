@@ -1223,8 +1223,8 @@ class CanvasState extends State<Canvas> {
             child: GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4, // 🚀 Tighter 4-column layout
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 52, // 🚀 Fixed tool-item size; panel width only changes column count
                 crossAxisSpacing: 4,
                 mainAxisSpacing: 4,
                 childAspectRatio: 1.0,

@@ -327,14 +327,17 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                     ? currentPath.substring(0, currentPath.length - 1) 
                     : currentPath;
                     
-                final canvasUrl = '$cleanPath/canvas?document=$documentId&page=1';
-                
+                final canvasUrl = '$cleanPath/canvas';
+
                 context.go(
                   canvasUrl,
-                  extra: () {
-                    if (mounted) {
-                      inspectionController.fetchInspectionDetails(widget.inspectionId);
-                    }
+                  extra: {
+                    'documentId': documentId,
+                    'onRefresh': () {
+                      if (mounted) {
+                        inspectionController.fetchInspectionDetails(widget.inspectionId);
+                      }
+                    },
                   },
                 );
               },
