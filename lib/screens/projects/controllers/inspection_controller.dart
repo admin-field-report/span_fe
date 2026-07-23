@@ -7,7 +7,7 @@ class InspectionController extends ChangeNotifier {
   final ApiService _apiService = ApiService();
 
   // ==========================================
-  // 1. PROJECT INSPECTIONS STATE (Existing)
+  // 1. PROJECT INSPECTIONS STATE 
   // ==========================================
   List<ProjectInspection> _inspections = [];
   bool _isInspectionsLoading = false;
@@ -18,17 +18,21 @@ class InspectionController extends ChangeNotifier {
   String? get error => _error;
 
   // ==========================================
-  // 2. INSPECTION DETAILS STATE (New)
+  // 2. INSPECTION DETAILS STATE 
   // ==========================================
   bool _isDetailsLoading = false;
   String? _detailsError;
   List<Map<String, dynamic>> _documents = [];
   List<String> _mediaUrls = [];
+  
+  // 🚀 NEW: State variable to hold the current active inspection metadata
+  ProjectInspection? _currentInspection;
 
   bool get isDetailsLoading => _isDetailsLoading;
   String? get detailsError => _detailsError;
   List<Map<String, dynamic>> get documents => _documents;
   List<String> get mediaUrls => _mediaUrls;
+  ProjectInspection? get currentInspection => _currentInspection; // 🚀 GETTER
 
   // ==========================================
   // METHODS
@@ -47,7 +51,6 @@ class InspectionController extends ChangeNotifier {
         final List dataList = responseData['data'] ?? [];
         _inspections = dataList.map((item) => ProjectInspection.fromJson(item)).toList();
         
-        // 🚀 NEW: Sort the list descending by createTime (newest first)
         _inspections.sort((a, b) => b.createTime.compareTo(a.createTime));
       }
     } catch (e) {
@@ -63,13 +66,31 @@ class InspectionController extends ChangeNotifier {
     _detailsError = null;
     notifyListeners();
 
+    // 🚀 NEW: 1. SMART CACHE FOR METADATA
+    try {
+      _currentInspection = _inspections.firstWhere((i) => i.id == inspectionId);
+    } catch (e) {
+      // 2. FALLBACK: If not in memory (deep link / refresh), fetch the single inspection from API
+      try {
+        final response = await _apiService.get('/inspection/$inspectionId');
+        final Map<String, dynamic> resData = jsonDecode(response.body);
+        if (resData['success'] == true && resData['data'] != null) {
+          _currentInspection = ProjectInspection.fromJson(resData['data']);
+        } else {
+          _currentInspection = null;
+        }
+      } catch (_) {
+        _currentInspection = null;
+      }
+    }
+
+    // 3. FETCH SUB-DETAILS (Docs & Media)
     try {
       final results = await Future.wait([
         _fetchDocuments(inspectionId),
         _fetchMedia(inspectionId),
       ]);
 
-      // Parse results
       _documents = results[0] as List<Map<String, dynamic>>;
       _mediaUrls = results[1] as List<String>;
 
@@ -82,7 +103,7 @@ class InspectionController extends ChangeNotifier {
     }
   }
 
-Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
+  Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
     try {
       final response = await _apiService.get('/projectDocument/$inspectionId');
       final Map<String, dynamic> responseData = jsonDecode(response.body);
@@ -114,15 +135,12 @@ Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
       if (responseData['data'] != null && (responseData['data'] as List).isNotEmpty) {
         final firstItem = responseData['data'][0];
         
-        // 1. Grab the standard inspection images
         if (firstItem['signedUrls'] != null) {
           allMediaUrls.addAll(List<String>.from(firstItem['signedUrls']));
         }
 
-        // 2. Grab the document-specific images
         if (firstItem['documentSignedUrls'] != null) {
           final List documentImages = firstItem['documentSignedUrls'];
-          
           for (var docItem in documentImages) {
             if (docItem['signedUrl'] != null) {
               allMediaUrls.addAll(List<String>.from(docItem['signedUrl']));
@@ -138,9 +156,7 @@ Future<List<Map<String, dynamic>>> _fetchDocuments(String inspectionId) async {
       return [];
     }
   }
-
 }
-
 
 // Global instance
 final inspectionController = InspectionController();

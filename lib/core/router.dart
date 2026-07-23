@@ -104,16 +104,18 @@ GoRoute(
                   },
                   routes: [
                     GoRoute(
-                      path: '/canvas', 
+                      path: '/canvas',
                       builder: (context, state) {
-                        final documentId = state.uri.queryParameters['document'] ?? '';
-                        final page = state.uri.queryParameters['page'] ?? '1';
+                        // 🚀 Initial document travels via `extra`, not the URL — with
+                        // multiple documents open as tabs, the URL stays clean and the
+                        // open-tab session is restored from local storage instead.
+                        final extra = state.extra;
+                        final documentId = extra is Map ? (extra['documentId']?.toString() ?? '') : '';
 
                         return CanvasScreen(
-                          projectId: state.pathParameters['id']!, 
+                          projectId: state.pathParameters['id']!,
                           inspectionId: state.pathParameters['inspectionId']!,
                           documentId: documentId,
-                          page: page,
                         );
                       },
                     ),

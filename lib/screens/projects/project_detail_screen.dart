@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'inspections/project_inspections.dart';
@@ -7,10 +6,10 @@ import 'reports/project_reports.dart';
 import './widgets/project_medias.dart';
 import './widgets/project_settings.dart';
 import '../../widgets/tab/tab.dart';
-import '../../core/api_service.dart';
+import '../../widgets/breadcrumb/breadcrumb.dart'; 
 import '../../utils/utils.dart';
 import './widgets/add_project_form.dart'; 
-import '../../models/project.dart';
+import './controllers/project_controller.dart'; 
 
 class ProjectDetailsScreen extends StatefulWidget {
   final String projectId;
@@ -28,16 +27,8 @@ class ProjectDetailsScreen extends StatefulWidget {
 
 class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
     with SingleTickerProviderStateMixin {
-  final ApiService _apiService = ApiService();
   late TabController _tabController;
   final List<String> _sections = ['inspections', 'documents', 'media', 'reports'];
-  
-  // 🚀 STORE THE FULL PROJECT OBJECT IN STATE
-  Project? _currentProject;
-  
-  String _projectName = "Loading...";
-  String? _clientName;
-  bool _isLoadingProjectName = true;
 
   @override
   void initState() {
@@ -55,50 +46,14 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
       }
     });
 
-    _fetchProjectDetails();
-  }
-
-  Future<void> _fetchProjectDetails() async {
-    try {
-      final response = await _apiService.get('/project/${widget.projectId}');
-      final resData = jsonDecode(response.body);
-
-      if (resData['success'] == true && resData['data'] != null) {
-        if (mounted) {
-          setState(() {
-            _currentProject = Project.fromJson(resData['data']);
-            
-            _projectName = _currentProject!.name;
-            _clientName = _currentProject!.clientName.isNotEmpty ? _currentProject!.clientName : null;
-            
-            _isLoadingProjectName = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _projectName = 'Unknown Project';
-            _clientName = null;
-            _currentProject = null;
-            _isLoadingProjectName = false;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching project details: $e");
-      if (mounted) {
-        setState(() {
-          _projectName = 'Error loading project';
-          _clientName = null;
-          _currentProject = null;
-          _isLoadingProjectName = false;
-        });
-      }
-    }
+    // 🚀 TELL THE CONTROLLER TO DO THE HEAVY LIFTING
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      projectController.fetchProjectDetails(widget.projectId);
+    });
   }
 
   Future<void> _showEditProject() async {
-    if (_currentProject == null) return; // Safety check
+    if (projectController.currentProject == null) return; 
 
     final bool isDesktop = AppResponsive.isDesktopScreen(context);
     bool? isUpdated = false;
@@ -112,7 +67,7 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
             color: Colors.transparent,
             child: AddProjectForm(
               isDesktop: true, 
-              project: _currentProject, // 🚀 TRIGGERS EDIT MODE
+              project: projectController.currentProject, 
             ),
           ),
         ),
@@ -125,12 +80,15 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         elevation: 0,
         builder: (context) => AddProjectForm(
           isDesktop: false, 
-          project: _currentProject, // 🚀 TRIGGERS EDIT MODE
+          project: projectController.currentProject, 
         ),
       );
     }
-    setState(() => _isLoadingProjectName = true);
-    _fetchProjectDetails();
+    
+    // 🚀 Refresh data after editing
+    if (isUpdated == true) {
+      projectController.fetchProjectDetails(widget.projectId);
+    }
   }
 
   void _updateUrl() {
@@ -200,7 +158,12 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.max, 
         children: [
-          _buildHeader(context, theme),
+          
+          // 🚀 WRAP HEADER IN LISTENABLE TO REACT TO CONTROLLER
+          ListenableBuilder(
+            listenable: projectController,
+            builder: (context, _) => _buildHeader(context, theme),
+          ),
 
           AppTabBar(
             controller: _tabController,
@@ -236,90 +199,116 @@ class _ProjectDetailsScreenState extends State<ProjectDetailsScreen>
   }
 
   Widget _buildHeader(BuildContext context, ThemeData theme) {
+    // 🚀 READ DATA DIRECTLY FROM CONTROLLER
+    final project = projectController.currentProject;
+    final isLoading = projectController.isProjectDetailsLoading;
+    final projectName = project?.name ?? "Loading...";
+    final clientName = project?.clientName;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 16, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center, 
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          const SizedBox(width: 4), 
-          
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start, 
-            mainAxisSize: MainAxisSize.min, 
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min, 
-                children: [
-                  Text(
-                    _projectName, 
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  if (_isLoadingProjectName) ...[
-                    const SizedBox(width: 12),
-                    const SizedBox(
-                      width: 14, height: 14, 
-                      child: CircularProgressIndicator(strokeWidth: 2)
-                    )
-                  ] else ...[
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: _showEditProject,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: Icon(
-                          Icons.edit_outlined, 
-                          size: 20, 
-                          color: theme.colorScheme.primary
-                        ),
-                      ),
-                    ),
-                  ]
-                ],
+          AppBreadcrumbs(
+            items: [
+              BreadcrumbItem(
+                label: "Projects",
+                onTap: () => context.go('/projects'), 
               ),
-              
-              if (_clientName != null && _clientName!.isNotEmpty && !_isLoadingProjectName) ...[
-                const SizedBox(height: 2),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.business_rounded, 
-                      size: 13, 
-                      color: theme.colorScheme.onSurfaceVariant
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _clientName!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant
-                      ),
-                    ),
-                  ],
-                )
-              ],
+              BreadcrumbItem(
+                label: projectName, 
+              ),
             ],
           ),
-
-          const Spacer(),
-
-          Container(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.settings_outlined, size: 20), 
-              tooltip: "Manage Project Settings",
-              onPressed: () => _openProjectSettings(context, widget.projectId), 
-            ),
-          ),
           
+          const SizedBox(height: 12),
+          
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center, 
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => context.go('/projects'),
+              ),
+              const SizedBox(width: 12), 
+              
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start, 
+                mainAxisSize: MainAxisSize.min, 
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min, 
+                    children: [
+                      Text(
+                        projectName, 
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      if (isLoading) ...[
+                        const SizedBox(width: 12),
+                        const SizedBox(
+                          width: 14, height: 14, 
+                          child: CircularProgressIndicator(strokeWidth: 2)
+                        )
+                      ] else if (project != null) ...[
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: _showEditProject,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4.0),
+                            child: Icon(
+                              Icons.edit_outlined, 
+                              size: 20, 
+                              color: theme.colorScheme.primary
+                            ),
+                          ),
+                        ),
+                      ]
+                    ],
+                  ),
+                  
+                  if (clientName != null && clientName.isNotEmpty && !isLoading) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.business_rounded, 
+                          size: 13, 
+                          color: theme.colorScheme.onSurfaceVariant
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          clientName,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant
+                          ),
+                        ),
+                      ],
+                    )
+                  ],
+                ],
+              ),
+
+              const Spacer(),
+
+              Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.settings_outlined, size: 20), 
+                  tooltip: "Manage Project Settings",
+                  onPressed: () => _openProjectSettings(context, widget.projectId), 
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

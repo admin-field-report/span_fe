@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../controllers/inspection_controller.dart'; 
+import '../../projects/controllers/project_controller.dart';
 import '../../../core/api_service.dart'; 
 import '../../../services/toast_service.dart'; 
 import '../../../widgets/button/button.dart'; 
+import '../../../widgets/breadcrumb/breadcrumb.dart';
 
 class InspectionDetailsScreen extends StatefulWidget {
   final String inspectionId;
@@ -27,6 +29,11 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       inspectionController.fetchInspectionDetails(widget.inspectionId);
+      
+      final projectId = _extractProjectId();
+      if (projectId.isNotEmpty) {
+        projectController.fetchProjectDetails(projectId);
+      }
     });
   }
 
@@ -134,7 +141,11 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(context, theme),
+                ListenableBuilder(
+                  listenable: projectController,
+                  builder: (context, _) => _buildHeader(context, theme),
+                ),
+                
                 const SizedBox(height: 32),
                 
                 _buildSectionTitle(
@@ -169,19 +180,68 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
   }
 
   Widget _buildHeader(BuildContext context, ThemeData theme) {
-    return Row(
+    final projectId = _extractProjectId();
+    final projectName = projectController.currentProject?.name ?? "Loading...";
+
+    String inspectionLabel = "Inspection details";
+    
+    // 🚀 READ DIRECTLY FROM THE CONTROLLER'S CLEAN STATE
+    final activeInspection = inspectionController.currentInspection;
+    
+    if (activeInspection != null) {
+      final rawDate = activeInspection.createTime; 
+      final parsedDate = rawDate is DateTime 
+          ? rawDate 
+          : DateTime.tryParse(rawDate.toString());
+          
+      if (parsedDate != null) {
+        inspectionLabel = "Inspection - ${DateFormat('dd MMM yyyy').format(parsedDate)}";
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-          color: theme.colorScheme.onSurface,
+        AppBreadcrumbs(
+          items: [
+            BreadcrumbItem(
+              label: "Projects",
+              onTap: () => context.go('/projects'),
+            ),
+            BreadcrumbItem(
+              label: projectName,
+              onTap: () {
+                if (projectId.isNotEmpty) {
+                  context.go('/projects/details/$projectId/inspections');
+                } else {
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+            BreadcrumbItem(
+              label: inspectionLabel, 
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          "Inspection Detail",
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+              onPressed: () => Navigator.of(context).pop(),
+              color: theme.colorScheme.onSurface,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              "Inspection Detail",
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -267,14 +327,17 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                     ? currentPath.substring(0, currentPath.length - 1) 
                     : currentPath;
                     
-                final canvasUrl = '$cleanPath/canvas?document=$documentId&page=1';
-                
+                final canvasUrl = '$cleanPath/canvas';
+
                 context.go(
                   canvasUrl,
-                  extra: () {
-                    if (mounted) {
-                      inspectionController.fetchInspectionDetails(widget.inspectionId);
-                    }
+                  extra: {
+                    'documentId': documentId,
+                    'onRefresh': () {
+                      if (mounted) {
+                        inspectionController.fetchInspectionDetails(widget.inspectionId);
+                      }
+                    },
                   },
                 );
               },
@@ -479,7 +542,6 @@ class _AssignDocumentModalContent extends StatefulWidget {
   });
 
   @override
-  // 🚀 Added WidgetsBindingObserver to hook into app lifecycle
   State<_AssignDocumentModalContent> createState() => _AssignDocumentModalContentState();
 }
 
@@ -490,7 +552,6 @@ class _AssignDocumentModalContentState extends State<_AssignDocumentModalContent
   List<dynamic> _allDocuments = [];
   bool _isSubmitting = false;
   
-  // 🚀 POLLING STATE
   bool _isPolling = false;
 
   final Set<String> _selectedDocumentIds = {};
@@ -503,15 +564,15 @@ class _AssignDocumentModalContentState extends State<_AssignDocumentModalContent
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🚀 Register observer
+    WidgetsBinding.instance.addObserver(this); 
     _alreadyAssignedIds = widget.alreadyAssignedDocuments.map((d) => d['parent_project_document_id'].toString()).toSet();
     _fetchProjectDocuments();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // 🚀 Clean up observer
-    _isPolling = false; // 🚀 Kill polling loop when modal closes
+    WidgetsBinding.instance.removeObserver(this); 
+    _isPolling = false; 
     super.dispose();
   }
 
@@ -524,9 +585,6 @@ class _AssignDocumentModalContentState extends State<_AssignDocumentModalContent
     }
   }
 
-  // ==========================================
-  // 🌟 BULLETPROOF ASYNC POLLING LOGIC
-  // ==========================================
   void _checkAndStartPolling() {
     if (!mounted) return;
     
@@ -574,7 +632,7 @@ class _AssignDocumentModalContentState extends State<_AssignDocumentModalContent
           if (!isPolling) _isLoading = false;
         });
         
-        _checkAndStartPolling(); // 🚀 Re-evaluate if we still need to poll
+        _checkAndStartPolling(); 
       } else {
         if (!isPolling) setState(() => _isLoading = false);
       }

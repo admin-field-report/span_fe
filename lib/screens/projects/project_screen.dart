@@ -6,6 +6,7 @@ import '../../widgets/table/table.dart';
 import '../../widgets/button/button.dart';
 import '../../widgets/search_field/search_field.dart';
 import '../../widgets/confirmation/confirmation_remove.dart';
+import '../../widgets/breadcrumb/breadcrumb.dart'; 
 import '../../models/project.dart';
 import './controllers/project_controller.dart';
 import './widgets/add_project_form.dart';
@@ -47,7 +48,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (context) => Center(
           child: Material(
             color: Colors.transparent,
-            child: AddProjectForm(isDesktop: true), // No project passed = Create Mode
+            child: AddProjectForm(isDesktop: true), 
           ),
         ),
       );
@@ -62,7 +63,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
     }
   }
 
-  // 🚀 REWIRED: Method to show the Edit Project Form
   void _showEditProject(BuildContext context, Project project) {
     final bool isDesktop = AppResponsive.isDesktopScreen(context);
 
@@ -73,7 +73,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         builder: (context) => Center(
           child: Material(
             color: Colors.transparent,
-            child: AddProjectForm(isDesktop: true, project: project), // Pass project = Edit Mode
+            child: AddProjectForm(isDesktop: true, project: project), 
           ),
         ),
       );
@@ -248,15 +248,25 @@ class _ProjectScreenState extends State<ProjectScreen> {
     );
   }
 
-  // --- UI CONCEPT HELPERS ---
+  // 🚀 REWIRED: Injecting the AppBreadcrumbs component here!
   Widget _buildHeader(BuildContext context, ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // The Breadcrumb Trail
+        // AppBreadcrumbs(
+        //   items: [
+        //     BreadcrumbItem(
+        //       label: "Projects",
+        //     ),
+        //   ],
+        // ),
+        // const SizedBox(height: 8), // Clean spacing between breadcrumb and title
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Projects", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            // Promoted from titleMedium to titleLarge for a stronger page header
+            Text("Projects", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
           ],
         ),
       ],

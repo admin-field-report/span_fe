@@ -41,6 +41,10 @@ class ProjectController extends ChangeNotifier {
   bool get isReportLoading => _isReportLoading;
 
   String? get error => _error;
+
+  Project? currentProject;
+  bool isProjectDetailsLoading = false;
+  String? projectDetailsError;
   
   Future<void> getAllProjects() async {
       _isLoading = true;
@@ -206,6 +210,46 @@ Future<void> getAllDocuments(String projectId) async {
     }
   }
 
+
+  // ----------------------------------------------------------------
+  // PROJECT DETAILS APIS
+  // ----------------------------------------------------------------
+
+  Future<void> fetchProjectDetails(String projectId) async {
+    // 1. SMART CACHE: Try to find the project in memory first (Instant Load)
+    try {
+      currentProject = projects.firstWhere((p) => p.id == projectId);
+      isProjectDetailsLoading = false;
+      projectDetailsError = null;
+      notifyListeners();
+      return; // STOP HERE! No API call needed!
+    } catch (e) {
+      // Not in memory (e.g., user refreshed the browser). Proceed to API call.
+    }
+
+    // 2. FALLBACK: Hit the API only if memory failed
+    isProjectDetailsLoading = true;
+    projectDetailsError = null;
+    notifyListeners();
+
+    try {
+      final response = await _apiService.get('/project/$projectId');
+      final resData = jsonDecode(response.body);
+
+      if (resData['success'] == true && resData['data'] != null) {
+        currentProject = Project.fromJson(resData['data']);
+      } else {
+        currentProject = null;
+        projectDetailsError = "Failed to load project data.";
+      }
+    } catch (e) {
+      currentProject = null;
+      projectDetailsError = "A network error occurred.";
+    } finally {
+      isProjectDetailsLoading = false;
+      notifyListeners();
+    }
+  }
 
   // ----------------------------------------------------------------
   // PROJECT SETTINGS APIS
