@@ -122,7 +122,7 @@ class AppMenuContent extends StatelessWidget {
             _buildPopupItem(context, Icons.assignment_outlined, "Project Templates", '/templates/projects'),
             _buildPopupItem(context, Icons.build_outlined, "Tools", '/templates/tools'),
             _buildPopupItem(context, Icons.label_outlined, "Tags", '/templates/tags'),
-            _buildPopupItem(context, Icons.assessment_outlined, "Reports", '/templates/reports'),
+            _buildPopupItem(context, Icons.assessment_outlined, "Report Templates", '/templates/reports'),
           ],
           child: _NavTile(
             icon: Icons.description_outlined,
@@ -147,7 +147,7 @@ class AppMenuContent extends StatelessWidget {
           _NavTile(icon: Icons.assignment_outlined, label: "Project Templates", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/projects'), onTap: () => _navigate(context, '/templates/projects')),
           _NavTile(icon: Icons.build_outlined, label: "Tools", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tools'), onTap: () => _navigate(context, '/templates/tools')),
           _NavTile(icon: Icons.label_outlined, label: "Tags", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tags'), onTap: () => _navigate(context, '/templates/tags')),
-          _NavTile(icon: Icons.assessment_outlined, label: "Reports", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/reports'), onTap: () => _navigate(context, '/templates/reports')),
+          _NavTile(icon: Icons.assessment_outlined, label: "Report Templates", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/reports'), onTap: () => _navigate(context, '/templates/reports')),
         ],
       ),
     );

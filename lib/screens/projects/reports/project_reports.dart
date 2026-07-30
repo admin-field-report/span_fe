@@ -8,6 +8,7 @@ import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
 import './edit_report_screen.dart';
+import './preview_report_pdf_screen.dart';
 
 class ProjectReports extends StatefulWidget {
   final String projectId;
@@ -110,6 +111,18 @@ class _ProjectReportsState extends State<ProjectReports> {
                             isLoading: projectController.isReportLoading,
                             data: displayData,
                             showCheckboxes: false,
+                            onRowTap: (report) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PreviewReportPdfScreen(
+                                    reportId: report.id,
+                                    isReadOnly: true,
+                                  ),
+                                  fullscreenDialog: true,
+                                ),
+                              );
+                            },
                             columns: [
                               TableColumn(
                                 title: 'Sr No.',

@@ -79,23 +79,22 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  Future<CreateReportStatus> createReportWithDocuments(String name, List<PlatformFile> files) async {
-    bool isReportCreated = false;
+  Future<({CreateReportStatus status, String? reportId})> createReportWithDocuments(String name, List<PlatformFile> files) async {
+    String? reportId;
 
     try {
       // 1. Create the Report Template
       final createPayload = {"name": name};
       final createResponse = await _apiService.post('/reportTemplate/create', createPayload);
       final createData = jsonDecode(createResponse.body);
-      
-      if (createData['data'] == null) {
-        return CreateReportStatus.failure;
-      }
-      
-      final String reportId = createData['data']['id'];
-      isReportCreated = true; // 🚀 Flag as created, but defer refreshing to the UI
 
-      if (files.isEmpty) return CreateReportStatus.success;
+      if (createData['data'] == null) {
+        return (status: CreateReportStatus.failure, reportId: null);
+      }
+
+      reportId = createData['data']['id'];
+
+      if (files.isEmpty) return (status: CreateReportStatus.success, reportId: reportId);
 
       // 2. Get Pre-signed URLs
       final presignPayload = {
@@ -104,51 +103,115 @@ class ReportController extends ChangeNotifier {
           "content_type": "application/pdf"
         }).toList()
       };
-      
+
       final presignResponse = await _apiService.post('/reportTemplate/$reportId/documents/presigned-urls', presignPayload);
       final presignData = jsonDecode(presignResponse.body);
-      
-      if (presignData['uploads'] == null) return CreateReportStatus.partialSuccess;
-      
-      final List urlsData = presignData['uploads']; 
+
+      if (presignData['uploads'] == null) return (status: CreateReportStatus.partialSuccess, reportId: reportId);
+
+      final List urlsData = presignData['uploads'];
       List<Map<String, String>> registeredDocs = [];
 
       // 3. Upload files to S3 via Pre-signed URLs
       for (int i = 0; i < files.length; i++) {
         final file = files[i];
-        final urlInfo = urlsData[i]; 
-        
-        final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
+        final urlInfo = urlsData[i];
+
+        final String signedUrl = urlInfo['signedUrl'];
         final String s3Key = urlInfo['key'];
+        final String fileName = urlInfo['file_name'];
 
         final uploadResponse = await http.put(Uri.parse(signedUrl), body: file.bytes);
-        
+
         if (uploadResponse.statusCode == 200) {
           registeredDocs.add({
-            "name": file.name,
+            "name": fileName,
             "key": s3Key
           });
         }
       }
 
-      if (registeredDocs.isEmpty) return CreateReportStatus.partialSuccess;
+      if (registeredDocs.isEmpty) return (status: CreateReportStatus.partialSuccess, reportId: reportId);
 
-      // 4. Register the uploaded documents to the template
-      final registerPayload = {"documents": registeredDocs};
-      final registerResponse = await _apiService.post('/reportTemplate/$reportId/documents', registerPayload);
-      
-      if (registerResponse.statusCode != 200 && registerResponse.statusCode != 201) {
-        return CreateReportStatus.partialSuccess;
+      // // 4. Register the uploaded documents to the template
+      // final registerPayload = {"documents": registeredDocs};
+      // final registerResponse = await _apiService.post('/reportTemplate/$reportId/documents', registerPayload);
+      //
+      // if (registerResponse.statusCode != 200 && registerResponse.statusCode != 201) {
+      //   return CreateReportStatus.partialSuccess;
+      // }
+      //
+      // if (registeredDocs.length < files.length) return CreateReportStatus.partialSuccess;
+      //
+      // return CreateReportStatus.success;
+
+      // 4. Assign the uploaded document to the report template and extract its HTML
+      // (the UI only ever uploads one document at a time, so use the first).
+      final doc = registeredDocs.first;
+      final assignPayload = {
+        "key": doc["key"],
+        "name": doc["name"],
+        "signedUrl": urlsData.first['signedUrl'],
+      };
+      final assignResponse = await _apiService.post(
+        '/reportTemplate/assign-document-to-report-template/$reportId',
+        assignPayload,
+      );
+
+      if (assignResponse.statusCode != 200 && assignResponse.statusCode != 201) {
+        return (status: CreateReportStatus.partialSuccess, reportId: reportId);
       }
 
-      if (registeredDocs.length < files.length) return CreateReportStatus.partialSuccess;
-
-      return CreateReportStatus.success;
-
+      return (status: CreateReportStatus.success, reportId: reportId);
     } catch (e) {
       debugPrint("Error in createReportWithDocuments: $e");
-      return isReportCreated ? CreateReportStatus.partialSuccess : CreateReportStatus.failure;
+      return (status: reportId != null ? CreateReportStatus.partialSuccess : CreateReportStatus.failure, reportId: reportId);
     }
+  }
+
+  /// Fetches the rendered HTML fragments (header/footer/etc.) for a single
+  /// report template document, keyed by its own document id (not the
+  /// template id).
+  Future<List<Map<String, dynamic>>> fetchDocumentHtml(String documentId) async {
+    final response = await _apiService.get('/reportTemplate/document-html/getByDocumentId/$documentId');
+    final resData = jsonDecode(response.body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300 && resData['data'] != null) {
+      return List<Map<String, dynamic>>.from(resData['data']);
+    }
+    throw Exception(resData['message'] ?? "Failed to fetch document preview.");
+  }
+
+  /// Fetches the full report template record including its `header_html`/
+  /// `footer_html` fields, used to seed the Report Placeholder editor.
+  Future<Map<String, dynamic>> fetchTemplateHtml(String templateId) async {
+    final response = await _apiService.get('/reportTemplate/getById/$templateId');
+    final resData = jsonDecode(response.body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300 && resData['data'] != null) {
+      return resData['data'];
+    }
+    throw Exception(resData['message'] ?? "Failed to fetch report template.");
+  }
+
+  /// Single dynamic PATCH endpoint for a report template — pass whichever
+  /// fields need updating (e.g. `{'name': ...}` or the header/footer HTML).
+  Future<void> updateReportTemplateFields(String templateId, Map<String, dynamic> fields) async {
+    final response = await _apiService.patch('/reportTemplate/$templateId/update', fields);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final resData = jsonDecode(response.body);
+      throw Exception(resData['message'] ?? "Failed to update report template.");
+    }
+  }
+
+  /// Saves the Report Placeholder editor's header/footer back onto the
+  /// template as rendered HTML.
+  Future<void> saveTemplateHtml(String templateId, {required String headerHtml, required String footerHtml}) {
+    return updateReportTemplateFields(templateId, {
+      'header_html': headerHtml,
+      'footer_html': footerHtml,
+    });
   }
 
   Future<void> deleteReport(String templateId) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+// import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../widgets/card/card.dart';
 import '../../../widgets/table/table.dart';
@@ -105,7 +106,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 10),
-            Text("Reports", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            Text("Report Templates", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
 
             Expanded(
@@ -131,10 +132,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               ),
                             ),
                           )
+                          // Routed through go_router (not Navigator.push) so it
+                          // stays nested inside MainScaffold's shell (sidebar
+                          // nav, etc.) instead of covering the whole screen.
+                          // context.push(
+                          //   '/report-placeholder',
+                          //   extra: {'templateId': item.id, 'templateName': item.name},
+                          // ),
                         },
                         columns: [
                           TableColumn(
-                            title: "Report Name",
+                            title: "Name",
                             flex: 3,
                             minWidth: 250,
                             sortable: true,

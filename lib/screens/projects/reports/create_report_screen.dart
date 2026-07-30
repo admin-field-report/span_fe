@@ -6,7 +6,8 @@ import 'package:intl/intl.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
-import 'report_skill_preview_screen.dart';
+// import 'report_skill_preview_screen.dart'; // Clarification-questions step is commented out below.
+import 'generated_report_view.dart';
 
 class CreateReportScreen extends StatefulWidget {
   final String projectId;
@@ -34,9 +35,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   List<dynamic> _reportTemplates = [];
   dynamic _selectedReportTemplate; // Single selection
 
-  // Step 3: Clarification Questions
-  List<dynamic> _clarificationQuestions = [];
-  final Map<int, TextEditingController> _questionAnswers = {};
+  // Step 3: Clarification Questions — commented out along with the step
+  // itself; the flow now stops after template selection and shows the
+  // inspection summary preview instead. Not removed so it can be restored.
+  // List<dynamic> _clarificationQuestions = [];
+  // final Map<int, TextEditingController> _questionAnswers = {};
 
   @override
   void initState() {
@@ -45,13 +48,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _fetchReportTemplates();
   }
 
-  @override
-  void dispose() {
-    for (var controller in _questionAnswers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
+  // @override
+  // void dispose() {
+  //   for (var controller in _questionAnswers.values) {
+  //     controller.dispose();
+  //   }
+  //   super.dispose();
+  // }
 
   // --- STEP 1 LOGIC ---
   Future<void> _fetchInspections() async {
@@ -108,41 +111,113 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   // 🚀 THE HEAVY LIFTING: Merge Existing + Upload New -> Register Template -> Trigger AI
-  Future<void> _processDocumentsAndAnalyze() async {
+  // Commented out along with the clarification-questions step (step 3) it
+  // used to lead into — not removed so it can be restored later.
+  // Future<void> _processDocumentsAndAnalyze() async {
+  //   setState(() {
+  //     _isProcessing = true;
+  //     _loadingMessage = "Generating Skill & Questions...";
+  //   });
+  //
+  //   try {
+  //     // 1. TRIGGER SKILL GENERATION
+  //     final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
+  //     final genData = jsonDecode(genRes.body);
+  //
+  //     final String statusEndpoint = genData['data']['status_endpoint'];
+  //
+  //     // 2. POLL UNTIL SKILL IS GENERATED
+  //     bool isComplete = false;
+  //     while (!isComplete) {
+  //       await Future.delayed(const Duration(seconds: 3));
+  //       final pollRes = await _apiService.get(statusEndpoint);
+  //       final pollData = jsonDecode(pollRes.body);
+  //       if (pollData['status'] == 'completed') isComplete = true;
+  //     }
+  //
+  //     // 3. GET CLARIFICATION QUESTIONS
+  //     setState(() => _loadingMessage = "Fetching questions...");
+  //     final qRes = await _apiService.get('/reportTemplate/${_selectedReportTemplate['id']}/clarification-questions');
+  //     final qData = jsonDecode(qRes.body);
+  //
+  //     setState(() {
+  //       _clarificationQuestions = qData['data']['clarification_questions'] ?? []; // Adjust key based on API
+  //       _questionAnswers.clear();
+  //       for (int i = 0; i < _clarificationQuestions.length; i++) {
+  //         _questionAnswers[i] = TextEditingController();
+  //       }
+  //       _currentStep = 2; // Move to the Questions Step
+  //     });
+  //   } catch (e) {
+  //     if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
+  //   } finally {
+  //     if (mounted) setState(() => _isProcessing = false);
+  //   }
+  // }
+
+  // 🚀 Calls GET /inspection/summary/{templateId}?inspectionIds=...&inspectionIds=...
+  // and previews the returned HTML summary with a close button — the whole
+  // flow now stops here instead of continuing into skill generation /
+  // clarification questions / final report finalization.
+  Future<void> _generateReportSummary() async {
     setState(() {
       _isProcessing = true;
-      _loadingMessage = "Generating Skill & Questions...";
+      _loadingMessage = "Generating Report Summary...";
     });
 
     try {
-      // 1. TRIGGER SKILL GENERATION
-      final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
-      final genData = jsonDecode(genRes.body);
+      final templateId = _selectedReportTemplate['id'];
+      final query = _selectedInspectionIds
+          .map((id) => 'inspectionIds=${Uri.encodeQueryComponent(id)}')
+          .join('&');
+      final response = await _apiService.get('/inspection/summary/$templateId?$query');
+      final responseData = jsonDecode(response.body);
 
-      final String statusEndpoint = genData['data']['status_endpoint'];
+      if (!mounted) return;
 
-      // 2. POLL UNTIL SKILL IS GENERATED
-      bool isComplete = false;
-      while (!isComplete) {
-        await Future.delayed(const Duration(seconds: 3));
-        final pollRes = await _apiService.get(statusEndpoint);
-        final pollData = jsonDecode(pollRes.body);
-        if (pollData['status'] == 'completed') isComplete = true;
+      if (responseData['success'] != true || responseData['status_endpoint'] == null) {
+        throw Exception(responseData['message'] ?? "Failed to start report summary generation.");
       }
 
-      // 3. GET CLARIFICATION QUESTIONS
-      setState(() => _loadingMessage = "Fetching questions...");
-      final qRes = await _apiService.get('/reportTemplate/${_selectedReportTemplate['id']}/clarification-questions');
-      final qData = jsonDecode(qRes.body);
+      final String statusEndpoint = responseData['status_endpoint'];
 
-      setState(() {
-        _clarificationQuestions = qData['data']['clarification_questions'] ?? []; // Adjust key based on API
-        _questionAnswers.clear();
-        for (int i = 0; i < _clarificationQuestions.length; i++) {
-          _questionAnswers[i] = TextEditingController();
+      Map<String, dynamic>? pollData;
+      bool isComplete = false;
+      const int maxAttempts = 30;
+      int attempts = 0;
+
+      while (!isComplete && attempts < maxAttempts) {
+        await Future.delayed(const Duration(seconds: 3));
+        attempts++;
+
+        final pollRes = await _apiService.get(statusEndpoint);
+        pollData = jsonDecode(pollRes.body);
+
+        if (pollData!['status'] == 'completed') {
+          isComplete = true;
+        } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
+          throw Exception(pollData['message'] ?? "Report summary generation failed.");
         }
-        _currentStep = 2; // Move to the Questions Step
-      });
+      }
+
+      if (!isComplete) throw Exception("Report summary generation timed out.");
+      if (!mounted) return;
+
+      final String summaryHtml = pollData?['result']?['data']?['summary'] ?? "<p>No summary generated.</p>";
+      final bool? didFinish = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => GeneratedReportView(
+            htmlContent: summaryHtml,
+            reportId: pollData?['result']?['data']?['report']?['id'] ?? "",
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+      if (!mounted) return;
+      if (didFinish == true) {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
     } finally {
@@ -158,18 +233,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         return;
       }
       setState(() => _currentStep += 1);
-    } 
+    }
     else if (_currentStep == 1) {
       // 🚀 Validate single template selection
       if (_selectedReportTemplate == null) {
         ToastService.show(context, message: "Please select a Report Template.", type: ToastType.error);
         return;
       }
-      _processDocumentsAndAnalyze();
+      _generateReportSummary();
     }
-    else if (_currentStep == 2) {
-      _submitFinalReport();
-    }
+    // else if (_currentStep == 2) {
+    //   _submitFinalReport();
+    // }
   }
 
   void _onStepCancel() {
@@ -181,21 +256,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   // 🚀 FINAL STEP: Submit Answers and Finalize Skill
+  // Commented out along with the clarification-questions step (step 3) and
+  // ReportSkillPreviewScreen flow it led into — not removed so it can be
+  // restored later.
+  /*
   Future<void> _submitFinalReport() async {
     setState(() {
       _isProcessing = true;
       _loadingMessage = "Finalizing Report Formatting...";
     });
-    
+
     try {
       // 1. APPLY CLARIFICATIONS
 
       final Map<String, String> answersPayload = {};
-      
+
       for (int i = 0; i < _clarificationQuestions.length; i++) {
         final qText = _clarificationQuestions[i]['question'];
         final aText = _questionAnswers[i]?.text.trim() ?? "";
-        
+
         if (aText.isNotEmpty) {
           answersPayload[qText] = aText;
         }
@@ -228,7 +307,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           '/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications',
           {'clarification_answers': answersPayload}
         );
-        
+
         final finalizeData = jsonDecode(finalizeRes.body);
 
         final String statusEndpoint = finalizeData['status_endpoint'];
@@ -246,14 +325,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
           if (pollData['status'] == 'completed') {
             isComplete = true;
-            
+
             if (!mounted) return;
-            
+
             final skillContent = pollData['result']['skill_content'];
             // final skillId = pollData['result']['skill']['id'];
 
             ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
-            
+
             final bool? didCreateReport = await Navigator.push<bool>(
               context,
               MaterialPageRoute(
@@ -270,7 +349,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             if (didCreateReport == true) {
               Navigator.pop(context, true);
             }
-            
+
           } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
             throw Exception("Finalization failed on server.");
           }
@@ -284,6 +363,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
+  */
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +395,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                     child: Row(
                       children: [
                         Button(
-                          label: _currentStep == 2 ? "Finalize Report" : (_currentStep == 1 ? "Analyze Documents" : "Continue"),
+                          label: _currentStep == 1 ? "Generate Report" : "Continue",
                           variant: ButtonVariant.filled,
                           onPressed: details.onStepContinue,
                         ),
@@ -421,7 +501,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                               separatorBuilder: (_, __) => const Divider(height: 1),
                               itemBuilder: (context, index) {
                                 final template = _reportTemplates[index];
-                                final bool hasDocuments = template['documents'] == true;
 
                                 return RadioListTile<dynamic>(
                                   value: template,
@@ -435,23 +514,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                       fontWeight: FontWeight.w600, 
                                       fontSize: 14,
                                       // Optional: Dim the title text slightly if it's disabled
-                                      color: hasDocuments ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.5),
+                                      color: colorScheme.onSurface,
                                     )
                                   ),
-                                  subtitle: hasDocuments
-                                      ? null
-                                      : Text(
-                                          "No documents available for this template",
-                                          style: TextStyle(fontSize: 12, color: colorScheme.error.withOpacity(0.8)), 
-                                        ),
                                   // Setting onChanged to null automatically disables the entire tile
-                                  onChanged: hasDocuments 
-                                      ? (val) {
+                                  onChanged: (val) {
                                           setState(() {
                                             _selectedReportTemplate = val;
                                           });
-                                        }
-                                      : null, 
+                                        }, 
                                 );
                               },
                             ),
@@ -460,63 +531,66 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
                   // ==========================================
                   // STEP 3: CLARIFICATION QUESTIONS
+                  // Commented out — the flow now stops after template
+                  // selection (step 2) and shows the summary preview
+                  // instead. Not removed so it can be restored later.
                   // ==========================================
-                  Step(
-                    title: const Text("Clarification Questions", style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text("Answer these to refine the report structure (Optional)"), 
-                    isActive: _currentStep >= 2,
-                    state: _currentStep > 2 ? StepState.complete : StepState.indexed,
-                    content: _clarificationQuestions.isEmpty 
-                      ? const Text("No questions generated.")
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: List.generate(_clarificationQuestions.length, (index) {
-                            final qData = _clarificationQuestions[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 24),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surface,
-                                border: Border.all(color: colorScheme.outlineVariant),
-                                borderRadius: BorderRadius.circular(12)
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 14,
-                                        backgroundColor: colorScheme.primaryContainer,
-                                        child: Text("${index + 1}", style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.bold)),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          qData['question'] ?? "",
-                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  TextField(
-                                    controller: _questionAnswers[index],
-                                    maxLines: 2,
-                                    decoration: InputDecoration(
-                                      hintText: "Enter your answer here (Optional)...",
-                                      filled: true,
-                                      fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  )
-                                ],
-                              ),
-                            );
-                          }),
-                        ),
-                  ),
+                  // Step(
+                  //   title: const Text("Clarification Questions", style: TextStyle(fontWeight: FontWeight.bold)),
+                  //   subtitle: const Text("Answer these to refine the report structure (Optional)"),
+                  //   isActive: _currentStep >= 2,
+                  //   state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+                  //   content: _clarificationQuestions.isEmpty
+                  //     ? const Text("No questions generated.")
+                  //     : Column(
+                  //         crossAxisAlignment: CrossAxisAlignment.start,
+                  //         children: List.generate(_clarificationQuestions.length, (index) {
+                  //           final qData = _clarificationQuestions[index];
+                  //           return Container(
+                  //             margin: const EdgeInsets.only(bottom: 24),
+                  //             padding: const EdgeInsets.all(16),
+                  //             decoration: BoxDecoration(
+                  //               color: colorScheme.surface,
+                  //               border: Border.all(color: colorScheme.outlineVariant),
+                  //               borderRadius: BorderRadius.circular(12)
+                  //             ),
+                  //             child: Column(
+                  //               crossAxisAlignment: CrossAxisAlignment.start,
+                  //               children: [
+                  //                 Row(
+                  //                   crossAxisAlignment: CrossAxisAlignment.start,
+                  //                   children: [
+                  //                     CircleAvatar(
+                  //                       radius: 14,
+                  //                       backgroundColor: colorScheme.primaryContainer,
+                  //                       child: Text("${index + 1}", style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.bold)),
+                  //                     ),
+                  //                     const SizedBox(width: 12),
+                  //                     Expanded(
+                  //                       child: Text(
+                  //                         qData['question'] ?? "",
+                  //                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  //                       ),
+                  //                     ),
+                  //                   ],
+                  //                 ),
+                  //                 const SizedBox(height: 16),
+                  //                 TextField(
+                  //                   controller: _questionAnswers[index],
+                  //                   maxLines: 2,
+                  //                   decoration: InputDecoration(
+                  //                     hintText: "Enter your answer here (Optional)...",
+                  //                     filled: true,
+                  //                     fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  //                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  //                   ),
+                  //                 )
+                  //               ],
+                  //             ),
+                  //           );
+                  //         }),
+                  //       ),
+                  // ),
                 ],
               ),
 
