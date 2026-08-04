@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import '../../../../core/api_service.dart';
+import 'eve_profile_api.dart';
 
 enum CreateReportStatus { success, partialSuccess, failure }
 
@@ -13,11 +14,19 @@ class ReportTemplate {
   final DateTime createDate;
   final String authorName;
 
+  /// Eve Word-profile pointer fields (mirrors the BE's DB columns). `null`
+  /// when the template has never had a profile job started — the UI treats
+  /// that the same as `'none'`.
+  final String? profileStatus;
+  final String? profileJobId;
+
   ReportTemplate({
     required this.id, 
     required this.name, 
     required this.createDate,
     required this.authorName,
+    this.profileStatus,
+    this.profileJobId,
   });
 
   factory ReportTemplate.fromJson(Map<String, dynamic> json) {
@@ -35,6 +44,8 @@ class ReportTemplate {
           ? DateTime.tryParse(json['create_time']) ?? DateTime.now() 
           : DateTime.now(),
       authorName: author,
+      profileStatus: json['profile_status']?.toString(),
+      profileJobId: json['profile_job_id']?.toString(),
     );
   }
 }
@@ -98,10 +109,14 @@ class ReportController extends ChangeNotifier {
       if (files.isEmpty) return CreateReportStatus.success;
 
       // 2. Get Pre-signed URLs
+      // 🚀 FIX: use the real per-file content type (docx/pdf/doc/txt) instead
+      // of always claiming "application/pdf" — S3 stores whatever
+      // Content-Type we PUT with, so a mismatched type here silently
+      // corrupts how the file is later served/opened.
       final presignPayload = {
         "files": files.map((f) => {
           "file_name": f.name,
-          "content_type": "application/pdf"
+          "content_type": EveProfileApi.contentTypeForFileName(f.name)
         }).toList()
       };
       
@@ -120,8 +135,17 @@ class ReportController extends ChangeNotifier {
         
         final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
         final String s3Key = urlInfo['key'];
+        // 🚀 FIX: PUT with the matching Content-Type header — S3 requires the
+        // header to match what the presigned URL was signed with, and the
+        // stored object's Content-Type is what browsers use when opening it.
+        final String contentType = urlInfo['content_type']?.toString() ??
+            EveProfileApi.contentTypeForFileName(file.name);
 
-        final uploadResponse = await http.put(Uri.parse(signedUrl), body: file.bytes);
+        final uploadResponse = await http.put(
+          Uri.parse(signedUrl),
+          headers: {'Content-Type': contentType},
+          body: file.bytes,
+        );
         
         if (uploadResponse.statusCode == 200) {
           registeredDocs.add({
@@ -205,10 +229,13 @@ class ReportController extends ChangeNotifier {
     Function(int current, int total)? onProgress, // 🚀 Added callback
   }) async {
     
+    // 🚀 FIX: use the real per-file content type (docx/pdf/doc/txt) instead
+    // of always claiming "application/pdf" — see the matching fix in
+    // createReportWithDocuments above for why this matters.
     final presignPayload = {
       "files": files.map((f) => {
         "file_name": f.name,
-        "content_type": "application/pdf"
+        "content_type": EveProfileApi.contentTypeForFileName(f.name)
       }).toList()
     };
     
@@ -232,10 +259,17 @@ class ReportController extends ChangeNotifier {
       
       final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
       final String s3Key = urlInfo['key'];
+      final String contentType = urlInfo['content_type']?.toString() ??
+          EveProfileApi.contentTypeForFileName(file.name);
 
       if (file.bytes == null) continue;
 
-      final uploadResponse = await http.put(Uri.parse(signedUrl), body: file.bytes);
+      // 🚀 FIX: PUT with the matching Content-Type header (see above).
+      final uploadResponse = await http.put(
+        Uri.parse(signedUrl),
+        headers: {'Content-Type': contentType},
+        body: file.bytes,
+      );
       
       if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {
         registeredDocs.add({

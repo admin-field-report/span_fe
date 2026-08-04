@@ -8,6 +8,7 @@ import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
 import './edit_report_screen.dart';
+import './generate_word_report_screen.dart';
 
 class ProjectReports extends StatefulWidget {
   final String projectId;
@@ -58,6 +59,125 @@ class _ProjectReportsState extends State<ProjectReports> {
         type: ToastType.error
       );
     }
+  }
+
+  /// "Create Report" offers two paths for a project report: the Eve Word
+  /// flow (fill a ready Word profile's `.docx` for selected inspections) or
+  /// the existing HTML/skill-based flow ([CreateReportScreen]).
+  void _showCreateReportChooser(BuildContext context) {
+    final theme = Theme.of(context);
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (dialogContext) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 420,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Create Report',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose which report format to generate for this project.',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                _createOptionTile(
+                  theme: theme,
+                  icon: Icons.description_outlined,
+                  title: 'Word report',
+                  subtitle: 'Fill a ready Eve Word profile using selected inspections.',
+                  onTap: () async {
+                    Navigator.of(dialogContext).pop();
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => GenerateWordReportScreen(projectId: widget.projectId),
+                      ),
+                    );
+                    if (mounted) projectController.getAllReports(widget.projectId);
+                  },
+                ),
+                const SizedBox(height: 12),
+                _createOptionTile(
+                  theme: theme,
+                  icon: Icons.article_outlined,
+                  title: 'HTML report',
+                  subtitle: 'Existing flow: select a skill-based template and finalize.',
+                  onTap: () async {
+                    Navigator.of(dialogContext).pop();
+                    final bool? didCreate = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
+                    );
+                    if (didCreate == true && mounted) {
+                      projectController.getAllReports(widget.projectId);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _createOptionTile({
+    required ThemeData theme,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: theme.colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, ProjectReport report) {
@@ -253,23 +373,12 @@ class _ProjectReportsState extends State<ProjectReports> {
             const SizedBox(width: 16),
           ],
 
-          // Create Report Button
+          // Create Report Button — opens the Word vs HTML chooser dialog.
           Button(
             label: isDesktop ? "Create Report" : "Create", 
             variant: ButtonVariant.filled,
             icon: Icons.add,
-            onPressed: () async {
-              // Push the new screen and wait for it to return true
-              final bool? didCreate = await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
-              );
-
-              // If report was created successfully, refresh the table!
-              if (didCreate == true && mounted) {
-                projectController.getAllReports(widget.projectId);
-              }
-            },
+            onPressed: () => _showCreateReportChooser(context),
           ),
         ],
       )

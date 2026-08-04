@@ -16,6 +16,7 @@ import '../screens/ai_data/ai_data_screen.dart';
 import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
 import '../screens/reports/reports_screen.dart';
+import '../screens/reports/word_profile_template_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -140,6 +141,26 @@ GoRoute(
         GoRoute(
           path: '/templates/reports',
           builder: (context, state) => const ReportsScreen(),
+        ),
+        // 🚀 Eve Word-profile flow: create-mode (no id yet) and manage-mode
+        // (existing template, optionally resuming a known job/status via
+        // query params so the list row doesn't need a fresh metadata fetch
+        // before the screen can start polling).
+        GoRoute(
+          path: '/templates/reports/word-profile',
+          builder: (context, state) => const WordProfileTemplateScreen(),
+        ),
+        GoRoute(
+          path: '/templates/reports/word-profile/:templateId',
+          builder: (context, state) {
+            final query = state.uri.queryParameters;
+            return WordProfileTemplateScreen(
+              templateId: state.pathParameters['templateId'],
+              templateName: query['title'],
+              initialProfileStatus: query['status'],
+              initialJobId: query['jobId'],
+            );
+          },
         ),
         GoRoute(
           path: '/ai',

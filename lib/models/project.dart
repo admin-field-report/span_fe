@@ -152,10 +152,22 @@ class ProjectReport {
   final String name;
   final DateTime createDate;
 
+  /// Present once a report was generated via the Eve Word flow — `'docx'`
+  /// vs the historical HTML/skill reports (which leave this `null`).
+  final String? reportFormat;
+
+  /// Signed/persisted URL for the filled `.docx`, when available. This is
+  /// optional and best-effort: the authoritative source for a fresh signed
+  /// URL is always `EveGenerateDocxApiService.getReportById`, since S3
+  /// signed URLs expire.
+  final String? reportDocxUrl;
+
   ProjectReport({
     required this.id,
     required this.name,
     required this.createDate,
+    this.reportFormat,
+    this.reportDocxUrl,
   });
   
   factory ProjectReport.fromJson(Map<String, dynamic> json) {
@@ -165,6 +177,10 @@ class ProjectReport {
       createDate: json['create_time'] != null 
           ? DateTime.parse(json['create_time']) 
           : DateTime.now(),
+      reportFormat: json['report_format']?.toString(),
+      reportDocxUrl: json['download_urls'] is Map
+          ? (json['download_urls'] as Map)['filled_docx']?.toString()
+          : json['filled_docx_url']?.toString(),
     );
   }
 }
