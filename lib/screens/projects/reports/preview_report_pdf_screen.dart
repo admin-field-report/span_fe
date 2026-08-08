@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../../core/api_service.dart';
@@ -24,7 +23,7 @@ class _PreviewReportPdfScreenState extends State<PreviewReportPdfScreen> {
   final ApiService _apiService = ApiService();
   final PdfViewerController _pdfViewerController = PdfViewerController();
 
-  Uint8List? _pdfBytes;
+  String? _pdfUrl;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -51,45 +50,14 @@ class _PreviewReportPdfScreenState extends State<PreviewReportPdfScreen> {
         if (mounted) {
           setState(() {
             try {
-              final bodyString = response.body.trim();
-              
-              // 1. Check if it's a raw Base64 string (PDFs in base64 always start with 'JVBER')
-              // Sometimes APIs return the raw base64 string without JSON wrapping.
-              // Note: It might be wrapped in quotes or have newlines, so we clean it.
-              String cleanString = bodyString.replaceAll('"', '').replaceAll('\n', '').replaceAll('\r', '').trim();
-              
-              Uint8List decodeBase64Safe(String base64Str) {
-                String normalized = base64Str.replaceAll('\n', '').replaceAll('\r', '').trim();
-                while (normalized.length % 4 != 0) {
-                  normalized += '=';
-                }
-                return base64Decode(normalized);
-              }
-
-              if (cleanString.startsWith('JVBER')) {
-                _pdfBytes = decodeBase64Safe(cleanString);
+              final decoded = jsonDecode(response.body);
+              if (decoded != null && decoded['data'] != null && decoded['data']['signedUrl'] != null) {
+                _pdfUrl = decoded['data']['signedUrl'];
               } else {
-                // 2. Try parsing as JSON
-                final decoded = jsonDecode(bodyString);
-                if (decoded != null && decoded['data'] != null) {
-                  if (decoded['data'] is String) {
-                    _pdfBytes = decodeBase64Safe(decoded['data']);
-                  } else if (decoded['data']['data'] != null) {
-                    _pdfBytes = Uint8List.fromList(List<int>.from(decoded['data']['data']));
-                  } else if (decoded['data'] is List) {
-                    _pdfBytes = Uint8List.fromList(List<int>.from(decoded['data']));
-                  } else {
-                    _pdfBytes = response.bodyBytes;
-                  }
-                } else if (decoded != null && decoded['type'] == 'Buffer' && decoded['data'] != null) {
-                  _pdfBytes = Uint8List.fromList(List<int>.from(decoded['data']));
-                } else {
-                  _pdfBytes = response.bodyBytes;
-                }
+                _errorMessage = "Invalid response format.";
               }
             } catch (e) {
-              // 3. Not JSON and not a raw Base64 string, assume it's raw PDF bytes (starts with %PDF)
-              _pdfBytes = response.bodyBytes;
+              _errorMessage = "Failed to parse API response.";
             }
             _isLoading = false;
           });
@@ -193,9 +161,9 @@ class _PreviewReportPdfScreenState extends State<PreviewReportPdfScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _errorMessage != null
                     ? Center(child: Text("Error: $_errorMessage"))
-                    : _pdfBytes != null
-                        ? SfPdfViewer.memory(
-                            _pdfBytes!,
+                    : _pdfUrl != null
+                        ? SfPdfViewer.network(
+                            _pdfUrl!,
                             controller: _pdfViewerController,
                             interactionMode: PdfInteractionMode.pan,
                             canShowScrollHead: false,
