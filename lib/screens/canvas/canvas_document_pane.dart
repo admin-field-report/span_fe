@@ -2,7 +2,13 @@ import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import 'package:file_saver/file_saver.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
@@ -13,6 +19,7 @@ import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
+import 'widgets/pdf_export_button.dart';
 
 
 class CanvasDocumentPane extends StatefulWidget {
@@ -44,6 +51,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   bool _isLoadingAnnotations = false;
   bool _isUploadingImage = false;
   bool _isSaving = false;
+  bool _isExporting = false;
   bool _isFirstLoadComplete = false;
 
   bool _hasUnsavedChanges = false;
@@ -1180,6 +1188,13 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               : [
                   _buildPageSelector(theme),
                   const SizedBox(width: 12),
+                  PdfExportButton(
+                    documentId: widget.documentId,
+                    hasUnsavedChanges: _hasUnsavedChanges || _hasUnsavedImageChanges,
+                    onExportStart: () => setState(() => _isExporting = true),
+                    onExportEnd: () => setState(() => _isExporting = false),
+                  ),
+                  const SizedBox(width: 8),
                   CanvasToolbarActionButton(
                     tooltip: "Save Annotations",
                     icon: Icons.save_outlined,
@@ -1196,7 +1211,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           },
         ),
 
-        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
+        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage || _isExporting)
           _buildLoadingOverlay(theme),
       ],
     );
