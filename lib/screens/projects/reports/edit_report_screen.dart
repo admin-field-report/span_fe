@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:html2md/html2md.dart' as html2md;
-import 'package:markdown/markdown.dart' as md;
+import 'package:html_editor_enhanced/html_editor.dart';
 
 import '../../../core/api_service.dart';
 import '../../../widgets/widgets.dart';
@@ -19,26 +17,24 @@ class EditReportScreen extends StatefulWidget {
 
 class _EditReportScreenState extends State<EditReportScreen> {
   final ApiService _apiService = ApiService();
-  late TextEditingController _contentController;
+  final HtmlEditorController _editorController = HtmlEditorController();
   
   bool _isLoading = true;
   bool _isUpdating = false;
-  bool _isEditMode = true;
+  String _currentHtml = "";
 
   @override
   void initState() {
     super.initState();
-    _contentController = TextEditingController();
     _fetchReportDetails();
   }
 
   @override
   void dispose() {
-    _contentController.dispose();
     super.dispose();
   }
 
-  // 🚀 FETCH & CONVERT: HTML -> MARKDOWN
+  // 🚀 FETCH REPORT HTML
   Future<void> _fetchReportDetails() async {
     try {
       final response = await _apiService.get('/report/getById/${widget.reportId}');
@@ -49,11 +45,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
       if (responseData['data'] != null) {
         final data = responseData['data'];
         setState(() {          
-          final rawHtml = data['report_body'] ?? "";
-          
-          // 🚀 Convert the backend HTML into clean Markdown for the editor
-          _contentController.text = html2md.convert(rawHtml);
-          
+          _currentHtml = data['body_html'] ?? "";
           _isLoading = false;
         });
       }
@@ -65,17 +57,16 @@ class _EditReportScreenState extends State<EditReportScreen> {
     }
   }
 
-  // 🚀 CONVERT & SAVE: MARKDOWN -> HTML
+  // 🚀 SAVE EDITED HTML
   Future<void> _handleUpdateReport() async {
     if (_isUpdating) return;
     
     setState(() => _isUpdating = true);
     
     try {
-      // 🚀 Convert the user's Markdown back to standard HTML for the API
-      final htmlPayload = md.markdownToHtml(_contentController.text);
+      final htmlPayload = await _editorController.getText();
       
-      final payload = {"report_body": htmlPayload};
+      final payload = {"body_html": htmlPayload};
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
       
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -109,101 +100,123 @@ class _EditReportScreenState extends State<EditReportScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        // 🚀 TOGGLE ICONS IN HEADER RIGHT SIDE
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit_note, color: _isEditMode ? colorScheme.primary : colorScheme.onSurfaceVariant),
-            tooltip: "Edit Mode",
-            onPressed: () => setState(() => _isEditMode = true),
-          ),
-          IconButton(
-            icon: Icon(Icons.remove_red_eye_outlined, color: !_isEditMode ? colorScheme.primary : colorScheme.onSurfaceVariant),
-            tooltip: "Preview Mode",
-            onPressed: () {
-              FocusScope.of(context).unfocus(); // Dismiss keyboard when previewing
-              setState(() => _isEditMode = false);
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 🚀 MAIN CONTENT AREA (Full Width & Height)
-              Expanded(
-                child: Container(
-                  // Removed margins, borders, radius, and shadow for edge-to-edge feel
-                  color: Colors.white,
-                  child: _isEditMode 
-                    ? TextField(
-                        controller: _contentController,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(
-                          fontFamily: 'monospace', // Monospace is standard for Markdown editing
-                          fontSize: 14,
-                          height: 1.6,
-                          color: Colors.black87,
+      body: Stack(
+        children: [
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 🚀 MAIN CONTENT AREA (Full Width & Height)
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDark = Theme.of(context).brightness == Brightness.dark;
+                      return Container(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: HtmlEditor(
+                          controller: _editorController,
+                          htmlEditorOptions: HtmlEditorOptions(
+                            initialText: _currentHtml,
+                            shouldEnsureVisible: true,
+                            darkMode: isDark,
+                            customOptions: 'disableResizeEditor: true,', // The trailing comma is critical
+                          ),
+                          htmlToolbarOptions: const HtmlToolbarOptions(
+                            toolbarPosition: ToolbarPosition.aboveEditor,
+                            toolbarType: ToolbarType.nativeGrid,
+                            defaultToolbarButtons: [
+                              StyleButtons(),
+                              FontSettingButtons(),
+                              FontButtons(clearAll: false),
+                              ColorButtons(),
+                              ListButtons(listStyles: false),
+                              ParagraphButtons(textDirection: false, caseConverter: false, lineHeight: false),
+                              InsertButtons(picture: false, audio: false, video: false, otherFile: false),
+                              OtherButtons(fullscreen: false, codeview: false, help: false),
+                            ],
+                          ),
+                          otherOptions: OtherOptions(
+                            height: constraints.maxHeight,
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
                         ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.all(24), // Keeps text readable away from screen edge
-                          hintText: "# Report Title\n\nStart typing in Markdown...",
-                        ),
-                      )
-                    : Markdown(
-                        data: _contentController.text.isEmpty ? "*No content*" : _contentController.text,
-                        padding: const EdgeInsets.all(24), // Keeps text readable away from screen edge
-                        selectable: true,
-                        styleSheet: MarkdownStyleSheet(
-                          h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black),
-                          h2: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black87),
-                          h3: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black87),
-                          p: const TextStyle(fontSize: 15, height: 1.6, color: Colors.black87),
-                          listBullet: TextStyle(color: colorScheme.primary),
-                          code: TextStyle(backgroundColor: colorScheme.surfaceContainer, fontFamily: 'monospace'),
-                          codeblockDecoration: BoxDecoration(color: colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                ),
-              ),
-
-              // 🚀 SAVE ACTION BAR
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))
-                  ]
-                ),
-                child: SafeArea(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Button(
-                        label: "Cancel",
-                        variant: ButtonVariant.outline,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const SizedBox(width: 12),
-                      Button(
-                        label: "Save Changes",
-                        icon: Icons.check_circle_outline,
-                        variant: ButtonVariant.filled,
-                        isLoading: _isUpdating,
-                        onPressed: _handleUpdateReport,
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
-              )
-            ],
-          ),
+
+                // 🚀 SAVE ACTION BAR
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))
+                    ]
+                  ),
+                  child: SafeArea(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Button(
+                          label: "Cancel",
+                          variant: ButtonVariant.outline,
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Button(
+                          label: "Save Changes",
+                          icon: Icons.check_circle_outline,
+                          variant: ButtonVariant.filled,
+                          // No longer need isLoading here since we show a full overlay
+                          onPressed: _handleUpdateReport,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              ],
+            ),
+            
+          // 🚀 FULL SCREEN UPDATING OVERLAY
+          if (_isUpdating)
+            Container(
+              color: Colors.black.withValues(alpha: 0.3),
+              alignment: Alignment.center,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Saving changes...", 
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

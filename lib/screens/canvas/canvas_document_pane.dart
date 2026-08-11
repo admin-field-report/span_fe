@@ -13,6 +13,7 @@ import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
+import 'widgets/pdf_export_button.dart';
 
 
 class CanvasDocumentPane extends StatefulWidget {
@@ -44,6 +45,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   bool _isLoadingAnnotations = false;
   bool _isUploadingImage = false;
   bool _isSaving = false;
+  bool _isExporting = false;
   bool _isFirstLoadComplete = false;
 
   bool _hasUnsavedChanges = false;
@@ -373,6 +375,107 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     } else {
        throw Exception("Failed to get presigned URL");
     }
+  }
+
+  Future<String> _pollForBulkImagePreview(String s3Key) async {
+    final encodedKey = Uri.encodeComponent(s3Key);
+    String previewBase64 = "";
+    bool isPreviewReady = false;
+    int attempts = 0;
+    const int maxAttempts = 10;
+
+    while (!isPreviewReady && attempts < maxAttempts) {
+      attempts++;
+      final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
+      if (previewResponse.statusCode == 200) {
+        final previewData = jsonDecode(previewResponse.body);
+        if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
+          previewBase64 = previewData['data']['compressed_base64'];
+          isPreviewReady = true;
+        } else {
+          throw Exception("Missing base64 data");
+        }
+      } else if (previewResponse.statusCode == 404) {
+        if (attempts < maxAttempts) await Future.delayed(const Duration(seconds: 2));
+      } else {
+        throw Exception("API returned error: ${previewResponse.statusCode}");
+      }
+    }
+
+    if (!isPreviewReady) throw Exception("Image compression timeout");
+    return previewBase64;
+  }
+
+  Future<void> _executeBulkS3Upload(
+    List<Map<String, dynamic>> photos,
+    void Function(int uploaded, int total) onProgress,
+  ) async {
+    final bool isInspection = _selectedCanvasObject == null;
+    final DrawingObject? targetObject = _selectedCanvasObject;
+    final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? "";
+
+    final Map<String, dynamic> body = {
+      "file_names": photos.map((p) => p['fileName'] as String).toList(),
+      "project_id": widget.projectId,
+      "inspection_id": widget.inspectionId,
+      "project_document_id": widget.documentId,
+    };
+    if (!isInspection && currentPageId.isNotEmpty) {
+      body["page_id"] = currentPageId;
+    }
+
+    final response = await _apiService.post('/image/presigned-url-for-multiple-images', body);
+    final responseData = jsonDecode(response.body);
+    final List<dynamic> signedUrls = responseData['signedUrls'] ?? [];
+
+    if (signedUrls.length != photos.length) {
+      throw Exception("Failed to get presigned URLs for all photos");
+    }
+
+    final List<Map<String, dynamic>> newEntries = [];
+
+    for (int i = 0; i < photos.length; i++) {
+      final String fileName = photos[i]['fileName'] as String;
+      final Uint8List bytes = photos[i]['bytes'] as Uint8List;
+      final urlData = signedUrls[i];
+      final String signedUrl = urlData['signedUrl'];
+      final String s3Key = urlData['key'];
+      final String imageId = urlData['id'] ?? "";
+
+      final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
+      if (uploadResponse.statusCode != 200) {
+        throw Exception("Upload failed for $fileName with status: ${uploadResponse.statusCode}");
+      }
+
+      final previewBase64 = await _pollForBulkImagePreview(s3Key);
+
+      newEntries.add({
+        "image_id": imageId,
+        "image_url": s3Key,
+        "preview_image": previewBase64,
+        "image_name": fileName,
+      });
+
+      onProgress(i + 1, photos.length);
+    }
+
+    setState(() {
+      if (isInspection) {
+        for (final entry in newEntries) {
+          entry["sort_order"] = _inspectionImages.length + 1;
+          _inspectionImages.add(entry);
+        }
+        _rawDocumentData['image_list'] = List.from(_inspectionImages);
+      } else if (targetObject != null) {
+        targetObject.imageUrls ??= [];
+        for (final entry in newEntries) {
+          entry["sort_order"] = targetObject.imageUrls!.length + 1;
+          targetObject.imageUrls!.add(entry);
+        }
+      }
+      _hasUnsavedChanges = true;
+      _hasUnsavedImageChanges = true;
+    });
   }
 
 
@@ -1142,6 +1245,8 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
             },
 
+            onBulkImageUpload: _executeBulkS3Upload,
+
             onImageDelete: (s3Key) async {
               if (_selectedCanvasObject != null) {
                 await _deleteImageForObject(s3Key);
@@ -1180,6 +1285,13 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               : [
                   _buildPageSelector(theme),
                   const SizedBox(width: 12),
+                  PdfExportButton(
+                    documentId: widget.documentId,
+                    hasUnsavedChanges: _hasUnsavedChanges || _hasUnsavedImageChanges,
+                    onExportStart: () => setState(() => _isExporting = true),
+                    onExportEnd: () => setState(() => _isExporting = false),
+                  ),
+                  const SizedBox(width: 8),
                   CanvasToolbarActionButton(
                     tooltip: "Save Annotations",
                     icon: Icons.save_outlined,
@@ -1196,7 +1308,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           },
         ),
 
-        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
+        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage || _isExporting)
           _buildLoadingOverlay(theme),
       ],
     );

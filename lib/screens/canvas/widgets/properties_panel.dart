@@ -6,7 +6,8 @@ import 'dart:typed_data';
 import 'dart:convert';
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
-import '../../../models/project.dart'; 
+import '../../../models/project.dart';
+import 'multi_camera_capture_screen.dart';
 
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
@@ -22,9 +23,11 @@ class PropertiesPanel extends StatefulWidget {
 
   final VoidCallback onUpdate;
   final VoidCallback onClose;
-  final Future<void> Function(String fileName, Uint8List bytes) onImageUpload; 
+  final Future<void> Function(String fileName, Uint8List bytes) onImageUpload;
   final Future<void> Function(String s3Key) onImageDelete;
   final Function(String s3Key) onImageTap;
+  final Future<void> Function(List<Map<String, dynamic>> photos, void Function(int uploaded, int total) onProgress)?
+      onBulkImageUpload;
 
   final bool allowImageUpload;
   final bool showImageSection; 
@@ -46,6 +49,7 @@ class PropertiesPanel extends StatefulWidget {
     required this.onImageUpload,
     required this.onImageDelete,
     required this.onImageTap,
+    this.onBulkImageUpload,
     this.allowImageUpload = true,
     this.showImageSection = true, 
     this.isInspectionLevel = true, 
@@ -155,6 +159,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
+  bool get _isMobilePlatform =>
+      !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+
   void _showImageOptions() {
     if (kIsWeb) {
       _pickAndUploadImage(useCamera: false);
@@ -187,6 +194,17 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   _pickAndUploadImage(useCamera: true);
                 },
               ),
+              if (_isMobilePlatform)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  leading: const Icon(Icons.burst_mode_outlined),
+                  title: const Text('Capture Multiple Photos'),
+                  subtitle: const Text('Take several photos and upload together'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openMultiCameraCapture();
+                  },
+                ),
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                 leading: const Icon(Icons.photo_library_outlined),
@@ -202,6 +220,31 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
         );
       },
     );
+  }
+
+  Future<void> _openMultiCameraCapture() async {
+    final uploaded = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MultiCameraCaptureScreen(
+          onBulkUpload: widget.onBulkImageUpload ?? _fallbackSequentialUpload,
+        ),
+      ),
+    );
+
+    if (uploaded == true) {
+      widget.onUpdate();
+    }
+  }
+
+  Future<void> _fallbackSequentialUpload(
+    List<Map<String, dynamic>> photos,
+    void Function(int uploaded, int total) onProgress,
+  ) async {
+    for (int i = 0; i < photos.length; i++) {
+      await widget.onImageUpload(photos[i]['fileName'] as String, photos[i]['bytes'] as Uint8List);
+      onProgress(i + 1, photos.length);
+    }
   }
 
   Future<void> _pickAndUploadImage({required bool useCamera}) async {

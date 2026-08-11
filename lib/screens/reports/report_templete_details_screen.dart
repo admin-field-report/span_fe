@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
 import '../../../widgets/button/button.dart';
 import './controllers/report_controller.dart';
 import '../../services/toast_service.dart';
 import './skill_regeneration_progress_screen.dart';
+import '../report_placeholder/models/report_element.dart';
+import '../report_placeholder/region_html_codec.dart';
 
 class ReportTemplateDetailsScreen extends StatefulWidget {
   final String templateId;
@@ -19,49 +22,113 @@ class ReportTemplateDetailsScreen extends StatefulWidget {
 }
 
 class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScreen> {
+  final _nameFormKey = GlobalKey<FormState>();
+  final _nameEditController = TextEditingController();
+  bool _isEditingName = false;
+  bool _isSavingName = false;
+  int _previewIdCounter = 0;
+
+  final _skillEditController = TextEditingController();
+  bool _isEditingSkill = false;
+  bool _isSavingSkill = false;
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
     reportController.fetchTemplateDetails(widget.templateId);
+    reportController.addListener(_onControllerChanged);
+  }
 
-    reportController.addListener(() {
-      if (mounted) setState(() {});
-    });
+  @override
+  void dispose() {
+    reportController.removeListener(_onControllerChanged);
+    _nameEditController.dispose();
+    _skillEditController.dispose();
+    super.dispose();
+  }
+
+  void _startEditingName(String currentName) {
+    _nameEditController.text = currentName;
+    setState(() => _isEditingName = true);
+  }
+
+  Future<void> _saveTemplateName() async {
+    if (!(_nameFormKey.currentState?.validate() ?? false)) return;
+    final newName = _nameEditController.text.trim();
+
+    setState(() => _isSavingName = true);
+    try {
+      await reportController.updateReportTemplateFields(widget.templateId, {'name': newName});
+      if (!mounted) return;
+      setState(() {
+        reportController.templateData?['name'] = newName;
+        _isEditingName = false;
+      });
+      ToastService.show(context, message: "Name updated successfully", type: ToastType.success);
+      reportController.getAllReports(); // keep the reports list in sync
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, message: e.toString().replaceAll("Exception: ", ""), type: ToastType.error);
+    } finally {
+      if (mounted) setState(() => _isSavingName = false);
+    }
+  }
+
+  void _startEditingSkill(String current) {
+    _skillEditController.text = current;
+    setState(() => _isEditingSkill = true);
+  }
+
+  Future<void> _saveSkillContent() async {
+    final newSkill = _skillEditController.text;
+
+    setState(() => _isSavingSkill = true);
+    try {
+      await reportController.updateReportTemplateFields(widget.templateId, {
+        'body_config': {'skill': newSkill},
+      });
+      if (!mounted) return;
+      setState(() {
+        final data = reportController.templateData;
+        if (data != null) {
+          final bodyConfig = (data['body_config'] as Map?) ?? <String, dynamic>{};
+          data['body_config'] = {...bodyConfig, 'skill': newSkill};
+        }
+        _isEditingSkill = false;
+      });
+      ToastService.show(context, message: "Updated successfully", type: ToastType.success);
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, message: e.toString().replaceAll("Exception: ", ""), type: ToastType.error);
+    } finally {
+      if (mounted) setState(() => _isSavingSkill = false);
+    }
   }
 
   // ==========================================
-  // UPLOAD LOGIC (Multi-file Support)
+  // UPLOAD LOGIC (Single document only)
   // ==========================================
-  
+
   // 🚀 Pass the current document count so we can validate the limit
   Future<void> _pickAndUploadFiles(int currentDocCount) async {
+    if (currentDocCount >= 1) {
+      ToastService.show(context, type: ToastType.error, message: "Only one document is allowed. Remove the current document to upload another.");
+      return;
+    }
+
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'], 
-      withData: true, 
-      allowMultiple: true, // 🚀 ENABLING MULTIPLE FILES
+      allowedExtensions: ['pdf'],
+      withData: true,
+      allowMultiple: false,
     );
 
     if (result != null && result.files.isNotEmpty) {
-      
-      // 🚀 THE LIMIT CHECK: Calculate if this batch pushes them over 5
-      if (currentDocCount + result.files.length > 5) {
-        if (mounted) {
-          int allowedCount = 5 - currentDocCount;
-          ToastService.show(
-            context, 
-            type: ToastType.error, 
-            message: allowedCount > 0 
-                ? "Limit exceeded. You can only upload $allowedCount more document(s)."
-                : "Limit reached. You cannot upload any more documents."
-          );
-        }
-        return;
-      }
-
-      // If valid, proceed to confirmation
-      _showUploadConfirmation(result.files);
+      _showUploadConfirmation([result.files.first]);
     }
   }
 
@@ -94,7 +161,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
             return PopScope(
               canPop: !isUploading,
               child: AlertDialog(
-                backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                backgroundColor: theme.scaffoldBackgroundColor,
                 title: Row(
                   children: [
                     Icon(isUploading ? Icons.cloud_upload_rounded : Icons.upload_file_rounded, color: theme.colorScheme.primary),
@@ -133,11 +200,11 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                     )
                   // 🚀 SHOW CONFIRMATION UI BEFORE UPLOADING
                   : Text(
-                      "You selected $fileText.\n\nDo you want to update the template's AI skills based on these new documents?",
+                      "You selected $fileText. Upload it to this template?",
                       style: theme.textTheme.bodyMedium,
                     ),
                 actionsAlignment: MainAxisAlignment.end,
-                
+
                 // Hide actions entirely while uploading so user can't interrupt it
                 actions: isUploading ? [] : [
                   Button(
@@ -146,19 +213,10 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                     onPressed: () => Navigator.pop(context),
                   ),
                   Button(
-                    label: "Upload Only",
-                    variant: ButtonVariant.outline,
+                    label: "Upload",
                     onPressed: () async {
                       setDialogState(() => isUploading = true);
                       await _executeUpload(files, updateSkill: false, onProgressUpdate: updateProgress);
-                      if (mounted) Navigator.pop(context);
-                    },
-                  ),
-                  Button(
-                    label: "Upload & Update Skill",
-                    onPressed: () async {
-                      setDialogState(() => isUploading = true);
-                      await _executeUpload(files, updateSkill: true, onProgressUpdate: updateProgress);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -236,19 +294,16 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
 
     await showDialog(
       context: context,
-      barrierDismissible: false, 
+      barrierDismissible: false,
       builder: (context) {
-        bool isDeletingOnly = false;
-        bool isDeletingAndUpdate = false;
+        bool isDeleting = false;
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final bool isAnyLoading = isDeletingOnly || isDeletingAndUpdate;
-
             return PopScope(
-              canPop: !isAnyLoading,
+              canPop: !isDeleting,
               child: AlertDialog(
-                backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                backgroundColor: theme.scaffoldBackgroundColor,
                 title: Row(
                   children: [
                     Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
@@ -257,7 +312,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                   ],
                 ),
                 content: Text(
-                  "Are you sure you want to delete '$docName'?\n\nYou can choose to just delete the document, or delete it and trigger a skill update.",
+                  "Are you sure you want to delete '$docName'?",
                   style: theme.textTheme.bodyMedium,
                 ),
                 actionsAlignment: MainAxisAlignment.end,
@@ -265,27 +320,16 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                   Button(
                     label: "Cancel",
                     variant: ButtonVariant.outline,
-                    onPressed: isAnyLoading ? null : () => Navigator.pop(context),
+                    onPressed: isDeleting ? null : () => Navigator.pop(context),
                   ),
                   Button(
-                    label: "Delete Only",
-                    variant: ButtonVariant.outline,
+                    label: "Delete",
                     color: Colors.red,
-                    isLoading: isDeletingOnly,
-                    onPressed: isAnyLoading ? null : () async {
-                      setDialogState(() => isDeletingOnly = true);
+                    isLoading: isDeleting,
+                    onPressed: isDeleting ? null : () async {
+                      setDialogState(() => isDeleting = true);
                       await _executeDelete(docId, updateSkill: false);
-                      if (mounted) Navigator.pop(context); 
-                    },
-                  ),
-                  Button(
-                    label: "Delete & Update Skill",
-                    color: Colors.red,
-                    isLoading: isDeletingAndUpdate, 
-                    onPressed: isAnyLoading ? null : () async {
-                      setDialogState(() => isDeletingAndUpdate = true);
-                      await _executeDelete(docId, updateSkill: true);
-                      if (mounted) Navigator.pop(context); 
+                      if (mounted) Navigator.pop(context);
                     },
                   ),
                 ],
@@ -415,7 +459,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
 
     final data = reportController.templateData!;
     final List documents = data['report_template_document'] ?? [];
-    final String skillContent = data['skill_content'] ?? "";
+    final String skillContent = (data['body_config']?['skill'] as String?) ?? "";
 
     return SafeArea(
       child: Center(
@@ -425,20 +469,21 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
             padding: const EdgeInsets.all(16.0),
             children: [
               _buildHeaderCard(theme, data),
-              const SizedBox(height: 24),
-              
+              const SizedBox(height: 32),
+
+              _buildReportPlaceholderSection(theme, data),
+              const SizedBox(height: 32),
+
               // 🚀 UPDATED: Document Section Header with Limit check
               _buildDocumentsSectionHeader(theme, documents.length),
               const SizedBox(height: 12),
               _buildDocumentsSection(theme, documents),
-              
-              const SizedBox(height: 24),
-              
-              _buildSectionTitle(theme, "Skill Content", Icons.code_rounded),
-              const SizedBox(height: 12),
-              _buildSkillContentSection(theme, skillContent),
-              
-              const SizedBox(height: 40), 
+
+              const SizedBox(height: 32),
+
+              _buildSkillSection(theme, skillContent),
+
+              const SizedBox(height: 40),
             ],
           ),
         ),
@@ -447,8 +492,6 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
   }
 
   Widget _buildHeaderCard(ThemeData theme, Map<String, dynamic> data) {
-    final user = data['user'];
-
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -471,63 +514,247 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      data['name'] ?? "Unnamed Template",
-                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-                ),
+                child: _isEditingName
+                    ? Form(
+                        key: _nameFormKey,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _nameEditController,
+                                autofocus: true,
+                                enabled: !_isSavingName,
+                                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                                decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                                validator: (val) => val == null || val.trim().isEmpty ? "Name is required" : null,
+                                onFieldSubmitted: (_) => _saveTemplateName(),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            if (_isSavingName)
+                              const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                              )
+                            else ...[
+                              IconButton(
+                                icon: const Icon(Icons.check_rounded, color: Colors.green),
+                                tooltip: "Save",
+                                onPressed: _saveTemplateName,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                tooltip: "Cancel",
+                                onPressed: () => setState(() => _isEditingName = false),
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              data['name'] ?? "Unnamed Template",
+                              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            tooltip: "Edit name",
+                            onPressed: () => _startEditingName(data['name'] ?? ''),
+                          ),
+                        ],
+                      ),
               ),
             ],
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Divider(height: 1),
-          ),
-          _buildInfoRow(
-            theme, 
-            Icons.person_outline_rounded, 
-            "Created By", 
-            user != null ? "${user['first_name']} ${user['last_name']}" : "N/A"
-          ),
-          const SizedBox(height: 12),
-          _buildInfoRow(
-            theme, 
-            Icons.calendar_today_rounded, 
-            "Created On", 
-            _formatDate(data['create_time'])
           ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(ThemeData theme, IconData icon, String label, String value) {
-    return Row(
+  Widget _buildReportPlaceholderSection(ThemeData theme, Map<String, dynamic> data) {
+    String previewNextId() => 'preview_${DateTime.now().microsecondsSinceEpoch}_${_previewIdCounter++}';
+
+    final header = parseRegionHtml(
+      regionHtml: data['header_html'] as String?,
+      regionType: ReportElementType.header,
+      nextId: previewNextId,
+    );
+    final footer = parseRegionHtml(
+      regionHtml: data['footer_html'] as String?,
+      regionType: ReportElementType.footer,
+      nextId: previewNextId,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: 8),
-        Text(
-          "$label: ",
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurface,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionTitle(theme, "Report Placeholder", Icons.dashboard_customize_outlined),
+            Button(
+              label: "Edit",
+              icon: Icons.edit_outlined,
+              variant: ButtonVariant.outline,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              onPressed: () async {
+                final didSave = await context.push<bool>(
+                  '/report-placeholder',
+                  extra: {'templateId': widget.templateId, 'templateName': data['name']},
+                );
+                // Only refetch if something was actually saved there, not
+                // on every plain back navigation.
+                if (didSave == true && mounted) {
+                  reportController.fetchTemplateDetails(widget.templateId);
+                }
+              },
             ),
-            overflow: TextOverflow.ellipsis,
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+          ),
+          child: header == null && footer == null
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      "No header or footer configured yet",
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (header != null) _buildRegionPreview(theme, "Header", header),
+                    if (header != null && footer != null) const SizedBox(height: 16),
+                    if (footer != null) _buildRegionPreview(theme, "Footer", footer),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegionPreview(ThemeData theme, String label, ReportElement region) {
+    const previewPageWidth = 816.0;
+    final regionHeight = region.size.height > 0 ? region.size.height : 60.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(7),
+            child: AspectRatio(
+              aspectRatio: previewPageWidth / regionHeight,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: previewPageWidth,
+                  height: regionHeight,
+                  child: Container(
+                    color: region.backgroundColor,
+                    child: Stack(
+                      children: [
+                        for (final child in region.children) _buildPreviewChild(child),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPreviewChild(ReportElement child) {
+    if (child.type == ReportElementType.infoBar) {
+      return Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: child.size.height,
+        child: Container(
+          color: child.backgroundColor,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          child: Row(
+            children: [
+              Text(child.text, style: TextStyle(color: child.color, fontSize: child.fontSize)),
+              const Spacer(),
+              Text(child.secondaryText, style: TextStyle(color: child.color, fontSize: child.fontSize)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (child.type == ReportElementType.logo) {
+      return Positioned(
+        left: child.position.dx,
+        top: child.position.dy,
+        child: Container(
+          width: child.size.width,
+          height: child.size.height,
+          decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), color: Colors.grey.shade100),
+          alignment: Alignment.center,
+          child: Icon(Icons.image_outlined, color: Colors.grey.shade500, size: 18),
+        ),
+      );
+    }
+
+    // Center/right-aligned text (e.g. the header "Centered" style's
+    // companyName/address) is given a full-width box by the codec
+    // specifically so alignment has something to align within — without
+    // reproducing that width here too, it'd render left-aligned at x:0
+    // regardless of `align`, same as the bug just fixed in the main editor.
+    final text = Text(
+      child.text,
+      textAlign: child.align,
+      style: TextStyle(
+        fontSize: child.fontSize,
+        fontWeight: child.isBold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: child.isItalic ? FontStyle.italic : FontStyle.normal,
+        color: child.color,
+      ),
+    );
+
+    return Positioned(
+      left: child.position.dx,
+      top: child.position.dy,
+      child: child.size.width > 0 ? SizedBox(width: child.size.width, child: text) : text,
     );
   }
 
@@ -545,14 +772,14 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
   }
 
   Widget _buildDocumentsSectionHeader(ThemeData theme, int documentCount) {
-    bool isLimitReached = documentCount >= 5;
+    bool isLimitReached = documentCount >= 1;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildSectionTitle(theme, "Attached Documents ($documentCount/5)", Icons.description_outlined),
+        _buildSectionTitle(theme, "Attached Document ($documentCount/1)", Icons.description_outlined),
         Tooltip(
-          message: isLimitReached ? "Maximum 5 documents allowed" : "Upload new document",
+          message: isLimitReached ? "Only one document allowed" : "Upload document",
           child: Button(
             label: "Upload",
             icon: Icons.upload_rounded,
@@ -630,9 +857,79 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
     );
   }
 
-  Widget _buildSkillContentSection(ThemeData theme, String skillContent) {
+  Widget _buildSkillSection(ThemeData theme, String skillContent) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionTitle(theme, "Additional AI Prompt to Generate Report", Icons.auto_awesome_outlined),
+            if (!_isEditingSkill)
+              Button(
+                label: "Edit",
+                icon: Icons.edit_outlined,
+                variant: ButtonVariant.outline,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                onPressed: () => _startEditingSkill(skillContent),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+          ),
+          child: _isEditingSkill ? _buildSkillEditor(theme) : _buildSkillViewer(theme, skillContent),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSkillEditor(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _skillEditController,
+          enabled: !_isSavingSkill,
+          minLines: 6,
+          maxLines: 16,
+          style: theme.textTheme.bodyMedium,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: "Enter the AI prompt/skill used to generate this report...",
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Button(
+              label: "Cancel",
+              variant: ButtonVariant.outline,
+              onPressed: _isSavingSkill ? null : () => setState(() => _isEditingSkill = false),
+            ),
+            const SizedBox(width: 8),
+            Button(
+              label: "Save",
+              isLoading: _isSavingSkill,
+              onPressed: _isSavingSkill ? null : _saveSkillContent,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSkillViewer(ThemeData theme, String skillContent) {
     if (skillContent.trim().isEmpty) {
       return Container(
+        width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
@@ -641,37 +938,28 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
         ),
         child: Center(
           child: Text(
-            "No skill content provided",
+            "No prompt provided",
             style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
           ),
         ),
       );
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: MarkdownBody(
-        data: skillContent,
-        selectable: true,
-        styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-          p: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
-          h2: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold, 
-          ),
-          listBullet: TextStyle(color: theme.colorScheme.primary),
-          code: theme.textTheme.bodySmall?.copyWith(
-            backgroundColor: Colors.transparent,
-          ),
-          codeblockDecoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-            borderRadius: BorderRadius.circular(8),
-          ),
+    return MarkdownBody(
+      data: skillContent,
+      selectable: true,
+      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+        p: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+        h2: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
+        listBullet: TextStyle(color: theme.colorScheme.primary),
+        code: theme.textTheme.bodySmall?.copyWith(
+          backgroundColor: Colors.transparent,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(8),
         ),
       ),
     );

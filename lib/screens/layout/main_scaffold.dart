@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme_controller.dart'; 
 import 'app_menu_content.dart';
 import '../settings/settings_screen.dart';
 import '../../utils/utils.dart';
@@ -30,10 +29,9 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: themeController,
-      builder: (context, _) {
-        final theme = Theme.of(context);
+    // Theme changes already propagate through MaterialApp → Theme.of(context),
+    // so no themeController listener is needed here.
+    final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
         final isDark = theme.brightness == Brightness.dark;
         
@@ -185,8 +183,6 @@ class _MainScaffoldState extends State<MainScaffold> {
             ),
           ),
         );
-      },
-    );
   }
 
   // --- HELPER: TOGGLE BUTTON ---

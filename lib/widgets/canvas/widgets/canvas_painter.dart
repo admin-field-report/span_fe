@@ -41,7 +41,11 @@ class CanvasPaper extends StatelessWidget {
                     child: Icon(Icons.broken_image_rounded, color: Colors.grey)),
               ),
             Positioned.fill(
-              child: CustomPaint(painter: MainPainter(context, objects, preview)),
+              // RepaintBoundary keeps drawing repaints from also re-rasterizing
+              // the background image layer (and vice versa) on every stroke.
+              child: RepaintBoundary(
+                child: CustomPaint(painter: MainPainter(context, objects, preview)),
+              ),
             ),
           ],
         ),
