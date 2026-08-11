@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/theme_controller.dart';
 import '../../screens/auth/controllers/auth_controller.dart';
 import '../../utils/app_responsive.dart';
 
@@ -32,12 +31,11 @@ class AppMenuContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: themeController,
-      builder: (context, _) {
-        final theme = Theme.of(context);
+    // Theme changes already propagate through MaterialApp → Theme.of(context),
+    // so no themeController listener is needed here.
+    final theme = Theme.of(context);
 
-        return Column(
+    return Column(
           children: [
             Expanded(
               child: ListView(
@@ -97,8 +95,6 @@ class AppMenuContent extends StatelessWidget {
             const SizedBox(height: 12),
           ],
         );
-      }
-    );
   }
 
   Widget _buildTemplatesMenu(BuildContext context, ThemeData theme) {

@@ -8,13 +8,14 @@ import 'screens/auth/controllers/auth_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: '.env');
-
-  await StorageService.init();
-
   usePathUrlStrategy();
 
-  await themeController.loadPreferences();
+  // These init steps are independent — run them concurrently to cut startup time.
+  await Future.wait([
+    dotenv.load(fileName: '.env'),
+    StorageService.init(),
+    themeController.loadPreferences(),
+  ]);
   
   runApp(const FieldReportApp());
   

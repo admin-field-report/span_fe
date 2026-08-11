@@ -15,6 +15,13 @@ class ThemeController extends ChangeNotifier {
   String get fontFamily => _fontFamily;
   double get fontSize => _fontSize;
 
+  // Built ThemeData is expensive (GoogleFonts text theme + ColorScheme.fromSeed),
+  // and MaterialApp asks for both brightnesses on every rebuild — cache until a
+  // theme input actually changes.
+  final Map<Brightness, ThemeData> _themeCache = {};
+
+  void _invalidateThemeCache() => _themeCache.clear();
+
   // --- 🚀 NEW: Load Preferences on Startup ---
   Future<void> loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -46,6 +53,7 @@ class ThemeController extends ChangeNotifier {
       _fontSize = savedFontSize;
     }
 
+    _invalidateThemeCache();
     notifyListeners();
   }
 
@@ -60,6 +68,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> setTargetColor(Color color) async {
     _targetColor = color;
+    _invalidateThemeCache();
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('targetColor', color.value);
@@ -67,6 +76,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> setFontFamily(String family) async {
     _fontFamily = family;
+    _invalidateThemeCache();
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('fontFamily', family);
@@ -74,6 +84,7 @@ class ThemeController extends ChangeNotifier {
 
   Future<void> setFontSize(double size) async {
     _fontSize = size;
+    _invalidateThemeCache();
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('fontSize', size);
@@ -81,6 +92,10 @@ class ThemeController extends ChangeNotifier {
 
   // --- YOUR EXISTING THEME LOGIC ---
   ThemeData getTheme(Brightness brightness) {
+    return _themeCache.putIfAbsent(brightness, () => _buildTheme(brightness));
+  }
+
+  ThemeData _buildTheme(Brightness brightness) {
     final isDark = brightness == Brightness.dark;
 
     // Exact background and surface colors from your dashboard images

@@ -436,9 +436,12 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             borderRadius: BorderRadius.circular(16),
             child: Image.network(
               mediaUrls[index],
-              fit: BoxFit.cover, 
+              fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
+              // Grid thumbnails: decode at a bounded size instead of the full
+              // camera resolution — big memory + jank win on photo-heavy lists.
+              cacheWidth: 800,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
                 return const SkeletonContainer(

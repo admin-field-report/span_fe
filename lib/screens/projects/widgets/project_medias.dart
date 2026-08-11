@@ -355,6 +355,9 @@ class MediaCard extends StatelessWidget {
               imageUrl,
               width: double.infinity,
               fit: BoxFit.cover,
+              // Grid thumbnails: decode at a bounded size instead of the full
+              // camera resolution — big memory + jank win on photo-heavy lists.
+              cacheWidth: 800,
               frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded) return child;
                 return AnimatedOpacity(
