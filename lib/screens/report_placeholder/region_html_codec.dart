@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'models/report_element.dart';
 
 // Converts between the report template API's `header_html`/`footer_html`
-// fields (pixel-precise `position: absolute` fragments, e.g.
-// `<div style="..."><span data-field="...">...</span></div>`, no class
-// attributes — every visual property is inline style) and this editor's
-// [ReportElement] model. These two functions are inverses of each other:
-// [parseRegionHtml] loads a fetched region into editable elements,
-// [buildRegionHtml] turns the edited elements back into the same markup
-// shape for saving.
+// fields and this editor's [ReportElement] model. These two functions are
+// inverses of each other: [parseRegionHtml] loads a fetched region into
+// editable elements, [buildRegionHtml] turns the edited elements back into
+// markup for saving.
+//
+// Saved markup is a responsive flexbox fragment (full-width root, one
+// left/center/right zone row, info bar docked at the bottom; no class
+// attributes — every visual property is inline style). The editor's exact
+// pixel geometry travels alongside in `data-left`/`data-top` attributes for
+// the round-trip. [parseRegionHtml] also still understands the legacy
+// pixel-absolute format (`position:absolute` spans, empty background rects)
+// that older saved templates contain.
 //
 // Field id `reportDate`/`inspectorName` is a codec-owned convention (not
 // something the backend assigns): the editor's info bar renders as one docked
@@ -33,20 +38,40 @@ ReportElement? parseRegionHtml({
 }) {
   if (regionHtml == null || regionHtml.trim().isEmpty) return null;
 
-  final rootMatch = RegExp(r'^\s*<div style="([^"]*)"').firstMatch(regionHtml);
-  final rootStyle = rootMatch != null ? _parseStyleMap(rootMatch.group(1)!) : <String, String>{};
-  final regionWidth = _px(rootStyle, 'width', 595.28);
+  final rootMatch = RegExp(r'^\s*<div ([^>]*)>').firstMatch(regionHtml);
+  final rootAttrs = rootMatch?.group(1) ?? '';
+  final rootStyle = _parseStyleMap(_attr(rootAttrs, 'style') ?? '');
+  // New-format roots are `width:100%` (no usable pixel value) but carry the
+  // editor page width they were authored against in `data-width`; legacy
+  // roots have a pixel width in the style itself.
+  final regionWidth = _attrPx(rootAttrs, 'data-width') ??
+      ((rootStyle['width']?.contains('%') ?? false) ? 816.0 : _px(rootStyle, 'width', 595.28));
   final regionHeight = _px(rootStyle, 'height', 117.86);
 
-  Color backgroundColor = Colors.white;
+  // New-format regions carry their background directly on the root; the
+  // empty-rect scan below only applies to legacy absolute-position markup.
+  Color backgroundColor = _parseColor(rootStyle['background-color'], Colors.white);
   double bestArea = 0;
   Color? infoBarBackground;
   double? infoBarHeight;
+
+  // New-format info bar: one flex wrapper carrying the strip's own
+  // background and height.
+  final infoBarWrapper = RegExp(r'<div data-region="infobar" style="([^"]*)"').firstMatch(regionHtml);
+  if (infoBarWrapper != null) {
+    final style = _parseStyleMap(infoBarWrapper.group(1)!);
+    infoBarBackground = _parseColor(style['background-color'], Colors.black);
+    infoBarHeight = _px(style, 'height', 40);
+  }
+
   for (final m in RegExp(r'<div style="([^"]*)"></div>').allMatches(regionHtml)) {
     final style = _parseStyleMap(m.group(1)!);
     final top = _px(style, 'top');
     final h = _px(style, 'height');
-    final area = _px(style, 'width') * h;
+    // Full-width rects are saved as `width:100%`; treat that as the region's
+    // own width so the "largest rect wins" comparison stays meaningful.
+    final w = (style['width']?.contains('%') ?? false) ? regionWidth : _px(style, 'width');
+    final area = w * h;
     final bg = style['background-color'];
     if (bg == null) continue;
     if (area > bestArea) {
@@ -65,10 +90,15 @@ ReportElement? parseRegionHtml({
   ReportElement? infoBarDate;
   ReportElement? infoBarInspector;
 
-  for (final m in RegExp(r'<span data-field="([^"]*)" style="([^"]*)">(.*?)</span>', dotAll: true).allMatches(regionHtml)) {
-    final fieldId = m.group(1)!;
-    final style = _parseStyleMap(m.group(2)!);
-    final rawText = (m.group(3) ?? '').trim();
+  // Attribute order varies between formats (new spans carry
+  // `data-left`/`data-top` between data-field and style), so capture the
+  // whole attribute list and pick fields out of it.
+  for (final m in RegExp(r'<span ([^>]*?)>(.*?)</span>', dotAll: true).allMatches(regionHtml)) {
+    final attrs = m.group(1)!;
+    final fieldId = _attr(attrs, 'data-field');
+    if (fieldId == null) continue;
+    final style = _parseStyleMap(_attr(attrs, 'style') ?? '');
+    final rawText = (m.group(2) ?? '').trim();
     final displayText = (rawText.isEmpty || rawText == '{{placeholder}}') ? _friendlyLabel(fieldId) : rawText;
 
     final align = _parseAlign(style['text-align']);
@@ -78,18 +108,33 @@ ReportElement? parseRegionHtml({
     // ReportElement's Size.zero default), so importing one here would force
     // a fixed-size Container on reload instead of letting the text size
     // itself, clipping/wrapping content that fit fine before saving. Center/
-    // right-aligned text is the one exception: those rely on a full-width
-    // box for the alignment to have anything to align within (see e.g. the
-    // header "Centered" style's companyName/address, created with
-    // `size: Size(_pageWidth, 0)`) — dropping that box on reload collapses
-    // them back to left-aligned at x:0.
+    // right-aligned text is the one exception: those rely on a sized box for
+    // the alignment to have anything to align within — and that box must be
+    // the width it was authored with (`data-width` in the new format, the
+    // style's own pixel width in the legacy one), not the whole region's:
+    // e.g. the "Split Banner" header centers its texts in a 250px box at
+    // mid-page, and importing that as a region-wide box starting at the same
+    // x pushed it out past the header's right edge.
+    final authoredWidth = _attrPx(attrs, 'data-width');
+    final Size? size;
+    if (authoredWidth != null && authoredWidth > 0) {
+      size = Size(authoredWidth, 0);
+    } else if (align == TextAlign.left) {
+      size = null;
+    } else {
+      size = Size(_px(style, 'width', regionWidth), 0);
+    }
+
     final element = ReportElement(
       id: nextId(),
       type: ReportElementType.text,
       toolType: fieldId,
       text: displayText,
-      position: Offset(_px(style, 'left'), _px(style, 'top')),
-      size: align == TextAlign.left ? null : Size(regionWidth, 0),
+      position: Offset(
+        _attrPx(attrs, 'data-left') ?? _px(style, 'left'),
+        _attrPx(attrs, 'data-top') ?? _px(style, 'top'),
+      ),
+      size: size,
       fontSize: _px(style, 'font-size', 12),
       isBold: style['font-weight']?.trim() == 'bold',
       isItalic: style['font-style']?.trim() == 'italic',
@@ -130,9 +175,11 @@ ReportElement? parseRegionHtml({
 
   // Degenerate placeholder images (e.g. 1x1px) are backend artifacts with no
   // visual purpose — skip them rather than cluttering the editor.
-  for (final m in RegExp(r'<img data-field="([^"]*)"[^>]*style="([^"]*)"[^>]*/>').allMatches(regionHtml)) {
-    final fieldId = m.group(1)!;
-    final style = _parseStyleMap(m.group(2)!);
+  for (final m in RegExp(r'<img ([^>]*?)/>').allMatches(regionHtml)) {
+    final attrs = m.group(1)!;
+    final fieldId = _attr(attrs, 'data-field');
+    if (fieldId == null) continue;
+    final style = _parseStyleMap(_attr(attrs, 'style') ?? '');
     final w = _px(style, 'width');
     final h = _px(style, 'height');
     if (w < 4 || h < 4) continue;
@@ -143,7 +190,10 @@ ReportElement? parseRegionHtml({
         type: ReportElementType.logo,
         toolType: fieldId,
         text: '',
-        position: Offset(_px(style, 'left'), _px(style, 'top')),
+        position: Offset(
+          _attrPx(attrs, 'data-left') ?? _px(style, 'left'),
+          _attrPx(attrs, 'data-top') ?? _px(style, 'top'),
+        ),
         size: Size(w, h),
       ),
     );
@@ -159,94 +209,126 @@ ReportElement? parseRegionHtml({
   );
 }
 
-/// Serializes a header/footer container back into the same `pdf-*-region`
-/// markup shape the API returned — or an empty string if there's no region at
-/// all (nothing to save for that side).
+/// Serializes a header/footer container into a responsive flexbox fragment —
+/// or an empty string if there's no region at all (nothing to save for that
+/// side).
 ///
-/// [pageWidth] must be the editor's real page width (e.g. 816), not
-/// `region.size.width` — the header/footer widgets always render at the
-/// page's full width and never actually populate that field (it stays 0),
-/// so reading it here would silently export a zero-width, invisible region.
+/// Instead of pixel-absolute positions, the region root is a full-width flex
+/// column: one row split into left / center / right zones (each stacking its
+/// own elements top-to-bottom), plus the info bar docked at the bottom via
+/// `margin-top:auto`. Elements are assigned to a zone from where they sit in
+/// the editor ([pageWidth] thirds, or their text alignment), so long dynamic
+/// values can use the whole zone's share of the real rendered width, wrap
+/// only when genuinely out of room, and can never overlap a neighbor.
+///
+/// The editor's exact pixel geometry is preserved in `data-left`/`data-top`
+/// attributes so [parseRegionHtml] can restore the free-form layout when the
+/// template is reopened.
 String buildRegionHtml(ReportElement? region, {required double pageWidth}) {
   if (region == null) return '';
 
-  final buffer = StringBuffer()
-    ..write('<div style="position:relative;width:${_fmt(pageWidth)}px;'
-        'height:${_fmt(region.size.height)}px;overflow:hidden;box-sizing:border-box">');
+  ReportElement? infoBar;
+  final leftZone = <ReportElement>[];
+  final centerZone = <ReportElement>[];
+  final rightZone = <ReportElement>[];
 
-  if (region.backgroundColor != Colors.transparent) {
-    buffer.write(
-      '<div style="position:absolute;left:0.00px;top:0.00px;'
-      'width:${_fmt(pageWidth)}px;height:${_fmt(region.size.height)}px;'
-      'background-color:${_colorToHex(region.backgroundColor)};z-index:0"></div>',
+  for (final child in region.children) {
+    if (child.type == ReportElementType.infoBar) {
+      infoBar = child;
+      continue;
+    }
+    if (child.type == ReportElementType.text && child.align == TextAlign.center) {
+      centerZone.add(child);
+    } else if (child.type == ReportElementType.text && child.align == TextAlign.right) {
+      rightZone.add(child);
+    } else {
+      final cx = child.position.dx + (child.size.width > 0 ? child.size.width / 2 : 0);
+      (cx < pageWidth / 3
+              ? leftZone
+              : cx > pageWidth * 2 / 3
+                  ? rightZone
+                  : centerZone)
+          .add(child);
+    }
+  }
+  for (final zone in [leftZone, centerZone, rightZone]) {
+    zone.sort((a, b) => a.position.dy.compareTo(b.position.dy));
+  }
+
+  final bg = region.backgroundColor != Colors.transparent ? 'background-color:${_colorToHex(region.backgroundColor)};' : '';
+  final buffer = StringBuffer()
+    ..write('<div data-width="${_fmt(pageWidth)}" '
+        'style="position:relative;display:flex;flex-direction:column;'
+        'width:100%;max-width:100%;height:${_fmt(region.size.height)}px;'
+        '${bg}overflow:hidden;box-sizing:border-box">');
+
+  int autoFieldCounter = 1;
+  String fieldIdOf(ReportElement child) => child.toolType ?? 'field-${autoFieldCounter++}';
+
+  String itemTag(ReportElement child) {
+    if (child.type == ReportElementType.logo) {
+      return '<img data-field="${fieldIdOf(child)}" '
+          'data-left="${_fmt(child.position.dx)}" data-top="${_fmt(child.position.dy)}" alt="" '
+          'style="width:${_fmt(child.size.width)}px;height:${_fmt(child.size.height)}px;'
+          'max-width:100%;object-fit:contain" />';
+    }
+    return _spanTag(
+      fieldIdOf(child),
+      child,
+      child.text,
+      align: child.align,
+      position: child.position,
+      authoredWidth: child.size.width > 0 ? child.size.width : null,
     );
   }
 
-  int autoFieldCounter = 1;
-  for (final child in region.children) {
-    if (child.type == ReportElementType.infoBar) {
-      final barHeight = child.size.height > 0 ? child.size.height : 40.0;
-      final barTop = region.size.height - barHeight;
-      final half = ((pageWidth - 32) / 2).clamp(60.0, 400.0);
-      final textTop = barTop + ((barHeight - child.fontSize * 1.2) / 2).clamp(0.0, barHeight);
+  String zoneTag(List<ReportElement> zone, String alignItems, String textAlign) {
+    final items = zone.map(itemTag).join();
+    return '<div style="display:flex;flex-direction:column;flex:1 1 0;min-width:0;'
+        'gap:4px;align-items:$alignItems;text-align:$textAlign">$items</div>';
+  }
 
-      if (child.backgroundColor != Colors.transparent) {
-        buffer.write(
-          '<div style="position:absolute;left:0.00px;top:${_fmt(barTop)}px;'
-          'width:${_fmt(pageWidth)}px;height:${_fmt(barHeight)}px;'
-          'background-color:${_colorToHex(child.backgroundColor)};z-index:1"></div>',
-        );
-      }
-      buffer.write(
-        _spanTag(
-          'reportDate',
-          Offset(16, textTop),
-          Size(half, child.fontSize + 4),
-          child,
-          child.text,
-          align: TextAlign.left,
-        ),
-      );
-      buffer.write(
-        _spanTag(
-          'inspectorName',
-          Offset(pageWidth - half - 16, textTop),
-          Size(half, child.fontSize + 4),
-          child,
-          child.secondaryText,
-          align: TextAlign.right,
-        ),
-      );
-      continue;
-    }
+  buffer
+    ..write('<div style="display:flex;justify-content:space-between;align-items:flex-start;'
+        'flex:1;min-width:0;gap:16px;padding:8px 16px;box-sizing:border-box">')
+    ..write(zoneTag(leftZone, 'flex-start', 'left'))
+    ..write(zoneTag(centerZone, 'center', 'center'))
+    ..write(zoneTag(rightZone, 'flex-end', 'right'))
+    ..write('</div>');
 
-    final fieldId = child.toolType ?? 'field-${autoFieldCounter++}';
-    if (child.type == ReportElementType.logo) {
-      buffer.write(
-        '<img data-field="$fieldId" alt="" style="position:absolute;'
-        'left:${_fmt(child.position.dx)}px;top:${_fmt(child.position.dy)}px;'
-        'width:${_fmt(child.size.width)}px;height:${_fmt(child.size.height)}px;'
-        'object-fit:contain;z-index:1" />',
-      );
-    } else {
-      buffer.write(_spanTag(fieldId, child.position, child.size, child, child.text, align: child.align));
-    }
+  if (infoBar != null) {
+    final barHeight = infoBar.size.height > 0 ? infoBar.size.height : 40.0;
+    final barBg = infoBar.backgroundColor != Colors.transparent ? 'background-color:${_colorToHex(infoBar.backgroundColor)};' : '';
+    buffer
+      ..write('<div data-region="infobar" style="display:flex;justify-content:space-between;'
+          'align-items:center;gap:16px;margin-top:auto;width:100%;'
+          'height:${_fmt(barHeight)}px;padding:0 16px;box-sizing:border-box;$barBg">')
+      ..write(_spanTag('reportDate', infoBar, infoBar.text, align: TextAlign.left))
+      ..write(_spanTag('inspectorName', infoBar, infoBar.secondaryText, align: TextAlign.right))
+      ..write('</div>');
   }
 
   buffer.write('</div>');
   return buffer.toString();
 }
 
-String _spanTag(String fieldId, Offset position, Size size, ReportElement style, String text, {required TextAlign align}) {
-  final width = size.width > 0 ? size.width : 200.0;
+/// Emits one flow-layout (not absolutely positioned) text span. The span
+/// wraps (`pre-wrap` + `break-word`) and is capped at its zone's width via
+/// `max-width:100%`, so a long dynamic value first uses all the room its
+/// flex zone has, then grows downward — it can't run over a neighbor.
+/// [position] and [authoredWidth], when given, are stored as
+/// `data-left`/`data-top`/`data-width` purely for the editor round-trip;
+/// they have no effect on the rendered layout.
+String _spanTag(String fieldId, ReportElement style, String text, {required TextAlign align, Offset? position, double? authoredWidth}) {
   final fontSize = style.fontSize;
-  return '<span data-field="$fieldId" style="position:absolute;'
-      'left:${_fmt(position.dx)}px;top:${_fmt(position.dy)}px;'
-      'width:${_fmt(width)}px;min-height:${_fmt(fontSize)}px;'
+  final posAttrs = (position != null ? ' data-left="${_fmt(position.dx)}" data-top="${_fmt(position.dy)}"' : '') +
+      (authoredWidth != null ? ' data-width="${_fmt(authoredWidth)}"' : '');
+  return '<span data-field="$fieldId"$posAttrs style="'
       'font-family:Arial, Helvetica, sans-serif;font-size:${_fmt(fontSize)}px;'
       'font-weight:${style.isBold ? 'bold' : 'normal'};font-style:${style.isItalic ? 'italic' : 'normal'};'
       'color:${_colorToHex(style.color)};letter-spacing:0.00px;text-align:${_alignToCss(align)};'
-      'line-height:${_fmt(fontSize * 1.2)}px;white-space:pre;z-index:2">${_escapeHtml(text)}</span>';
+      'line-height:${_fmt(fontSize * 1.2)}px;white-space:pre-wrap;overflow-wrap:break-word;'
+      'word-break:break-word;max-width:100%;box-sizing:border-box">${_escapeHtml(text)}</span>';
 }
 
 String _alignToCss(TextAlign align) {
@@ -279,6 +361,17 @@ String _friendlyLabel(String fieldId) {
   final withSpaces = fieldId.replaceAll('-', ' ').replaceAll('_', ' ').trim();
   if (withSpaces.isEmpty) return 'Text';
   return withSpaces.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+}
+
+/// Reads one `name="value"` attribute out of a raw attribute string, or
+/// `null` if absent.
+String? _attr(String attrs, String name) => RegExp('$name="([^"]*)"').firstMatch(attrs)?.group(1);
+
+/// Reads a numeric `data-*` attribute (the codec's round-trip geometry), or
+/// `null` if absent/unparseable so callers can fall back to inline style.
+double? _attrPx(String attrs, String name) {
+  final raw = _attr(attrs, name);
+  return raw == null ? null : double.tryParse(raw);
 }
 
 Map<String, String> _parseStyleMap(String style) {

@@ -665,7 +665,7 @@ class _ReportPlaceholderScreenState extends State<ReportPlaceholderScreen> {
                                         child: _DraggableElement(
                                           element: element,
                                           isSelected: element.id == _selectedId,
-                                          maxWidth: _pageWidth - 80,
+                                          maxWidth: (_pageWidth - 40 - element.position.dx).clamp(40.0, _pageWidth - 80),
                                           onSelect: () => setState(() => _selectedId = element.id),
                                           onDrag: (delta) => _moveElement(element, delta),
                                           onResize: (element.type == ReportElementType.bodyContent ||
@@ -808,7 +808,9 @@ class _HeaderBand extends StatelessWidget {
             child: _DraggableElement(
               element: child,
               isSelected: child.id == selectedId,
-              maxWidth: pageWidth,
+              // Constrain to the room left of the band's right edge so text
+              // wraps at the page boundary instead of running past it.
+              maxWidth: (pageWidth - child.position.dx).clamp(40.0, pageWidth),
               onSelect: () => onSelectChild(child.id),
               onDrag: (delta) => onDragChild(child, delta),
               onResize: child.type == ReportElementType.logo
@@ -898,7 +900,9 @@ class _FooterBand extends StatelessWidget {
             child: _DraggableElement(
               element: child,
               isSelected: child.id == selectedId,
-              maxWidth: pageWidth,
+              // Constrain to the room left of the band's right edge so text
+              // wraps at the page boundary instead of running past it.
+              maxWidth: (pageWidth - child.position.dx).clamp(40.0, pageWidth),
               onSelect: () => onSelectChild(child.id),
               onDrag: (delta) => onDragChild(child, delta),
               onResize: child.type == ReportElementType.logo
