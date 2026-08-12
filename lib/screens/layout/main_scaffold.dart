@@ -24,7 +24,9 @@ class MainScaffold extends StatefulWidget {
 }
 
 class _MainScaffoldState extends State<MainScaffold> {
-  bool _isCollapsed = false;
+  /// null until the user taps the toggle; the default before that depends on
+  /// the device (collapsed on tablets, expanded on desktop).
+  bool? _isCollapsed;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
@@ -36,9 +38,13 @@ class _MainScaffoldState extends State<MainScaffold> {
         final isDark = theme.brightness == Brightness.dark;
         
         final bool isMobile = AppResponsive.isMobileScreen(context);
-        final bool isTabletRange = AppResponsive.isTabletScreen(context);
+        // Tablets (either orientation, detected by device rather than the
+        // current width so landscape doesn't read as desktop) start with the
+        // menu collapsed; desktop starts expanded. The user's own toggle
+        // choice, once made, wins over both defaults.
+        final bool collapsedByDefault = AppResponsive.isTabletDevice(context) || AppResponsive.isTabletScreen(context);
 
-        bool effectiveCollapsed = isMobile ? false : (isTabletRange ? !_isCollapsed : _isCollapsed);
+        final bool effectiveCollapsed = isMobile ? false : (_isCollapsed ?? collapsedByDefault);
 
         if (widget.isFullScreen) {
           return Scaffold(
@@ -190,7 +196,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: () => setState(() => _isCollapsed = !_isCollapsed),
+        onTap: () => setState(() => _isCollapsed = !collapsed),
         child: Container(
           width: 30,
           height: 30,
