@@ -892,29 +892,36 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     if (pageData == null || pageData.backgroundImageBytes != null) return;
 
     try {
-      final response = await _apiService.get('/projectDocumentPage/project-document-page-pdf/${pageData.pageId}');
+      final response = await _apiService.get('/projectDocumentPage/project-document-page-pre-signed-url/${pageData.pageId}');
       final responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
-        final String base64String = responseData['data']['image'] ?? '';
-        if (base64String.isNotEmpty) {
-          pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-          final ui.Image decodedImage = await _decodeBase64Image(base64String);
+        final String preSignedUrl = responseData['data'];
+        if (preSignedUrl.isNotEmpty) {
+          final imageResponse = await http.get(Uri.parse(preSignedUrl));
+          
+          if (imageResponse.statusCode == 200) {
+            final Uint8List imageBytes = imageResponse.bodyBytes;
+            pageData.backgroundImageBytes = imageBytes;
+            final ui.Image decodedImage = await _decodeBytesToImage(imageBytes);
 
-          pageData.width = decodedImage.width.toDouble();
-          pageData.height = decodedImage.height.toDouble();
+            pageData.width = decodedImage.width.toDouble();
+            pageData.height = decodedImage.height.toDouble();
 
-          if (_rawDocumentData['page_list'] != null) {
-            final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
-              (p) => p['page_id'] == pageData.pageId,
-              orElse: () => null
-            );
-            if (pageJson != null && pageJson['annotation_list'] != null) {
-              pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
+            if (_rawDocumentData['page_list'] != null) {
+              final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
+                (p) => p['page_id'] == pageData.pageId,
+                orElse: () => null
+              );
+              if (pageJson != null && pageJson['annotation_list'] != null) {
+                pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
+              }
             }
-          }
 
-          _canvasKeys.remove(pageName);
+            _canvasKeys.remove(pageName);
+          } else {
+            debugPrint("Failed to download image from presigned URL. Status: ${imageResponse.statusCode}");
+          }
         }
       }
     } catch (e) { debugPrint("Error loading page image: $e"); }
