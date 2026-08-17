@@ -27,7 +27,7 @@ class AppLoadingScreen extends StatelessWidget {
               //   size: 60,
               //   color: colorScheme.primary,
               // ),
-              child: AppLogo(size: 60, padding: 10),
+              child: AppLogo(size: 60, padding: 10, color: const Color(0xFF1C58F6)),
             ),
             const SizedBox(height: 32),
             Text(

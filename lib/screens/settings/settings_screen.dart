@@ -7,8 +7,8 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<Color> accentColors = [
-      const Color(0xFF00AB55), const Color(0xFF3366FF), const Color(0xFF7635DC),
-      const Color(0xFF2065D1), const Color(0xFFFDA92D), const Color(0xFFFF3030),
+      const Color(0xFF1C58F6), const Color(0xFF00AB55), const Color(0xFF7635DC),
+      const Color(0xFFFDA92D), const Color(0xFFFF3030),
     ];
 
     return ListenableBuilder(

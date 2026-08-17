@@ -24,7 +24,7 @@ class _SignupFormState extends State<SignupForm> {
   
   bool _agreedToDataProcessing = false;
 
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
   static const Color inactiveText = Color(0xFF919EAB);
   static const Color errorRed = Color(0xFFFF4842);
 

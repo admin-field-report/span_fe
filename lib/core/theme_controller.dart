@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 final themeController = ThemeController();
 
 class ThemeController extends ChangeNotifier {
-  ThemeMode _themeMode = ThemeMode.dark;
-  Color _targetColor = const Color(0xFF00AB55);
+  ThemeMode _themeMode = ThemeMode.light;
+  Color _targetColor = const Color(0xFF1C58F6);
   String _fontFamily = 'Public Sans';
   double _fontSize = 15.0; // Default size from your image
 
@@ -31,7 +31,7 @@ class ThemeController extends ChangeNotifier {
     if (savedTheme != null) {
       _themeMode = ThemeMode.values.firstWhere(
         (e) => e.toString() == savedTheme,
-        orElse: () => ThemeMode.dark,
+        orElse: () => ThemeMode.light,
       );
     }
 

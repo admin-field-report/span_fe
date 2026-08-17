@@ -20,7 +20,7 @@ class _EarlyAccessFormState extends State<EarlyAccessForm> {
   String? _errorMessage; // 🚀 NEW: Added to catch API errors gracefully
 
   // Hardcoded colors matching your theme
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
   static const Color inactiveText = Color(0xFF919EAB);
 
   @override

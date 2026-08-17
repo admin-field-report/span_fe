@@ -279,7 +279,7 @@ class _MainScaffoldState extends State<MainScaffold> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
-          AppLogo(size: 50, padding: 5),
+          AppLogo(size: 50, padding: 5, color: const Color(0xFF1C58F6)),
           if (!collapsed) ...[
             const SizedBox(width: 12),
             const Flexible(

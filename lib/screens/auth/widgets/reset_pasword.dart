@@ -16,7 +16,7 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
 
   // Strong Password Validator Logic
   String? _validateStrongPassword(String? value) {
@@ -46,7 +46,7 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C252E),
+        color: const Color(0xFF0E131E),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Form(
@@ -118,7 +118,7 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
                               height: 20, 
                               width: 20, 
                               child: CircularProgressIndicator(
-                                color: Colors.white, 
+                                color: Color(0xFF0A1224), 
                                 strokeWidth: 2,
                               ),
                             ),

@@ -7,7 +7,7 @@ import 'widgets/login_form.dart';
 import 'widgets/signup_form.dart';
 import 'widgets/early_access_form.dart';
 import 'widgets/forgot_password_form.dart';
-import 'widgets/branding_panel.dart';
+import 'widgets/auth_background.dart';
 import '../../widgets/app_logo/app_logo.dart';
 import '../../utils/app_responsive.dart';
 
@@ -70,9 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final isDesktop = AppResponsive.isDesktopScreen(context);
 
-    const Color obsidianBg = Color(0xFF151A21);
-    const Color emeraldAccent = Color(0xFF00AB55);
-    const Color slateSurface = Color(0xFF1C252E);
+    const Color obsidianBg = Color(0xFF050A15);
+    const Color emeraldAccent = Color(0xFF1C58F6);
+    const Color slateSurface = Color(0xFF0A1224);
 
     final bool isNativeMobileApp = !kIsWeb && 
         (defaultTargetPlatform == TargetPlatform.android || 
@@ -111,17 +111,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: obsidianBg,
-      body: Row(
-        children: [
-          if (isDesktop)
-            const Expanded(
-              flex: 3,
-              child: BrandingPanel(),
-            ),
-
-          Expanded(
-            flex: isDesktop ? 2 : 5,
-            child: SafeArea(
+      body: AuthBackground(
+        child: SafeArea(
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   return SingleChildScrollView(
@@ -199,9 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 },
               ),
             ),
-          ),
-        ],
-      ),
+        ),
     );
   }
 }
