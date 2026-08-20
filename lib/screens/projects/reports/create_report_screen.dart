@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../../../core/api_service.dart';
@@ -203,7 +204,19 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       if (!isComplete) throw Exception("Report summary generation timed out.");
       if (!mounted) return;
 
-      final String summaryHtml = pollData?['result']?['data']?['summary'] ?? "<p>No summary generated.</p>";
+      // The poll result now returns a presigned URL (summary_html_url)
+      // instead of inline HTML — fetch it to get the actual summary HTML.
+      String summaryHtml = "<p>No summary generated.</p>";
+      final String? summaryHtmlUrl = pollData?['result']?['data']?['summary_html_url'];
+      if (summaryHtmlUrl != null && summaryHtmlUrl.isNotEmpty) {
+        final htmlRes = await http.get(Uri.parse(summaryHtmlUrl));
+        if (htmlRes.statusCode != 200) {
+          throw Exception("Failed to load report summary (HTTP ${htmlRes.statusCode}).");
+        }
+        summaryHtml = utf8.decode(htmlRes.bodyBytes);
+      }
+      if (!mounted) return;
+
       final bool? didFinish = await Navigator.push<bool>(
         context,
         MaterialPageRoute(

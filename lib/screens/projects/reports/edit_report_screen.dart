@@ -18,10 +18,12 @@ class EditReportScreen extends StatefulWidget {
 class _EditReportScreenState extends State<EditReportScreen> {
   final ApiService _apiService = ApiService();
   final HtmlEditorController _editorController = HtmlEditorController();
-  
+  final TextEditingController _nameController = TextEditingController();
+
   bool _isLoading = true;
   bool _isUpdating = false;
   String _currentHtml = "";
+  String? _nameError;
 
   @override
   void initState() {
@@ -31,6 +33,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -44,8 +47,9 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
       if (responseData['data'] != null) {
         final data = responseData['data'];
-        setState(() {          
+        setState(() {
           _currentHtml = data['body_html'] ?? "";
+          _nameController.text = data['name'] ?? "";
           _isLoading = false;
         });
       }
@@ -60,13 +64,21 @@ class _EditReportScreenState extends State<EditReportScreen> {
   // 🚀 SAVE EDITED HTML
   Future<void> _handleUpdateReport() async {
     if (_isUpdating) return;
-    
+
+    // Name is mandatory
+    final String reportName = _nameController.text.trim();
+    if (reportName.isEmpty) {
+      setState(() => _nameError = "Report name is required.");
+      return;
+    }
+    setState(() => _nameError = null);
+
     setState(() => _isUpdating = true);
-    
+
     try {
       final htmlPayload = await _editorController.getText();
-      
-      final payload = {"body_html": htmlPayload};
+
+      final payload = {"name": reportName, "body_html": htmlPayload};
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
       
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -109,6 +121,19 @@ class _EditReportScreenState extends State<EditReportScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 🚀 REPORT NAME (mandatory — sent as `name` in the update API)
+                Container(
+                  color: colorScheme.surface,
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                  child: FormControlTextField(
+                    controller: _nameController,
+                    labelText: "Report Name *",
+                    hintText: "Enter report name",
+                    errorText: _nameError,
+                    textInputAction: TextInputAction.done,
+                  ),
+                ),
+
                 // 🚀 MAIN CONTENT AREA (Full Width & Height)
                 Expanded(
                   child: LayoutBuilder(

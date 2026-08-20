@@ -476,7 +476,7 @@ class CanvasState extends State<Canvas> {
         // 70 on the mobile/tablet app (fixed canvas units below 100% zoom) —
         // must match rotLineLength in the painter, whose scale is clamped
         // to >= 1.0.
-        final double rotStem = (AppResponsive.isAndroid || AppResponsive.isIOS) ? 100.0 : 40.0;
+        final double rotStem = (AppResponsive.isAndroid || AppResponsive.isIOS) ? 150.0 : 70.0;
         final Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - (rotStem / math.max(viewerScale, 1.0)));
 
         // Nearest-wins hit test: the enlarged touch radii overlap (topCenter's

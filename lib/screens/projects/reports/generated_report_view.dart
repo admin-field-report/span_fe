@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:html_editor_enhanced/html_editor.dart';
 import '../../../widgets/widgets.dart';
@@ -18,14 +19,39 @@ class GeneratedReportView extends StatefulWidget {
 class _GeneratedReportViewState extends State<GeneratedReportView> {
   final ApiService _apiService = ApiService();
   final HtmlEditorController _editorController = HtmlEditorController();
+  final TextEditingController _nameController = TextEditingController();
 
   late String _currentHtml;
   bool _isUpdating = false;
+  String? _nameError;
 
   @override
   void initState() {
     super.initState();
     _currentHtml = widget.htmlContent;
+    _fetchReportName();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  // Prefill the mandatory name field with the report's current name.
+  Future<void> _fetchReportName() async {
+    if (widget.reportId.isEmpty) return;
+    try {
+      final response = await _apiService.get('/report/getById/${widget.reportId}');
+      final responseData = jsonDecode(response.body);
+      if (!mounted) return;
+      final String? name = responseData['data']?['name'];
+      if (name != null && name.isNotEmpty && _nameController.text.isEmpty) {
+        setState(() => _nameController.text = name);
+      }
+    } catch (_) {
+      // Best-effort prefill — the user can still type a name manually.
+    }
   }
 
   Future<void> _navigateToPreview() async {
@@ -48,11 +74,19 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
       return;
     }
 
+    // Name is mandatory
+    final String reportName = _nameController.text.trim();
+    if (reportName.isEmpty) {
+      setState(() => _nameError = "Report name is required.");
+      return;
+    }
+    setState(() => _nameError = null);
+
     setState(() => _isUpdating = true);
 
     try {
       final htmlPayload = await _editorController.getText();
-      final payload = {"body_html": htmlPayload};
+      final payload = {"name": reportName, "body_html": htmlPayload};
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -88,6 +122,19 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
         children: [
           Column(
             children: [
+          // 🚀 REPORT NAME (mandatory — sent as `name` in the update API)
+          Container(
+            width: double.infinity,
+            color: colorScheme.surface,
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            child: FormControlTextField(
+              controller: _nameController,
+              labelText: "Report Name *",
+              hintText: "Enter report name",
+              errorText: _nameError,
+              textInputAction: TextInputAction.done,
+            ),
+          ),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -153,12 +200,6 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
                     label: "Update & Next",
                     variant: ButtonVariant.filled,
                     onPressed: () => _handleSave(navigateToNext: true),
-                  ),
-                  const SizedBox(width: 12),
-                  Button(
-                    label: "Next",
-                    variant: ButtonVariant.outline,
-                    onPressed: _navigateToPreview,
                   ),
                 ],
               ),
