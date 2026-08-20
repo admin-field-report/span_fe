@@ -996,8 +996,11 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     }
   }
 
-  String _getToolNameFromType(DrawingType type) {
-    switch (type) {
+  String _getToolNameFromObject(DrawingObject obj) {
+    if (obj.type == DrawingType.text && obj.isCallout) {
+      return 'Callout';
+    }
+    switch (obj.type) {
       case DrawingType.pencil: return 'Pencil';
       case DrawingType.pen: return 'Pen';
       case DrawingType.rect: return 'Rect';
@@ -1197,7 +1200,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
                   if (tool.toolObjects.length == 1) {
                     final obj = tool.toolObjects.first;
-                    final nativeToolName = _getToolNameFromType(obj.type);
+                    final nativeToolName = _getToolNameFromObject(obj);
 
                     _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
                       nativeToolName,
@@ -1205,6 +1208,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
                       obj.color,
                       obj.fillColor ?? Colors.transparent,
                       obj.opacity,
+                      customToolId: tool.toolId,
                     );
                   } else {
                     _getCurrentCanvasKey().currentState?.applyExternalToolConfig(

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:universal_html/html.dart' as html;
@@ -122,14 +123,28 @@ class CanvasState extends State<Canvas> {
 
   List<DrawingObject> get objects => _drawingObjects;
 
+  // Current InteractiveViewer zoom + last input device, used to keep
+  // selection handles a constant on-screen size and hit targets finger- or
+  // cursor-sized regardless of zoom (Figma-style).
+  double _viewerScale = 1.0;
+  PointerDeviceKind _lastPointerKind = PointerDeviceKind.mouse;
+
+  void _onViewerTransformChanged() {
+    final double s = _transformationController.value.getMaxScaleOnAxis();
+    if ((s - _viewerScale).abs() > 0.005) {
+      setState(() => _viewerScale = s);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    
+
     _drawingObjects = List.from(widget.initialObjects);
-    
+    _transformationController.addListener(_onViewerTransformChanged);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _centerDocument();
     });
@@ -169,6 +184,7 @@ class CanvasState extends State<Canvas> {
   @override
   void dispose() {
     _canvasFocusNode.dispose();
+    _transformationController.removeListener(_onViewerTransformChanged);
     _transformationController.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); 
     super.dispose();
@@ -433,60 +449,79 @@ class CanvasState extends State<Canvas> {
   }
   
   ResizeHandle _getHitHandle(Offset p, DrawingObject obj) {
-    double scaleFactor = math.max(widget.width, widget.height) / 1056.0;
-    if (scaleFactor < 1.0) scaleFactor = 1.0;
+    // Hit radii are defined in *screen* pixels and converted to canvas units
+    // via the current zoom, so a handle is always the same finger/cursor
+    // size on screen no matter how far the user zoomed in or out.
+    // Touch gets a bigger target than a mouse cursor.
+    double viewerScale = _transformationController.value.getMaxScaleOnAxis();
+    if (viewerScale <= 0 || viewerScale.isNaN) viewerScale = 1.0;
+    final bool isTouch = _lastPointerKind == PointerDeviceKind.touch;
+    final double hSize = (isTouch ? 36.0 : 22.0) / viewerScale;
+    final double edgeTol = (isTouch ? 28.0 : 16.0) / viewerScale;
 
-    final double hSize = 25.0 * scaleFactor; 
-    
-    // 🚀 THE FIX: Push the resize handles 20px away from the shape
-    final double handlePadding = 20.0 * scaleFactor;
-    
     final localP = _toLocalSpace(p, obj);
     final r = obj.rect;
 
     if (obj.isSelected) {
-      // Create a padded bounding box exclusively for the resize handles
-      final Rect paddedRect = r.inflate(handlePadding);
-
       if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
         if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
         if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
       }
-      
-      if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-        if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft; 
-        if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight; 
-      } else {
-        // 🚀 We use paddedRect here so the handles sit further outside!
-        Offset rotPos = Offset(paddedRect.topCenter.dx, paddedRect.topCenter.dy - (40 * scaleFactor));
-        if ((localP - rotPos).distance < hSize) return ResizeHandle.rotation;
 
-        if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
-          if ((localP - paddedRect.topLeft).distance < hSize) return ResizeHandle.topLeft;
-          if ((localP - paddedRect.topCenter).distance < hSize) return ResizeHandle.topCenter;
-          if ((localP - paddedRect.topRight).distance < hSize) return ResizeHandle.topRight;
-          if ((localP - paddedRect.centerLeft).distance < hSize) return ResizeHandle.centerLeft;
-          if ((localP - paddedRect.centerRight).distance < hSize) return ResizeHandle.centerRight;
-          if ((localP - paddedRect.bottomLeft).distance < hSize) return ResizeHandle.bottomLeft;
-          if ((localP - paddedRect.bottomCenter).distance < hSize) return ResizeHandle.bottomCenter;
-          if ((localP - paddedRect.bottomRight).distance < hSize) return ResizeHandle.bottomRight;
-        }
+      if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
+        if ((localP - obj.start).distance < hSize) return ResizeHandle.topLeft;
+        if ((localP - obj.end).distance < hSize) return ResizeHandle.bottomRight;
+      } else {
+        // Rotation handle sits 40 screen px above the top edge on web and
+        // 70 on the mobile/tablet app (fixed canvas units below 100% zoom) —
+        // must match rotLineLength in the painter, whose scale is clamped
+        // to >= 1.0.
+        final double rotStem = (AppResponsive.isAndroid || AppResponsive.isIOS) ? 100.0 : 40.0;
+        final Offset rotPos = Offset(r.topCenter.dx, r.topCenter.dy - (rotStem / math.max(viewerScale, 1.0)));
+
+        // Nearest-wins hit test: the enlarged touch radii overlap (topCenter's
+        // circle can fully cover the rotation knob above it), so pick the
+        // candidate closest to the pointer instead of the first match.
+        final Map<ResizeHandle, Offset> candidates = {
+          if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) ...{
+            ResizeHandle.topLeft: r.topLeft,
+            ResizeHandle.topCenter: r.topCenter,
+            ResizeHandle.topRight: r.topRight,
+            ResizeHandle.centerLeft: r.centerLeft,
+            ResizeHandle.centerRight: r.centerRight,
+            ResizeHandle.bottomLeft: r.bottomLeft,
+            ResizeHandle.bottomCenter: r.bottomCenter,
+            ResizeHandle.bottomRight: r.bottomRight,
+          },
+          ResizeHandle.rotation: rotPos,
+        };
+
+        ResizeHandle bestHandle = ResizeHandle.none;
+        double bestDist = hSize;
+        candidates.forEach((handle, handlePos) {
+          final double d = (localP - handlePos).distance;
+          if (d < bestDist) {
+            bestDist = d;
+            bestHandle = handle;
+          }
+        });
+        if (bestHandle != ResizeHandle.none) return bestHandle;
       }
-      
+
       // 🚀 MOVE GRAB: Strictly inside the actual un-padded object body bounds.
       if (r.contains(localP)) return ResizeHandle.body;
     }
-    
+
     // --- Unselected Hit Tests ---
     if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
-      if (_distToSegment(localP, obj.start, obj.end) < (15 * scaleFactor)) return ResizeHandle.body;
+      if (_distToSegment(localP, obj.start, obj.end) < edgeTol) return ResizeHandle.body;
     } else if ((obj.type == DrawingType.pencil || obj.type == DrawingType.pen) && obj.points != null) {
       for (int i = 0; i < obj.points!.length - 1; i++) {
-        if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < (15 * scaleFactor)) return ResizeHandle.body;
+        if (_distToSegment(localP, obj.points![i], obj.points![i+1]) < edgeTol) return ResizeHandle.body;
       }
       if (obj.fillColor != Colors.transparent && r.contains(localP)) return ResizeHandle.body;
     } else {
-      if (r.inflate(5 * scaleFactor).contains(localP)) return ResizeHandle.body;
+      if (r.inflate(edgeTol * 0.5).contains(localP)) return ResizeHandle.body;
     }
     return ResizeHandle.none;
   }
@@ -495,8 +530,10 @@ class CanvasState extends State<Canvas> {
     if (!_canvasFocusNode.hasFocus) {
       _canvasFocusNode.requestFocus();
     }
-    
-    final pos = _clampToCanvas(details.localPosition); 
+
+    _lastPointerKind = details.kind;
+
+    final pos = _clampToCanvas(details.localPosition);
     final now = DateTime.now();
 
     setState(() {
@@ -678,21 +715,15 @@ class CanvasState extends State<Canvas> {
           Rect r = _activeObject!.rect;
           double left = r.left, top = r.top, right = r.right, bottom = r.bottom;
           
-          // 🚀 MUST match the padding used in _getHitHandle to calculate math correctly
-          double scaleFactor = math.max(widget.width, widget.height) / 1056.0;
-          if (scaleFactor < 1.0) scaleFactor = 1.0;
-          final double padding = 20.0 * scaleFactor;
-          
-          // Reverse the padding from the pointer's location to find the true shape edge
           switch (_activeHandle) {
-            case ResizeHandle.topLeft: left = localP.dx + padding; top = localP.dy + padding; break;
-            case ResizeHandle.topCenter: top = localP.dy + padding; break;
-            case ResizeHandle.topRight: right = localP.dx - padding; top = localP.dy + padding; break;
-            case ResizeHandle.centerLeft: left = localP.dx + padding; break;
-            case ResizeHandle.centerRight: right = localP.dx - padding; break;
-            case ResizeHandle.bottomLeft: left = localP.dx + padding; bottom = localP.dy - padding; break;
-            case ResizeHandle.bottomCenter: bottom = localP.dy - padding; break;
-            case ResizeHandle.bottomRight: right = localP.dx - padding; bottom = localP.dy - padding; break;
+            case ResizeHandle.topLeft: left = localP.dx; top = localP.dy; break;
+            case ResizeHandle.topCenter: top = localP.dy; break;
+            case ResizeHandle.topRight: right = localP.dx; top = localP.dy; break;
+            case ResizeHandle.centerLeft: left = localP.dx; break;
+            case ResizeHandle.centerRight: right = localP.dx; break;
+            case ResizeHandle.bottomLeft: left = localP.dx; bottom = localP.dy; break;
+            case ResizeHandle.bottomCenter: bottom = localP.dy; break;
+            case ResizeHandle.bottomRight: right = localP.dx; bottom = localP.dy; break;
             default: break;
           }
 
@@ -1241,6 +1272,28 @@ class CanvasState extends State<Canvas> {
                       } else {
                         _selectedTool = tool.name;
                       }
+
+                      if (_selectedCustomToolId != null) {
+                        _selectedCustomToolId = null;
+                        _selectedCustomToolShapes = null;
+                        
+                        _pencilColor = Colors.black;
+                        _penFillColor = Colors.transparent;
+                        _pencilStrokeWidth = 2.0;
+                        _pencilOpacity = 1.0;
+                        
+                        _shapeLineColor = Colors.black;
+                        _shapeBorderColor = Colors.black;
+                        _shapeFillColor = Colors.transparent;
+                        _shapeStrokeWidth = 2.0;
+                        _shapeOpacity = 1.0;
+
+                        _textColor = Colors.black;
+                        _textBorderColor = Colors.transparent;
+                        _textFillColor = Colors.transparent;
+                        _textStrokeWidth = 2.0;
+                        _textOpacity = 1.0;
+                      }
                       
                       for (var obj in _drawingObjects) obj.isSelected = false;
                       _activeObject = null;
@@ -1377,6 +1430,29 @@ class CanvasState extends State<Canvas> {
     void activateSelectTool() {
       setState(() {
         _selectedTool = 'Select';
+
+        if (_selectedCustomToolId != null) {
+          _selectedCustomToolId = null;
+          _selectedCustomToolShapes = null;
+          
+          _pencilColor = Colors.black;
+          _penFillColor = Colors.transparent;
+          _pencilStrokeWidth = 2.0;
+          _pencilOpacity = 1.0;
+          
+          _shapeLineColor = Colors.black;
+          _shapeBorderColor = Colors.black;
+          _shapeFillColor = Colors.transparent;
+          _shapeStrokeWidth = 2.0;
+          _shapeOpacity = 1.0;
+
+          _textColor = Colors.black;
+          _textBorderColor = Colors.transparent;
+          _textFillColor = Colors.transparent;
+          _textStrokeWidth = 2.0;
+          _textOpacity = 1.0;
+        }
+
         for (var obj in _drawingObjects) obj.isSelected = false;
         _activeObject = null;
         widget.onSelectionChanged?.call(null);
@@ -2397,8 +2473,10 @@ class CanvasState extends State<Canvas> {
                                               ],
                                             ),
                                             child: CanvasPaper(
-                                              objects: _drawingObjects, 
+                                              objects: _drawingObjects,
                                               preview: _currentPreview,
+                                              viewerScale: _viewerScale,
+                                              touchDevice: AppResponsive.isAndroid || AppResponsive.isIOS,
                                               backgroundImageBytes: widget.initialBackgroundImage,
                                               width: widget.width,
                                               height: widget.height,                                         

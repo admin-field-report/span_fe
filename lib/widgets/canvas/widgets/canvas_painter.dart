@@ -13,13 +13,22 @@ class CanvasPaper extends StatelessWidget {
   final double width;
   final double height;
 
+  // Current InteractiveViewer zoom — selection handles are divided by this
+  // so they render at a constant screen size at any zoom (Figma-style).
+  final double viewerScale;
+
+  // Mobile/tablet app: draw bigger handles for fingers (web stays as-is).
+  final bool touchDevice;
+
   const CanvasPaper({
-    super.key, 
-    required this.objects, 
-    this.preview, 
+    super.key,
+    required this.objects,
+    this.preview,
     this.backgroundImageBytes,
     this.width = 816.0,  // Fallback A4 width
-    this.height = 1056.0 // Fallback A4 height
+    this.height = 1056.0, // Fallback A4 height
+    this.viewerScale = 1.0,
+    this.touchDevice = false,
   });
 
 
@@ -44,7 +53,7 @@ class CanvasPaper extends StatelessWidget {
               // RepaintBoundary keeps drawing repaints from also re-rasterizing
               // the background image layer (and vice versa) on every stroke.
               child: RepaintBoundary(
-                child: CustomPaint(painter: MainPainter(context, objects, preview)),
+                child: CustomPaint(painter: MainPainter(context, objects, preview, viewerScale: viewerScale, touchDevice: touchDevice)),
               ),
             ),
           ],
@@ -58,8 +67,10 @@ class MainPainter extends CustomPainter {
   final BuildContext context;
   final List<DrawingObject> objects;
   final DrawingObject? preview;
-  
-  MainPainter(this.context, this.objects, this.preview);
+  final double viewerScale;
+  final bool touchDevice;
+
+  MainPainter(this.context, this.objects, this.preview, {this.viewerScale = 1.0, this.touchDevice = false});
 
   Rect _calculateInternalBounds(List<DrawingObject> shapes) {
     double minX = double.infinity;
@@ -102,15 +113,28 @@ class MainPainter extends CustomPainter {
     double scaleFactor = math.max(size.width, size.height) / 1056.0;
     if (scaleFactor < 1.0) scaleFactor = 1.0;
 
-    // 🚀 THE FIX: Dynamically scale all visual handle variables
-    final double dotOuter = 7.0 * scaleFactor;
-    final double dotInner = 5.0 * scaleFactor;
-    final double rotLineLength = 40.0 * scaleFactor;
-    final double rotOuter = 12.0 * scaleFactor;
-    final double rotInner = 10.0 * scaleFactor;
-    final double rotIconFontSize = 16.0 * scaleFactor;
-    final double selectionStroke = 1.0 * scaleFactor;
-    final double inflatePencilSize = 4.0 * scaleFactor;
+    // Selection handles are sized in *screen* pixels and divided by the
+    // current zoom, so they never grow when zooming in (Figma-style).
+    // Below 100% zoom the scale is clamped, so handles shrink together
+    // with the page instead of towering over it.
+    double vs = viewerScale;
+    if (vs <= 0 || vs.isNaN) vs = 1.0;
+    vs = math.max(vs, 1.0);
+
+    // Finger-friendly: bigger dots on the mobile/tablet app, unchanged on web.
+    // (rotLineLength is NOT boosted — its position must match the hit test.)
+    final double boost = touchDevice ? 3.7 : 1.7;
+    final double dotOuter = 7.0 * boost / vs;
+    final double dotInner = 5.0 * boost / vs;
+    // Longer stem on touch devices so the (bigger) rotation knob keeps clear
+    // separation from the topCenter resize dot. MUST match the rotation
+    // offset in the canvas hit test (_getHitHandle).
+    final double rotLineLength = (touchDevice ? 150.0 : 70.0) / vs;
+    final double rotOuter = 11.0 * boost / vs;
+    final double rotInner = 11.0 * boost / vs;
+    final double rotIconFontSize = 14.0 * boost / vs;
+    final double selectionStroke = 1.0 / vs;
+    final double inflatePencilSize = 4.0 / vs;
 
     void drawShape(DrawingObject obj, {bool isInternal = false}) {
       canvas.save();
@@ -529,10 +553,10 @@ class MainPainter extends CustomPainter {
 
           if (obj.type != DrawingType.pencil && obj.type != DrawingType.pen) {
             final points = [rect.topLeft, rect.topCenter, rect.topRight, rect.centerLeft, rect.centerRight, rect.bottomLeft, rect.bottomCenter, rect.bottomRight];
-            for (var p in points) { 
+            for (var p in points) {
               // 🚀 Used scaled dots
-              canvas.drawCircle(p, dotOuter, wP); 
-              canvas.drawCircle(p, dotInner, hP); 
+              canvas.drawCircle(p, dotOuter, wP);
+              canvas.drawCircle(p, dotInner, hP);
             }
           } else {
             // 🚀 Used scaled inflation and stroke width
