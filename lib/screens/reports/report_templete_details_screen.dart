@@ -89,14 +89,14 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
     setState(() => _isSavingSkill = true);
     try {
       await reportController.updateReportTemplateFields(widget.templateId, {
-        'body_config': {'skill': newSkill},
+        'skill_content': newSkill,
       });
       if (!mounted) return;
       setState(() {
         final data = reportController.templateData;
         if (data != null) {
-          final bodyConfig = (data['body_config'] as Map?) ?? <String, dynamic>{};
-          data['body_config'] = {...bodyConfig, 'skill': newSkill};
+          // final bodyConfig = (data['body_config'] as Map?) ?? <String, dynamic>{};
+          data['skill_content'] = newSkill;
         }
         _isEditingSkill = false;
       });
@@ -122,7 +122,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
 
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: ['pdf', 'docx'],
       withData: true,
       allowMultiple: false,
     );
@@ -459,7 +459,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
 
     final data = reportController.templateData!;
     final List documents = data['report_template_document'] ?? [];
-    final String skillContent = (data['body_config']?['skill'] as String?) ?? "";
+    final String skillContent = (data['skill_content'] as String?) ?? "";
 
     return SafeArea(
       child: Center(
@@ -825,7 +825,8 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
         final doc = documents[index];
         final docName = doc['name'] ?? "Unknown Document";
         final docId = doc['id'];
-        
+        final isDocx = docName.toLowerCase().endsWith('.docx');
+
         return Container(
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
@@ -835,8 +836,14 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: CircleAvatar(
-              backgroundColor: theme.colorScheme.errorContainer.withOpacity(0.5),
-              child: Icon(Icons.picture_as_pdf_rounded, color: theme.colorScheme.error, size: 20),
+              backgroundColor: isDocx
+                  ? theme.colorScheme.primaryContainer.withOpacity(0.5)
+                  : theme.colorScheme.errorContainer.withOpacity(0.5),
+              child: Icon(
+                isDocx ? Icons.description_rounded : Icons.picture_as_pdf_rounded,
+                color: isDocx ? theme.colorScheme.primary : theme.colorScheme.error,
+                size: 20,
+              ),
             ),
             title: Text(
               docName,

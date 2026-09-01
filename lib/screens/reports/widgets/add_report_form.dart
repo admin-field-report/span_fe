@@ -19,9 +19,17 @@ class _AddReportFormState extends State<AddReportForm> {
   final _nameController = TextEditingController();
   
   bool _isSubmitting = false;
-  bool _reportCreated = false; 
+  bool _reportCreated = false;
   String? _errorMessage;
   List<PlatformFile> _selectedFiles = [];
+  ReportCreationPhase? _currentPhase;
+
+  static const Map<ReportCreationPhase, String> _phaseLabels = {
+    ReportCreationPhase.creatingTemplate: "Creating report template...",
+    ReportCreationPhase.uploadingDocument: "Uploading document...",
+    ReportCreationPhase.assigningDocument: "Assigning document to template...",
+    ReportCreationPhase.generatingSkills: "Generating report skills...",
+  };
 
   // 🚀 Temporarily restricted to a single document upload from the UI (the
   // presigned-url/upload APIs still support multiple — only this form limits it).
@@ -35,7 +43,7 @@ class _AddReportFormState extends State<AddReportForm> {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'docx'],
         withData: true,
       );
 
@@ -55,13 +63,17 @@ class _AddReportFormState extends State<AddReportForm> {
 
     setState(() {
       _isSubmitting = true;
-      _errorMessage = null; 
+      _errorMessage = null;
+      _currentPhase = ReportCreationPhase.creatingTemplate;
     });
-    
+
     final name = _nameController.text.trim();
     final result = await reportController.createReportWithDocuments(
       name,
       _selectedFiles,
+      onPhaseChange: (phase) {
+        if (mounted) setState(() => _currentPhase = phase);
+      },
     );
     final status = result.status;
 
@@ -82,13 +94,15 @@ class _AddReportFormState extends State<AddReportForm> {
     else if (status == CreateReportStatus.partialSuccess) {
       setState(() {
         _isSubmitting = false;
-        _reportCreated = true; 
-        _errorMessage = "Report template created, but there was an issue with document upload.";
+        _currentPhase = null;
+        _reportCreated = true;
+        _errorMessage = result.message ?? "Report template created, but there was an issue with document upload.";
       });
-    } 
+    }
     else {
       setState(() {
         _isSubmitting = false;
+        _currentPhase = null;
         _errorMessage = "Failed to create report. Please try again.";
       });
     }
@@ -164,8 +178,7 @@ class _AddReportFormState extends State<AddReportForm> {
                         ),
                       ),
                       Button(
-                        // label: "Browse PDFs",
-                        label: "Browse PDF",
+                        label: "Browse File",
                         icon: Icons.upload_file_rounded,
                         variant: ButtonVariant.outline,
                         onPressed: _selectedFiles.isNotEmpty ? null : _pickFiles,
@@ -206,8 +219,27 @@ class _AddReportFormState extends State<AddReportForm> {
               ),
             ),
 
-            const SizedBox(height: 32),
-            
+            const SizedBox(height: 16),
+
+            if (_isSubmitting && _currentPhase != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _phaseLabels[_currentPhase]!,
+                      style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+
             // 🚀 The buttons are now permanently accessible
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -216,15 +248,13 @@ class _AddReportFormState extends State<AddReportForm> {
                   label: _reportCreated ? "Close" : "Cancel",
                   variant: ButtonVariant.outline,
                   // Disabled *only* while actively submitting
-                  onPressed: _isSubmitting ? null : _handleDismiss, 
+                  onPressed: _isSubmitting ? null : _handleDismiss,
                 ),
                 const SizedBox(width: 12),
                 Button(
-                  label: _reportCreated 
-                      ? "Created" 
-                      : (_isSubmitting 
-                          ? (_selectedFiles.isNotEmpty ? "Uploading..." : "Creating...") 
-                          : "Create Template"),
+                  label: _reportCreated
+                      ? "Created"
+                      : (_isSubmitting ? "Please wait..." : "Create Template"),
                   isLoading: _isSubmitting,
                   onPressed: (_isSubmitting || _reportCreated) ? null : _submit,
                 ),

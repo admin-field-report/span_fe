@@ -6,6 +6,8 @@ import '../../../../core/api_service.dart';
 
 enum CreateReportStatus { success, partialSuccess, failure }
 
+enum ReportCreationPhase { creatingTemplate, uploadingDocument, assigningDocument, generatingSkills }
+
 // --- MODEL ---
 class ReportTemplate {
   final String id;
@@ -79,40 +81,91 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  Future<({CreateReportStatus status, String? reportId})> createReportWithDocuments(String name, List<PlatformFile> files) async {
+  String _contentTypeForExtension(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'pdf':
+      default:
+        return 'application/pdf';
+    }
+  }
+
+  /// Polls a background job's `status_endpoint` (same convention used for
+  /// skill regeneration jobs) until it reports 'completed' or 'failed'.
+  /// Gives up after ~5 minutes so a stuck job can't hang the caller forever.
+  Future<bool> _pollJobStatus(String statusEndpoint) async {
+    const maxAttempts = 100;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final response = await _apiService.get(statusEndpoint);
+        // The job status ('completed'/'failed') can come back on a non-2xx
+        // response too, so read the body regardless of the HTTP status code.
+        final data = jsonDecode(response.body);
+        final status = data['status'];
+
+        if (status == 'completed') return true;
+        if (status == 'failed') {
+          debugPrint("Job failed: ${data['error']}");
+          return false;
+        }
+      } catch (e) {
+        debugPrint("Error polling job status: $e");
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    return false;
+  }
+
+  Future<({CreateReportStatus status, String? reportId, String? message})> createReportWithDocuments(
+    String name,
+    List<PlatformFile> files, {
+    void Function(ReportCreationPhase phase)? onPhaseChange,
+  }) async {
     String? reportId;
 
     try {
       // 1. Create the Report Template
+      onPhaseChange?.call(ReportCreationPhase.creatingTemplate);
       final createPayload = {"name": name};
       final createResponse = await _apiService.post('/reportTemplate/create', createPayload);
       final createData = jsonDecode(createResponse.body);
 
       if (createData['data'] == null) {
-        return (status: CreateReportStatus.failure, reportId: null);
+        return (status: CreateReportStatus.failure, reportId: null, message: null);
       }
 
       reportId = createData['data']['id'];
 
-      if (files.isEmpty) return (status: CreateReportStatus.success, reportId: reportId);
+      if (files.isEmpty) return (status: CreateReportStatus.success, reportId: reportId, message: null);
 
       // 2. Get Pre-signed URLs
       final presignPayload = {
         "files": files.map((f) => {
           "file_name": f.name,
-          "content_type": "application/pdf"
+          "content_type": _contentTypeForExtension(f.extension)
         }).toList()
       };
 
       final presignResponse = await _apiService.post('/reportTemplate/$reportId/documents/presigned-urls', presignPayload);
       final presignData = jsonDecode(presignResponse.body);
 
-      if (presignData['uploads'] == null) return (status: CreateReportStatus.partialSuccess, reportId: reportId);
+      if (presignData['uploads'] == null) {
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document couldn't be prepared for upload.",
+        );
+      }
 
       final List urlsData = presignData['uploads'];
       List<Map<String, String>> registeredDocs = [];
 
       // 3. Upload files to S3 via Pre-signed URLs
+      onPhaseChange?.call(ReportCreationPhase.uploadingDocument);
       for (int i = 0; i < files.length; i++) {
         final file = files[i];
         final urlInfo = urlsData[i];
@@ -131,7 +184,13 @@ class ReportController extends ChangeNotifier {
         }
       }
 
-      if (registeredDocs.isEmpty) return (status: CreateReportStatus.partialSuccess, reportId: reportId);
+      if (registeredDocs.isEmpty) {
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document upload failed.",
+        );
+      }
 
       // // 4. Register the uploaded documents to the template
       // final registerPayload = {"documents": registeredDocs};
@@ -147,11 +206,12 @@ class ReportController extends ChangeNotifier {
 
       // 4. Assign the uploaded document to the report template and extract its HTML
       // (the UI only ever uploads one document at a time, so use the first).
+      onPhaseChange?.call(ReportCreationPhase.assigningDocument);
       final doc = registeredDocs.first;
       final assignPayload = {
         "key": doc["key"],
         "name": doc["name"],
-        "signedUrl": urlsData.first['signedUrl'],
+        // "signedUrl": urlsData.first['signedUrl'],
       };
       final assignResponse = await _apiService.post(
         '/reportTemplate/assign-document-to-report-template/$reportId',
@@ -159,13 +219,37 @@ class ReportController extends ChangeNotifier {
       );
 
       if (assignResponse.statusCode != 200 && assignResponse.statusCode != 201) {
-        return (status: CreateReportStatus.partialSuccess, reportId: reportId);
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document couldn't be assigned to it.",
+        );
       }
 
-      return (status: CreateReportStatus.success, reportId: reportId);
+      // 5. The document was assigned, but skill generation from it runs as a
+      // background job — poll its status endpoint until it actually finishes
+      // before reporting success back to the UI.
+      final assignData = jsonDecode(assignResponse.body);
+      final String? statusEndpoint = assignData['status_endpoint'];
+
+      if (statusEndpoint == null) {
+        return (status: CreateReportStatus.success, reportId: reportId, message: null);
+      }
+
+      onPhaseChange?.call(ReportCreationPhase.generatingSkills);
+      final jobSucceeded = await _pollJobStatus(statusEndpoint);
+      return (
+        status: jobSucceeded ? CreateReportStatus.success : CreateReportStatus.partialSuccess,
+        reportId: reportId,
+        message: jobSucceeded ? null : "Report template created and document uploaded, but skill generation failed.",
+      );
     } catch (e) {
       debugPrint("Error in createReportWithDocuments: $e");
-      return (status: reportId != null ? CreateReportStatus.partialSuccess : CreateReportStatus.failure, reportId: reportId);
+      return (
+        status: reportId != null ? CreateReportStatus.partialSuccess : CreateReportStatus.failure,
+        reportId: reportId,
+        message: reportId != null ? "Report template created, but an unexpected error occurred: $e" : null,
+      );
     }
   }
 
@@ -271,12 +355,12 @@ class ReportController extends ChangeNotifier {
     final presignPayload = {
       "files": files.map((f) => {
         "file_name": f.name,
-        "content_type": "application/pdf"
+        "content_type": _contentTypeForExtension(f.extension)
       }).toList()
     };
-    
+
     final presignResponse = await _apiService.post(
-      '/reportTemplate/$templateId/documents/presigned-urls', 
+      '/reportTemplate/$templateId/documents/presigned-urls',
       presignPayload
     );
     
