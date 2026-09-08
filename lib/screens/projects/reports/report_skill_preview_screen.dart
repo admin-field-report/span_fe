@@ -203,6 +203,7 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
               builder: (context) => GeneratedReportView(
                 htmlContent: finalHtml,
                 reportId: pollData['result']?['data']?['report']?['id'] ?? "",
+                reportURL: "",
               ),
               fullscreenDialog: true, 
             ),

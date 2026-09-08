@@ -160,27 +160,93 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   // and previews the returned HTML summary with a close button — the whole
   // flow now stops here instead of continuing into skill generation /
   // clarification questions / final report finalization.
+  // 🚀 Ensures the report template's Eve profile is built.
+  // 1. GET /reportTemplate/{templateId}/profile
+  // 2. If profile_status == 'ready' -> nothing to do.
+  // 3. Otherwise (null / queued / building / failed) -> POST
+  //    /reportTemplate/{templateId}/profile/generate {"force": true}
+  //    and poll the status endpoint until it reports 'ready'.
+  Future<void> _ensureTemplateProfileReady(String templateId) async {
+    setState(() => _loadingMessage = "Preparing report template...");
+
+    final profileRes = await _apiService.get('/reportTemplate/$templateId/profile');
+    final profileData = jsonDecode(profileRes.body);
+    final String? profileStatus =
+        profileData['data']?['profile_status'] ?? "none";
+
+    if (profileStatus == 'ready') return;
+
+    // Kick off profile generation.
+    final genRes = await _apiService.post(
+      '/reportTemplate/$templateId/profile/generate',
+      {"force": true},
+    );
+    final genData = jsonDecode(genRes.body);
+
+    final String? jobId = genData['job_id'];
+    final String statusEndpoint = genData['status_endpoint'] ??
+        '/reportTemplate/$templateId/profile/status/$jobId';
+
+    const int maxAttempts = 60;
+    int attempts = 0;
+    bool isReady = false;
+
+    while (!isReady && attempts < maxAttempts) {
+      await Future.delayed(const Duration(seconds: 3));
+      attempts++;
+
+      final pollRes = await _apiService.get(statusEndpoint);
+      final pollData = jsonDecode(pollRes.body);
+      final String? status =
+          pollData['status'] ?? pollData['data']?['profile_status'] ?? "none";
+
+      if (status == 'ready' || status == 'completed') {
+        isReady = true;
+      } else if (status == 'failed' || status == 'error') {
+        throw Exception(
+            pollData['message'] ?? pollData['profile_error'] ?? "Report template profile generation failed.");
+      }
+    }
+
+    if (!isReady) throw Exception("Report template profile generation timed out.");
+  }
+
   Future<void> _generateReportSummary() async {
     setState(() {
       _isProcessing = true;
-      _loadingMessage = "Generating Report Summary...";
     });
 
     try {
       final templateId = _selectedReportTemplate['id'];
-      final query = _selectedInspectionIds
-          .map((id) => 'inspectionIds=${Uri.encodeQueryComponent(id)}')
-          .join('&');
-      final response = await _apiService.get('/inspection/summary/$templateId?$query');
+
+      // Make sure the template's Eve profile is built before generating the
+      // summary. If it's not ready yet, kick off generation and poll.
+      await _ensureTemplateProfileReady(templateId);
+      if (!mounted) return;
+
+      // final query = _selectedInspectionIds
+      //     .map((id) => 'inspectionIds=${Uri.encodeQueryComponent(id)}')
+      //     .join('&');
+      // // final response = await _apiService.get('/inspection/summary/$templateId?$query');
+      setState(() => _loadingMessage = "Generating Report Summary...");
+      final response = await _apiService.post('/inspection/report/generate', 
+      {
+        'project_id': widget.projectId,
+        'report_template_id': templateId,
+        'inspection_ids': _selectedInspectionIds
+      });
       final responseData = jsonDecode(response.body);
 
       if (!mounted) return;
 
-      if (responseData['success'] != true || responseData['status_endpoint'] == null) {
+      // New response shape (no `success` flag):
+      // { message, job_id, report_id, status: "queued", status_endpoint, ... }
+      if (responseData['status_endpoint'] == null) {
         throw Exception(responseData['message'] ?? "Failed to start report summary generation.");
       }
 
       final String statusEndpoint = responseData['status_endpoint'];
+      final String reportId = responseData['report_id'] ?? "";
 
       Map<String, dynamic>? pollData;
       bool isComplete = false;
@@ -194,9 +260,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         final pollRes = await _apiService.get(statusEndpoint);
         pollData = jsonDecode(pollRes.body);
 
-        if (pollData!['status'] == 'completed') {
+        if (pollData!['status'] == 'ready') {
           isComplete = true;
-        } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
+        } else if (pollData['status'] == 'failed') {
           throw Exception(pollData['message'] ?? "Report summary generation failed.");
         }
       }
@@ -207,7 +273,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       // The poll result now returns a presigned URL (summary_html_url)
       // instead of inline HTML — fetch it to get the actual summary HTML.
       String summaryHtml = "<p>No summary generated.</p>";
-      final String? summaryHtmlUrl = pollData?['result']?['data']?['summary_html_url'];
+      final String? summaryHtmlUrl = pollData?['download_urls']?['filled_html'];
       if (summaryHtmlUrl != null && summaryHtmlUrl.isNotEmpty) {
         final htmlRes = await http.get(Uri.parse(summaryHtmlUrl));
         if (htmlRes.statusCode != 200) {
@@ -222,7 +288,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         MaterialPageRoute(
           builder: (context) => GeneratedReportView(
             htmlContent: summaryHtml,
-            reportId: pollData?['result']?['data']?['report']?['id'] ?? "",
+            reportId: reportId,
+            reportURL: pollData?['artifacts']?["filled_html_key"] ?? "",
           ),
           fullscreenDialog: true,
         ),

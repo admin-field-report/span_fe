@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:html_editor_enhanced/html_editor.dart';
 
 import '../../../core/api_service.dart';
@@ -78,10 +79,28 @@ class _EditReportScreenState extends State<EditReportScreen> {
     try {
       final htmlPayload = await _editorController.getText();
 
-      final payload = {"name": reportName, "body_html": htmlPayload};
+      final payload = {"name": reportName};
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final String? putSignedUrl = responseData['data']?['putSignedUrl'];
+        final String contentType = responseData['data']?['contentType'] ?? 'text/html';
+
+        if (putSignedUrl == null || putSignedUrl.isEmpty) {
+          throw Exception("Missing upload URL in server response.");
+        }
+
+        final uploadResponse = await http.put(
+          Uri.parse(putSignedUrl),
+          headers: {'Content-Type': contentType},
+          body: utf8.encode(htmlPayload),
+        );
+
+        if (uploadResponse.statusCode != 200) {
+          throw Exception("Failed to upload report HTML (${uploadResponse.statusCode}).");
+        }
+
         if (mounted) {
           ToastService.show(context, message: "Report updated successfully!", type: ToastType.success);
           Navigator.pop(context, true); // Refresh table

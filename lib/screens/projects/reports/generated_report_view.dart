@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:html_editor_enhanced/html_editor.dart';
 import '../../../widgets/widgets.dart';
 import '../../../core/api_service.dart';
@@ -9,8 +10,9 @@ import 'preview_report_pdf_screen.dart';
 class GeneratedReportView extends StatefulWidget {
   final String htmlContent;
   final String reportId;
+  final String reportURL;
 
-  const GeneratedReportView({super.key, required this.htmlContent, required this.reportId});
+  const GeneratedReportView({super.key, required this.htmlContent, required this.reportId, required this.reportURL});
 
   @override
   State<GeneratedReportView> createState() => _GeneratedReportViewState();
@@ -86,10 +88,33 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
 
     try {
       final htmlPayload = await _editorController.getText();
-      final payload = {"name": reportName, "body_html": htmlPayload};
+      final payload = {
+        "name": reportName,
+        "report_url": widget.reportURL,
+        };
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      if (response.statusCode == 200) {
+        // The update API returns a pre-signed S3 PUT URL. Upload the edited
+        // HTML directly to S3 so the stored report reflects the latest edits.
+        final responseData = jsonDecode(response.body);
+        final String? putSignedUrl = responseData['data']?['putSignedUrl'];
+        final String contentType = responseData['data']?['contentType'] ?? 'text/html';
+
+        if (putSignedUrl == null || putSignedUrl.isEmpty) {
+          throw Exception("Missing upload URL in server response.");
+        }
+
+        final uploadResponse = await http.put(
+          Uri.parse(putSignedUrl),
+          headers: {'Content-Type': contentType},
+          body: utf8.encode(htmlPayload),
+        );
+
+        if (uploadResponse.statusCode != 200) {
+          throw Exception("Failed to upload report HTML (${uploadResponse.statusCode}).");
+        }
+
         if (mounted) {
           ToastService.show(context, message: "Updated successfully!", type: ToastType.success);
           if (navigateToNext) {
