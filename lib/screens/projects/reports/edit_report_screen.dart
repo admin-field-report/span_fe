@@ -38,7 +38,7 @@ class _EditReportScreenState extends State<EditReportScreen> {
     super.dispose();
   }
 
-  // 🚀 FETCH REPORT HTML
+  // 🚀 FETCH REPORT NAME + HTML (HTML is stored in S3, fetched via pre-signed URL)
   Future<void> _fetchReportDetails() async {
     try {
       final response = await _apiService.get('/report/getById/${widget.reportId}');
@@ -46,14 +46,32 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
       if (!mounted) return;
 
-      if (responseData['data'] != null) {
-        final data = responseData['data'];
-        setState(() {
-          _currentHtml = data['body_html'] ?? "";
-          _nameController.text = data['name'] ?? "";
-          _isLoading = false;
-        });
+      final data = responseData['data'];
+      if (data == null) {
+        setState(() => _isLoading = false);
+        return;
       }
+
+      final String reportName = data['name'] ?? "";
+
+      final preSignedResponse = await _apiService.get('/report/preSignedUrl/${widget.reportId}');
+      final preSignedData = jsonDecode(preSignedResponse.body)['data'];
+      final String? preSignedUrl = preSignedData?['preSignedUrl'];
+
+      String html = "";
+      if (preSignedUrl != null && preSignedUrl.isNotEmpty) {
+        final htmlResponse = await http.get(Uri.parse(preSignedUrl));
+        if (htmlResponse.statusCode == 200) {
+          html = utf8.decode(htmlResponse.bodyBytes);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _currentHtml = html;
+        _nameController.text = reportName;
+        _isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         ToastService.show(context, message: "Failed to load report.", type: ToastType.error);
