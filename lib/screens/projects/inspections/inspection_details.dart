@@ -5,9 +5,10 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../controllers/inspection_controller.dart'; 
 import '../../projects/controllers/project_controller.dart';
-import '../../../core/api_service.dart'; 
-import '../../../services/toast_service.dart'; 
-import '../../../widgets/button/button.dart'; 
+import '../../../core/api_service.dart';
+import '../../../services/toast_service.dart';
+import '../../../utils/media_downloader.dart';
+import '../../../widgets/button/button.dart';
 import '../../../widgets/breadcrumb/breadcrumb.dart';
 
 class InspectionDetailsScreen extends StatefulWidget {
@@ -23,7 +24,9 @@ class InspectionDetailsScreen extends StatefulWidget {
 }
 
 class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
-  
+  final ApiService _apiService = ApiService();
+  bool _isDownloadingZip = false;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +109,46 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
     }
   }
 
+  Future<void> _downloadImagesZip() async {
+    if (_isDownloadingZip) return;
+    setState(() => _isDownloadingZip = true);
+
+    try {
+      final response = await _apiService.get('/inspection/images/zip/${widget.inspectionId}');
+      final body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final String? preSignedUrl = body['data']?['preSignedUrl'];
+        final String zipFileName = body['data']?['filename']?.toString().replaceAll('.zip', '') ?? 'images';
+
+        if (preSignedUrl == null) {
+          if (mounted) {
+            ToastService.show(context, message: "No images available to download.", type: ToastType.error);
+          }
+          return;
+        }
+
+        if (!mounted) return;
+        await MediaDownloader.downloadFromUrl(
+          context,
+          url: preSignedUrl,
+          fileName: zipFileName,
+          successMessage: "Images zip saved to Downloads.",
+        );
+      } else {
+        if (mounted) {
+          ToastService.show(context, message: body['message'] ?? "Failed to prepare images zip.", type: ToastType.error);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, message: "Download Error: $e", type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _isDownloadingZip = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -165,9 +208,17 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                 const SizedBox(height: 40),
                 
                 _buildSectionTitle(
-                  title: "Inspection Media", 
-                  count: inspectionController.mediaUrls.length, 
+                  title: "Inspection Media",
+                  count: inspectionController.mediaUrls.length,
                   theme: theme,
+                  trailing: inspectionController.mediaUrls.isEmpty
+                      ? null
+                      : Button(
+                          label: _isDownloadingZip ? "Preparing..." : "Download Zip",
+                          variant: ButtonVariant.outline,
+                          icon: Icons.folder_zip_outlined,
+                          onPressed: _isDownloadingZip ? null : _downloadImagesZip,
+                        ),
                 ),
                 const SizedBox(height: 16),
                 _buildMediaGrid(theme, inspectionController.mediaUrls),
@@ -418,43 +469,9 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
       ),
       itemCount: mediaUrls.length,
       itemBuilder: (context, index) {
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: theme.colorScheme.outlineVariant.withOpacity(0.3),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Image.network(
-              mediaUrls[index],
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              // Grid thumbnails: decode at a bounded size instead of the full
-              // camera resolution — big memory + jank win on photo-heavy lists.
-              cacheWidth: 800,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const SkeletonContainer(
-                  width: double.infinity,
-                  height: double.infinity,
-                ); 
-              },
-              errorBuilder: (context, error, stackTrace) => Container(
-                color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey)),
-              ),
-            ),
-          ),
+        return _InspectionMediaCard(
+          imageUrl: mediaUrls[index],
+          fileName: '${widget.inspectionId}_image_${index + 1}',
         );
       },
     );
@@ -1040,6 +1057,131 @@ class _AssignDocumentModalContentState extends State<_AssignDocumentModalContent
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InspectionMediaCard extends StatefulWidget {
+  final String imageUrl;
+  final String fileName;
+
+  const _InspectionMediaCard({
+    required this.imageUrl,
+    required this.fileName,
+  });
+
+  @override
+  State<_InspectionMediaCard> createState() => _InspectionMediaCardState();
+}
+
+class _InspectionMediaCardState extends State<_InspectionMediaCard> {
+  bool _isHovering = false;
+  bool _isDownloading = false;
+
+  Future<void> _handleDownload() async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
+    await MediaDownloader.downloadImage(
+      context,
+      imageUrl: widget.imageUrl,
+      fileName: widget.fileName,
+    );
+    if (mounted) setState(() => _isDownloading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _isHovering = true),
+          onExit: (_) => setState(() => _isHovering = false),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                widget.imageUrl,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                // Grid thumbnails: decode at a bounded size instead of the full
+                // camera resolution — big memory + jank win on photo-heavy lists.
+                cacheWidth: 800,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const SkeletonContainer(
+                    width: double.infinity,
+                    height: double.infinity,
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) => Container(
+                  color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                  child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey)),
+                ),
+              ),
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: _isHovering || _isDownloading ? 1 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Container(color: Colors.black.withOpacity(0.25)),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: AnimatedOpacity(
+                  opacity: _isHovering || _isDownloading ? 1 : 0.75,
+                  duration: const Duration(milliseconds: 150),
+                  child: Tooltip(
+                    message: 'Download image',
+                    child: InkWell(
+                      onTap: _handleDownload,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.55),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isDownloading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.download_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

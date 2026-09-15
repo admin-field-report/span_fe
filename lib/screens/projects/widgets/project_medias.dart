@@ -1,9 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../controllers/project_controller.dart';
+import '../../../core/api_service.dart';
+import '../../../services/toast_service.dart';
 import '../../../utils/app_responsive.dart';
+import '../../../utils/media_downloader.dart';
 import '../../../models/project.dart';
+import '../../../widgets/button/button.dart';
 import '../../../widgets/search_field/search_field.dart';
 
 class ProjectMediaTab extends StatefulWidget {
@@ -17,12 +22,54 @@ class ProjectMediaTab extends StatefulWidget {
 
 
 class _ProjectMediaTabState extends State<ProjectMediaTab> {
+  final ApiService _apiService = ApiService();
   String _searchQuery = "";
-  
+  final Set<String> _downloadingZipInspectionIds = {};
+
   @override
   void initState() {
     super.initState();
     projectController.getAllProjectMedia(widget.projectId);
+  }
+
+  Future<void> _downloadInspectionZip(String inspectionId) async {
+    if (_downloadingZipInspectionIds.contains(inspectionId)) return;
+    setState(() => _downloadingZipInspectionIds.add(inspectionId));
+
+    try {
+      final response = await _apiService.get('/inspection/images/zip/$inspectionId');
+      final body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final String? preSignedUrl = body['data']?['preSignedUrl'];
+        final String zipFileName = body['data']?['filename']?.toString().replaceAll('.zip', '') ?? 'images';
+
+        if (preSignedUrl == null) {
+          if (mounted) {
+            ToastService.show(context, message: "No images available to download.", type: ToastType.error);
+          }
+          return;
+        }
+
+        if (!mounted) return;
+        await MediaDownloader.downloadFromUrl(
+          context,
+          url: preSignedUrl,
+          fileName: zipFileName,
+          successMessage: "Images zip saved to Downloads.",
+        );
+      } else {
+        if (mounted) {
+          ToastService.show(context, message: body['message'] ?? "Failed to prepare images zip.", type: ToastType.error);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, message: "Download Error: $e", type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingZipInspectionIds.remove(inspectionId));
+    }
   }
 
   String formatInspectionDate(DateTime date) {
@@ -107,6 +154,7 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
                             itemCount: group.items.length,
                             itemBuilder: (context, itemIndex) {
                               return MediaCard(
+                                mediaId: group.items[itemIndex].id,
                                 imageUrl: group.items[itemIndex].imageUrl,
                                 tags: group.items[itemIndex].tags,
                               );
@@ -211,6 +259,16 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
             ],
           ),
         ),
+
+        Button(
+          label: _downloadingZipInspectionIds.contains(group.inspectionId) ? "Preparing..." : "Download Zip",
+          variant: ButtonVariant.outline,
+          icon: Icons.folder_zip_outlined,
+          onPressed: _downloadingZipInspectionIds.contains(group.inspectionId)
+              ? null
+              : () => _downloadInspectionZip(group.inspectionId),
+        ),
+        const SizedBox(width: 10),
 
         // 🌟 MODERN VIEW DETAILS PILL BUTTON 🌟
         FilledButton.tonal(
@@ -330,11 +388,36 @@ class _ProjectMediaTabState extends State<ProjectMediaTab> {
 }
 
 
-class MediaCard extends StatelessWidget {
+class MediaCard extends StatefulWidget {
+  final String mediaId;
   final String imageUrl;
   final List<ProjectMediaTag> tags;
 
-  const MediaCard({super.key, required this.imageUrl, required this.tags});
+  const MediaCard({
+    super.key,
+    required this.mediaId,
+    required this.imageUrl,
+    required this.tags,
+  });
+
+  @override
+  State<MediaCard> createState() => _MediaCardState();
+}
+
+class _MediaCardState extends State<MediaCard> {
+  bool _isHovering = false;
+  bool _isDownloading = false;
+
+  Future<void> _handleDownload() async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
+    await MediaDownloader.downloadImage(
+      context,
+      imageUrl: widget.imageUrl,
+      fileName: widget.mediaId,
+    );
+    if (mounted) setState(() => _isDownloading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -351,40 +434,94 @@ class MediaCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Image.network(
-              imageUrl,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              // Grid thumbnails: decode at a bounded size instead of the full
-              // camera resolution — big memory + jank win on photo-heavy lists.
-              cacheWidth: 800,
-              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded) return child;
-                return AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: const Duration(milliseconds: 500),
-                  curve: Curves.easeOut,
-                  child: child,
-                );
-              },
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      value: loadingProgress.expectedTotalBytes != null
-                          ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
-                          : null,
+            child: MouseRegion(
+              onEnter: (_) => setState(() => _isHovering = true),
+              onExit: (_) => setState(() => _isHovering = false),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    widget.imageUrl,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    // Grid thumbnails: decode at a bounded size instead of the full
+                    // camera resolution — big memory + jank win on photo-heavy lists.
+                    cacheWidth: 800,
+                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                      if (wasSynchronouslyLoaded) return child;
+                      return AnimatedOpacity(
+                        opacity: frame == null ? 0 : 1,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOut,
+                        child: child,
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Icon(Icons.broken_image_outlined, color: Colors.grey),
                     ),
                   ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) => const Center(
-                child: Icon(Icons.broken_image_outlined, color: Colors.grey),
+                  Positioned.fill(
+                    child: AnimatedOpacity(
+                      opacity: _isHovering || _isDownloading ? 1 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Container(
+                        color: Colors.black.withOpacity(0.25),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: AnimatedOpacity(
+                      opacity: _isHovering || _isDownloading ? 1 : 0.75,
+                      duration: const Duration(milliseconds: 150),
+                      child: Tooltip(
+                        message: 'Download image',
+                        child: InkWell(
+                          onTap: _handleDownload,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              shape: BoxShape.circle,
+                            ),
+                            child: _isDownloading
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.download_rounded,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -393,7 +530,7 @@ class MediaCard extends StatelessWidget {
             child: Wrap(
               spacing: 4,
               runSpacing: 4,
-              children: tags.map((tag) => _buildTag(tag)).toList(),
+              children: widget.tags.map((tag) => _buildTag(tag)).toList(),
             ),
           ),
         ],
