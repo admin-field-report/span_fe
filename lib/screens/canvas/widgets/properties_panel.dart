@@ -514,22 +514,6 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       const SizedBox(height: 12),
                     ],
 
-                    if (widget.allowImageUpload) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isUploading ? null : _showImageOptions,
-                          icon: Icon(Icons.add_a_photo_outlined, size: 18), 
-                          label: Text("Upload Image"),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    
                     if (imageUrls.isNotEmpty)
                       GridView.builder(
                         shrinkWrap: true,
@@ -615,6 +599,27 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
               ),
             ),
           ),
+          if (widget.showImageSection && widget.allowImageUpload)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isUploading ? null : _showImageOptions,
+                  icon: Icon(Icons.add_a_photo_outlined, size: 18),
+                  label: Text("Upload Image"),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
