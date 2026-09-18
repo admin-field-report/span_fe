@@ -3,6 +3,7 @@ import 'dart:io' as io;
 import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:file_saver/file_saver.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -81,22 +82,26 @@ class _PdfExportButtonState extends State<PdfExportButton> {
 
     widget.onExportStart();
     try {
-      final response = await _apiService.get('/canvas/exportPdf/${widget.documentId}');
+      final startResponse = await _apiService.get('/projectDocument/exportPdf/${widget.documentId}');
+      final startData = jsonDecode(startResponse.body);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (response.body.isNotEmpty) {
-          final bodyString = response.body.replaceAll('"', '').replaceAll('\n', '').replaceAll('\r', '').trim();
-          Uint8List pdfBytes;
+      if (startData['success'] != true || startData['status_endpoint'] == null) {
+        throw Exception(startData['message'] ?? "Failed to start PDF export.");
+      }
 
-          if (bodyString.startsWith('JVBER')) {
-            String normalized = bodyString;
-            while (normalized.length % 4 != 0) {
-              normalized += '=';
-            }
-            pdfBytes = base64Decode(normalized);
-          } else {
-            pdfBytes = response.bodyBytes;
-          }
+      final String statusEndpoint = startData['status_endpoint'];
+      final Map<String, dynamic> jobData = await _pollExportJob(statusEndpoint);
+
+      final String? signedUrl = jobData['signedUrl'] ?? "";
+      if (signedUrl == null || signedUrl.isEmpty) {
+        throw Exception("PDF export finished but no download URL was returned.");
+      }
+
+      final pdfResponse = await http.get(Uri.parse(signedUrl));
+
+      if (pdfResponse.statusCode == 200 || pdfResponse.statusCode == 201) {
+        if (pdfResponse.bodyBytes.isNotEmpty) {
+          final Uint8List pdfBytes = pdfResponse.bodyBytes;
 
           if (mounted) {
             String fileName = 'exported_document_${widget.documentId}';
@@ -221,13 +226,34 @@ class _PdfExportButtonState extends State<PdfExportButton> {
           if (mounted) ToastService.show(context, message: "Received empty PDF data.", type: ToastType.error);
         }
       } else {
-        if (mounted) ToastService.show(context, message: "Failed to export PDF (Status: ${response.statusCode}).", type: ToastType.error);
+        if (mounted) ToastService.show(context, message: "Failed to export PDF (Status: ${pdfResponse.statusCode}).", type: ToastType.error);
       }
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Export Error: $e", type: ToastType.error);
     } finally {
       if (mounted) widget.onExportEnd();
     }
+  }
+
+  /// Polls the export job's status_endpoint until it reports 'completed' or
+  /// 'failed'. Gives up after ~5 minutes so a stuck job can't hang forever.
+  Future<Map<String, dynamic>> _pollExportJob(String statusEndpoint) async {
+    const maxAttempts = 100;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final response = await _apiService.get(statusEndpoint);
+      final data = jsonDecode(response.body);
+      final String? status = data['status'];
+
+      if (status == 'completed') return data;
+      if (status == 'failed' || status == 'error') {
+        throw Exception(data['message'] ?? "PDF export failed.");
+      }
+
+      await Future.delayed(const Duration(seconds: 3));
+    }
+
+    throw Exception("PDF export timed out.");
   }
 
   @override

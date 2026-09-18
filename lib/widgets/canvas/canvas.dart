@@ -65,7 +65,7 @@ class CanvasState extends State<Canvas> {
 
   final TransformationController _transformationController = TransformationController();
   final GlobalKey _viewerKey = GlobalKey();
-  
+
   bool _isFullScreen = false;
   bool _showLeftPanel = true; // 🚀 OPTIMIZATION: Open by default
 
@@ -2464,8 +2464,8 @@ class CanvasState extends State<Canvas> {
                                           onPointerUp: _handlePointerUp,
                                           
                                           child: Container(
-                                            width: widget.width,  
-                                            height: widget.height, 
+                                            width: widget.width,
+                                            height: widget.height,
                                             decoration: BoxDecoration(
                                               color: Colors.white,
                                               boxShadow: [
@@ -2479,7 +2479,7 @@ class CanvasState extends State<Canvas> {
                                               touchDevice: AppResponsive.isAndroid || AppResponsive.isIOS,
                                               backgroundImageBytes: widget.initialBackgroundImage,
                                               width: widget.width,
-                                              height: widget.height,                                         
+                                              height: widget.height,
                                             ),
                                           ),
                                         ),

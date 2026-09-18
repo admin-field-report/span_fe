@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
@@ -9,6 +10,7 @@ import '../../services/toast_service.dart';
 
 import '../../../widgets/canvas/canvas.dart' as custom_canvas;
 import '../../../widgets/canvas/models/canvas_models.dart';
+import '../../../widgets/canvas/widgets/canvas_painter.dart';
 import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
@@ -62,6 +64,12 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   List<String> _pages = [];
   String _currentPage = '';
   Map<String, PageData> _pageDataMap = {};
+
+  // Page names (keys of _pageDataMap) whose annotations were edited since
+  // the last successful save — only these get their rasterized image
+  // re-uploaded to S3 on save, instead of every page every time.
+  final Set<String> _dirtyPageKeys = {};
+
   List<TagGroup> _availableTagGroups = [];
   bool _isLoadingTags = false;
 
@@ -90,6 +98,16 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
     _canvasKeys.putIfAbsent(activeKey, () => GlobalKey<custom_canvas.CanvasState>());
     return _canvasKeys[activeKey]!;
+  }
+
+  // Marks the currently viewed document page as needing its annotated image
+  // re-uploaded to S3 on the next save. Overlay image annotations (attached
+  // images, not document pages) aren't tracked here — they upload through
+  // their own existing flow.
+  void _markCurrentPageDirty() {
+    if (_overlayImageKey == null && widget.annotateImageKey == null && _currentPage.isNotEmpty) {
+      _dirtyPageKeys.add(_currentPage);
+    }
   }
 
   void _syncCurrentPageObjects() {
@@ -677,6 +695,128 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     return itemsList;
   }
 
+  // Uploads a rasterized PNG (annotations baked in) for every page tracked
+  // as dirty since the last save. Only pages that actually changed get a
+  // fresh presigned URL + upload, so an edit to 2 of 4 pages uploads 2.
+  Future<void> _uploadDirtyPageImages() async {
+    if (_dirtyPageKeys.isEmpty) return;
+
+    final Map<String, String> pageIdByKey = {};
+    for (final pageKey in _dirtyPageKeys) {
+      final String? pageId = _pageDataMap[pageKey]?.pageId;
+      if (pageId != null && pageId.isNotEmpty) {
+        pageIdByKey[pageId] = pageKey;
+      }
+    }
+
+    if (pageIdByKey.isEmpty) {
+      _dirtyPageKeys.clear();
+      return;
+    }
+
+    try {
+      final queryParams = <String, dynamic>{
+        "project_document_page": pageIdByKey.keys.toList(),
+        "inspection_id": widget.inspectionId,
+        "project_id": widget.projectId,
+      };
+      final queryString = Uri(queryParameters: queryParams).query;
+
+      final presignResponse = await _apiService.get('/projectDocumentPage/preSigned/Inspection-annotation/image?$queryString');
+      final presignData = jsonDecode(presignResponse.body);
+
+      if (presignData['success'] != true || presignData['data'] == null) {
+        throw Exception(presignData['message'] ?? "Failed to get image upload URLs.");
+      }
+
+      final List<dynamic> uploadTargets = presignData['data'];
+      final Set<String> uploadedKeys = {};
+
+      for (final target in uploadTargets) {
+        final String pageId = target['project_document_page_id'] ?? '';
+        final String signedUrl = target['signedUrl'] ?? '';
+        final String contentType = target['contentType'] ?? 'image/png';
+
+        final String? pageKey = pageIdByKey[pageId];
+        final PageData? pageData = pageKey != null ? _pageDataMap[pageKey] : null;
+        if (pageKey == null || pageData == null || signedUrl.isEmpty) continue;
+
+        final Uint8List? pngBytes = await _rasterizePageToPng(pageData);
+        if (pngBytes == null) continue;
+
+        final uploadResponse = await http.put(
+          Uri.parse(signedUrl),
+          headers: {'Content-Type': contentType},
+          body: pngBytes,
+        );
+
+        if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {
+          uploadedKeys.add(pageKey);
+        } else {
+          debugPrint("Failed to upload annotated image for page '$pageKey'. Status: ${uploadResponse.statusCode}");
+        }
+      }
+
+      _dirtyPageKeys.removeAll(uploadedKeys);
+    } catch (e) {
+      debugPrint("Annotation image upload error: $e");
+    }
+  }
+
+  // Rasterizes a page's annotations (grid lines and selection markers
+  // hidden) at its actual document resolution. Only the currently viewed
+  // page's Canvas is mounted in the widget tree, so other dirty pages are
+  // rendered by briefly mounting their CanvasPaper off-screen via an
+  // OverlayEntry, then capturing it through a RepaintBoundary.
+  Future<Uint8List?> _rasterizePageToPng(PageData pageData) async {
+    if (!mounted) return null;
+
+    if (pageData.backgroundImageBytes != null) {
+      await precacheImage(MemoryImage(pageData.backgroundImageBytes!), context);
+      if (!mounted) return null;
+    }
+
+    final OverlayState? overlay = Overlay.maybeOf(context);
+    if (overlay == null) return null;
+
+    final GlobalKey boundaryKey = GlobalKey();
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -100000,
+        top: -100000,
+        width: pageData.width,
+        height: pageData.height,
+        child: RepaintBoundary(
+          key: boundaryKey,
+          child: CanvasPaper(
+            objects: pageData.objects,
+            backgroundImageBytes: pageData.backgroundImageBytes,
+            width: pageData.width,
+            height: pageData.height,
+            hideOverlays: true,
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(entry);
+
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+
+      final renderObject = boundaryKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) return null;
+
+      final ui.Image image = await renderObject.toImage(pixelRatio: 1.0);
+      final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } finally {
+      entry.remove();
+    }
+  }
+
   Future<void> _saveAnnotations() async {
     setState(() => _isSaving = true);
     _syncCurrentPageObjects();
@@ -735,6 +875,8 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           _hasUnsavedChanges = false;
           _hasUnsavedImageChanges = false;
           _rawDocumentData = masterPayload;
+
+          await _uploadDirtyPageImages();
 
           if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success);
         } else {
@@ -1249,6 +1391,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
             onUpdate: () {
               _hasUnsavedChanges = true;
+              _markCurrentPageDirty();
               _getCurrentCanvasKey().currentState?.refreshCanvas();
             },
 
@@ -1314,7 +1457,10 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           onSelectionChanged: (selectedObject) {
             setState(() {
               _selectedCanvasObject = selectedObject;
-              if (selectedObject != null) _hasUnsavedChanges = true;
+              if (selectedObject != null) {
+                _hasUnsavedChanges = true;
+                _markCurrentPageDirty();
+              }
             });
           },
         ),

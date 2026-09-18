@@ -20,6 +20,10 @@ class CanvasPaper extends StatelessWidget {
   // Mobile/tablet app: draw bigger handles for fingers (web stays as-is).
   final bool touchDevice;
 
+  // When true, skips the background grid and selection handles — used when
+  // rasterizing the canvas for image export so the output is clean.
+  final bool hideOverlays;
+
   const CanvasPaper({
     super.key,
     required this.objects,
@@ -29,6 +33,7 @@ class CanvasPaper extends StatelessWidget {
     this.height = 1056.0, // Fallback A4 height
     this.viewerScale = 1.0,
     this.touchDevice = false,
+    this.hideOverlays = false,
   });
 
 
@@ -53,7 +58,7 @@ class CanvasPaper extends StatelessWidget {
               // RepaintBoundary keeps drawing repaints from also re-rasterizing
               // the background image layer (and vice versa) on every stroke.
               child: RepaintBoundary(
-                child: CustomPaint(painter: MainPainter(context, objects, preview, viewerScale: viewerScale, touchDevice: touchDevice)),
+                child: CustomPaint(painter: MainPainter(context, objects, preview, viewerScale: viewerScale, touchDevice: touchDevice, hideOverlays: hideOverlays)),
               ),
             ),
           ],
@@ -69,8 +74,9 @@ class MainPainter extends CustomPainter {
   final DrawingObject? preview;
   final double viewerScale;
   final bool touchDevice;
+  final bool hideOverlays;
 
-  MainPainter(this.context, this.objects, this.preview, {this.viewerScale = 1.0, this.touchDevice = false});
+  MainPainter(this.context, this.objects, this.preview, {this.viewerScale = 1.0, this.touchDevice = false, this.hideOverlays = false});
 
   Rect _calculateInternalBounds(List<DrawingObject> shapes) {
     double minX = double.infinity;
@@ -105,9 +111,11 @@ class MainPainter extends CustomPainter {
   @override
   void paint(ui.Canvas canvas, Size size) {
     final theme = Theme.of(context);
-    final gridPaint = Paint()..color = theme.colorScheme.onSurface.withOpacity(0.05);
-    for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
-    for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
+    if (!hideOverlays) {
+      final gridPaint = Paint()..color = theme.colorScheme.onSurface.withOpacity(0.05);
+      for (double i = 0; i < size.width; i += 25) canvas.drawLine(Offset(i, 0), Offset(i, size.height), gridPaint);
+      for (double i = 0; i < size.height; i += 25) canvas.drawLine(Offset(0, i), Offset(size.width, i), gridPaint);
+    }
 
     // 🚀 THE FIX: Calculate scale factor based on standard A4 height (1056)
     double scaleFactor = math.max(size.width, size.height) / 1056.0;
@@ -214,7 +222,7 @@ class MainPainter extends CustomPainter {
         
         textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
 
-        if (!isInternal && obj.isSelected && obj.isCallout && obj.points != null) {
+        if (!isInternal && !hideOverlays && obj.isSelected && obj.isCallout && obj.points != null) {
           Paint hP = Paint()..color = Colors.blue; 
           Paint wP = Paint()..color = Colors.white; 
           // 🚀 Used scaled dots
@@ -526,7 +534,7 @@ class MainPainter extends CustomPainter {
         }
       }
 
-      if (!isInternal && obj.isSelected) {
+      if (!isInternal && !hideOverlays && obj.isSelected) {
         final hP = Paint()..color = Colors.blue;
         final wP = Paint()..color = Colors.white;
 
