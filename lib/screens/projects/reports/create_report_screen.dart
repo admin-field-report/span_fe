@@ -223,10 +223,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     try {
       final templateId = _selectedReportTemplate['id'];
 
-      // Make sure the template's Eve profile is built before generating the
-      // summary. If it's not ready yet, kick off generation and poll.
-      await _ensureTemplateProfileReady(templateId);
-      if (!mounted) return;
+      // Templates without documents have no Eve profile to build — skip
+      // straight to report generation for those.
+      if (_selectedReportTemplate['documents'] == true) {
+        // Make sure the template's Eve profile is built before generating
+        // the summary. If it's not ready yet, kick off generation and poll.
+        await _ensureTemplateProfileReady(templateId);
+        if (!mounted) return;
+      }
 
       // final query = _selectedInspectionIds
       //     .map((id) => 'inspectionIds=${Uri.encodeQueryComponent(id)}')
@@ -292,7 +296,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         MaterialPageRoute(
           builder: (context) => GeneratedReportView(
             htmlContent: summaryHtml,
-            reportId: reportId,
+            reportId: pollData?['report_id'] ?? reportId,
             reportURL: pollData?['artifacts']?["filled_html_key"] ?? "",
           ),
           fullscreenDialog: true,
