@@ -183,7 +183,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
     final genData = jsonDecode(genRes.body);
 
-    final String? jobId = genData['job_id'];
+    if (genRes.statusCode != 200 || genData['job_id'] == null) {
+      throw Exception(genData['message'] ?? "Failed to start report template profile generation.");
+    }
+
+    final String jobId = genData['job_id'];
     final String statusEndpoint = genData['status_endpoint'] ??
         '/reportTemplate/$templateId/profile/status/$jobId';
 
