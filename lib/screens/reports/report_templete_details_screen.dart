@@ -216,7 +216,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                     label: "Upload",
                     onPressed: () async {
                       setDialogState(() => isUploading = true);
-                      await _executeUpload(files, updateSkill: false, onProgressUpdate: updateProgress);
+                      await _executeUpload(files, onProgressUpdate: updateProgress);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -232,7 +232,6 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
   // 🚀 Pass the progress callback down to the controller
   Future<bool> _executeUpload(
     List<PlatformFile> files, {
-    required bool updateSkill, 
     required Function(int current, int total, String phase) onProgressUpdate
   }) async {
     try {
@@ -256,26 +255,12 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
       
       final resData = await reportController.addDocuments(
         widget.templateId, 
-        docsPayload, 
-        updateSkill
+        docsPayload
       );
 
       if (mounted) {
-        if (updateSkill && resData['job_id'] != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => SkillRegenerationProgressScreen(
-                templateId: widget.templateId,
-                jobId: resData['job_id'],
-                statusEndpoint: resData['status_endpoint'],
-              ),
-            ),
-          ).then((_) => reportController.fetchTemplateDetails(widget.templateId));
-        } else {
-          ToastService.show(context, type: ToastType.success, message: resData['message'] ?? "Documents uploaded successfully.");
-          reportController.fetchTemplateDetails(widget.templateId);
-        }
+        ToastService.show(context, type: ToastType.success, message: resData['message'] ?? "Documents uploaded successfully.");
+        reportController.fetchTemplateDetails(widget.templateId);
       }
       return true;
     } catch (e) {
@@ -328,7 +313,7 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
                     isLoading: isDeleting,
                     onPressed: isDeleting ? null : () async {
                       setDialogState(() => isDeleting = true);
-                      await _executeDelete(docId, updateSkill: false);
+                      await _executeDelete(docId);
                       if (mounted) Navigator.pop(context);
                     },
                   ),
@@ -341,41 +326,17 @@ class _ReportTemplateDetailsScreenState extends State<ReportTemplateDetailsScree
     );
   }
 
-  Future<bool> _executeDelete(String docId, {required bool updateSkill}) async {
+  Future<bool> _executeDelete(String docId) async {
     try {
-      final resData = await reportController.deleteDocument(docId, updateSkill);
+      final resData = await reportController.deleteDocument(docId);
 
       if (mounted) {
-        if (updateSkill && resData['job_id'] != null && resData['status_endpoint'] != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => SkillRegenerationProgressScreen(
-                templateId: widget.templateId,
-                jobId: resData['job_id'],
-                statusEndpoint: resData['status_endpoint'],
-              ),
-            ),
-          ).then((_) => reportController.fetchTemplateDetails(widget.templateId));
-          
-        } 
-        else if (updateSkill && resData['job_id'] == null) {
-          ToastService.show(
-            context, 
-            type: ToastType.success, 
-            message: resData['message'] ?? "Document deleted and skills cleared."
-          );
-          reportController.fetchTemplateDetails(widget.templateId);
-        } 
-        // 🚀 CASE 3: Standard Delete Only
-        else {
-          ToastService.show(
-            context, 
-            type: ToastType.success, 
-            message: resData['message'] ?? "Document deleted successfully."
-          );
-          reportController.fetchTemplateDetails(widget.templateId);
-        }
+        ToastService.show(
+          context, 
+          type: ToastType.success, 
+          message: resData['message'] ?? "Document deleted successfully."
+        );
+        reportController.fetchTemplateDetails(widget.templateId);
       }
       return true; 
     } catch (e) {

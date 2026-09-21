@@ -91,35 +91,6 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  /// Polls a background job's `status_endpoint` (same convention used for
-  /// skill regeneration jobs) until it reports 'completed' or 'failed'.
-  /// Gives up after ~5 minutes so a stuck job can't hang the caller forever.
-  Future<bool> _pollJobStatus(String statusEndpoint) async {
-    const maxAttempts = 100;
-
-    for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        final response = await _apiService.get(statusEndpoint);
-        // The job status ('completed'/'failed') can come back on a non-2xx
-        // response too, so read the body regardless of the HTTP status code.
-        final data = jsonDecode(response.body);
-        final status = data['status'];
-
-        if (status == 'completed') return true;
-        if (status == 'failed') {
-          debugPrint("Job failed: ${data['error']}");
-          return false;
-        }
-      } catch (e) {
-        debugPrint("Error polling job status: $e");
-      }
-
-      await Future.delayed(const Duration(seconds: 3));
-    }
-
-    return false;
-  }
-
   Future<({CreateReportStatus status, String? reportId, String? message})> createReportWithDocuments(
     String name,
     List<PlatformFile> files, {
@@ -192,18 +163,6 @@ class ReportController extends ChangeNotifier {
         );
       }
 
-      // // 4. Register the uploaded documents to the template
-      // final registerPayload = {"documents": registeredDocs};
-      // final registerResponse = await _apiService.post('/reportTemplate/$reportId/documents', registerPayload);
-      //
-      // if (registerResponse.statusCode != 200 && registerResponse.statusCode != 201) {
-      //   return CreateReportStatus.partialSuccess;
-      // }
-      //
-      // if (registeredDocs.length < files.length) return CreateReportStatus.partialSuccess;
-      //
-      // return CreateReportStatus.success;
-
       // 4. Assign the uploaded document to the report template and extract its HTML
       // (the UI only ever uploads one document at a time, so use the first).
       onPhaseChange?.call(ReportCreationPhase.assigningDocument);
@@ -225,24 +184,7 @@ class ReportController extends ChangeNotifier {
           message: "Report template created, but the document couldn't be assigned to it.",
         );
       }
-
-      // 5. The document was assigned, but skill generation from it runs as a
-      // background job — poll its status endpoint until it actually finishes
-      // before reporting success back to the UI.
-      final assignData = jsonDecode(assignResponse.body);
-      final String? statusEndpoint = assignData['status_endpoint'];
-
-      if (statusEndpoint == null) {
-        return (status: CreateReportStatus.success, reportId: reportId, message: null);
-      }
-
-      onPhaseChange?.call(ReportCreationPhase.generatingSkills);
-      final jobSucceeded = await _pollJobStatus(statusEndpoint);
-      return (
-        status: jobSucceeded ? CreateReportStatus.success : CreateReportStatus.partialSuccess,
-        reportId: reportId,
-        message: jobSucceeded ? null : "Report template created and document uploaded, but skill generation failed.",
-      );
+      return (status: CreateReportStatus.success, reportId: reportId, message: null);
     } catch (e) {
       debugPrint("Error in createReportWithDocuments: $e");
       return (
@@ -331,9 +273,9 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> deleteDocument(String docId, bool updateSkill) async {
+  Future<Map<String, dynamic>> deleteDocument(String docId) async {
     try {
-      final response = await _apiService.delete('/reportTemplate/$docId/document?updateSkill=$updateSkill');
+      final response = await _apiService.delete('/reportTemplate/$docId/document');
       
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -399,12 +341,14 @@ class ReportController extends ChangeNotifier {
     return registeredDocs;
   }
 
-  Future<Map<String, dynamic>> addDocuments(String templateId, List<Map<String, String>> uploadedDocs, bool updateSkill) async {
+  Future<Map<String, dynamic>> addDocuments(String templateId, List<Map<String, String>> uploadedDocs) async {
+    final doc = uploadedDocs.first;
+    final assignPayload = {
+      "key": doc["key"],
+      "name": doc["name"],
+    };
     final response = await _apiService.post(
-      '/reportTemplate/$templateId/documents?updateSkill=$updateSkill',
-      {
-        "documents": uploadedDocs 
-      }
+      '/reportTemplate/assign-document-to-report-template/$templateId',assignPayload
     );
 
     final resData = jsonDecode(response.body);
