@@ -99,7 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Step 1: Ask the backend for a presigned S3 PUT URL.
         final presignResponse = await apiService.get('/presignedurl/company-logo');
 
-        if (presignResponse.statusCode != 200) {
+        if (presignResponse.statusCode != 200 && presignResponse.statusCode != 201) {
           throw Exception("Failed to prepare company logo upload.");
         }
 
