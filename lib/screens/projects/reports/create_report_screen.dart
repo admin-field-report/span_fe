@@ -183,8 +183,9 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     );
     final genData = jsonDecode(genRes.body);
 
-    if (genRes.statusCode != 200 || genData['job_id'] == null) {
-      throw Exception(genData['message'] ?? "Failed to start report template profile generation.");
+    final bool hasJobId = genData is Map && genData.containsKey('job_id') && genData['job_id'] != null;
+    if (!hasJobId) {
+      throw Exception("Failed to start report template profile generation.");
     }
 
     final String jobId = genData['job_id'];
