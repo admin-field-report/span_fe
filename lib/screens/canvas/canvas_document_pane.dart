@@ -1351,6 +1351,12 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
                       obj.fillColor ?? Colors.transparent,
                       obj.opacity,
                       customToolId: tool.toolId,
+                      borderColor: obj.borderColor,
+                      fontSize: obj.fontSize,
+                      isBold: obj.isBold,
+                      isItalic: obj.isItalic,
+                      isUnderline: obj.isUnderline,
+                      isStrikethrough: obj.isStrikethrough,
                     );
                   } else {
                     _getCurrentCanvasKey().currentState?.applyExternalToolConfig(

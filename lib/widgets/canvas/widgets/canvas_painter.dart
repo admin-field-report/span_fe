@@ -7,6 +7,7 @@ import '../models/canvas_models.dart';
 class CanvasPaper extends StatelessWidget {
   final List<DrawingObject> objects;
   final DrawingObject? preview;
+  final DrawingObject? editingObject;
   final Uint8List? backgroundImageBytes;
 
   // 🚀 NEW: Accept dynamic dimensions
@@ -28,6 +29,7 @@ class CanvasPaper extends StatelessWidget {
     super.key,
     required this.objects,
     this.preview,
+    this.editingObject,
     this.backgroundImageBytes,
     this.width = 816.0,  // Fallback A4 width
     this.height = 1056.0, // Fallback A4 height
@@ -58,7 +60,7 @@ class CanvasPaper extends StatelessWidget {
               // RepaintBoundary keeps drawing repaints from also re-rasterizing
               // the background image layer (and vice versa) on every stroke.
               child: RepaintBoundary(
-                child: CustomPaint(painter: MainPainter(context, objects, preview, viewerScale: viewerScale, touchDevice: touchDevice, hideOverlays: hideOverlays)),
+                child: CustomPaint(painter: MainPainter(context, objects, preview, editingObject: editingObject, viewerScale: viewerScale, touchDevice: touchDevice, hideOverlays: hideOverlays)),
               ),
             ),
           ],
@@ -72,11 +74,12 @@ class MainPainter extends CustomPainter {
   final BuildContext context;
   final List<DrawingObject> objects;
   final DrawingObject? preview;
+  final DrawingObject? editingObject;
   final double viewerScale;
   final bool touchDevice;
   final bool hideOverlays;
 
-  MainPainter(this.context, this.objects, this.preview, {this.viewerScale = 1.0, this.touchDevice = false, this.hideOverlays = false});
+  MainPainter(this.context, this.objects, this.preview, {this.editingObject, this.viewerScale = 1.0, this.touchDevice = false, this.hideOverlays = false});
 
   Rect _calculateInternalBounds(List<DrawingObject> shapes) {
     double minX = double.infinity;
@@ -153,7 +156,7 @@ class MainPainter extends CustomPainter {
 
       final Rect rect = obj.rect;
       
-      if (obj.type == DrawingType.text && obj.text != null) {        
+      if (obj.type == DrawingType.text) {
         double fontSize = obj.fontSize;
         if (fontSize < 1) fontSize = 1;
 
@@ -168,68 +171,66 @@ class MainPainter extends CustomPainter {
         }
 
         final textStyle = TextStyle(
-          color: obj.color, 
-          fontSize: fontSize, 
-          fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal, 
+          color: obj.color,
+          fontSize: fontSize,
+          fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal,
           fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal,
-          decoration: textDecoration, 
-          decorationColor: obj.color, 
+          decoration: textDecoration,
+          decorationColor: obj.color,
         );
 
-        final textPainter = TextPainter(
-          text: TextSpan(text: obj.text, style: textStyle),
-          textDirection: TextDirection.ltr, 
-          textAlign: TextAlign.left,
-        );
-        
-        double availableWidth = rect.width > 20 ? rect.width - 20 : 10;
-        textPainter.layout(maxWidth: availableWidth);
-        double requiredHeight = textPainter.height + 20;
-        
-        if (obj.end.dy >= obj.start.dy) {
-          obj.end = Offset(obj.end.dx, obj.start.dy + requiredHeight);
-        } else {
-          obj.start = Offset(obj.start.dx, obj.end.dy - requiredHeight);
-        }
-        
-        final updatedRect = obj.rect;
+        // 🚀 Freeform box: the rect is whatever the user drew/resized —
+        // it is never auto-grown/shrunk to fit the text. Overflow clips.
         final borderPaint = Paint()..color = obj.borderColor..strokeWidth = obj.strokeWidth..style = PaintingStyle.stroke;
 
-        if (obj.isCallout && obj.points != null && obj.points!.length >= 2) {
-          Offset knee = obj.points![0];
-          Offset tip = obj.points![1];
+        if (obj.isCallout && obj.points != null && obj.points!.isNotEmpty) {
+          Offset tip = obj.points![0];
 
-          Offset attach = Offset(updatedRect.center.dx, updatedRect.bottom); 
-          if (knee.dy < updatedRect.top) attach = Offset(updatedRect.center.dx, updatedRect.top);
-          else if (knee.dy > updatedRect.bottom) attach = Offset(updatedRect.center.dx, updatedRect.bottom);
-          else if (knee.dx < updatedRect.left) attach = Offset(updatedRect.left, updatedRect.center.dy);
-          else if (knee.dx > updatedRect.right) attach = Offset(updatedRect.right, updatedRect.center.dy);
+          Offset attach = Offset(rect.center.dx, rect.bottom);
+          if (tip.dy < rect.top) attach = Offset(rect.center.dx, rect.top);
+          else if (tip.dy > rect.bottom) attach = Offset(rect.center.dx, rect.bottom);
+          else if (tip.dx < rect.left) attach = Offset(rect.left, rect.center.dy);
+          else if (tip.dx > rect.right) attach = Offset(rect.right, rect.center.dy);
 
-          Path leaderPath = Path()..moveTo(attach.dx, attach.dy)..lineTo(knee.dx, knee.dy)..lineTo(tip.dx, tip.dy);
-          canvas.drawPath(leaderPath, borderPaint);
+          // 🚀 The leader/arrow always matches the box's border color.
+          final calloutPaint = Paint()..color = obj.borderColor..strokeWidth = obj.strokeWidth..style = PaintingStyle.stroke;
 
-          double angle = math.atan2(tip.dy - knee.dy, tip.dx - knee.dx);
+          canvas.drawLine(attach, tip, calloutPaint);
+
+          double angle = math.atan2(tip.dy - attach.dy, tip.dx - attach.dx);
           Path arrow = Path()
             ..moveTo(tip.dx, tip.dy)
             ..lineTo(tip.dx - 15 * math.cos(angle - math.pi / 6), tip.dy - 15 * math.sin(angle - math.pi / 6))
             ..moveTo(tip.dx, tip.dy)
             ..lineTo(tip.dx - 15 * math.cos(angle + math.pi / 6), tip.dy - 15 * math.sin(angle + math.pi / 6));
-          canvas.drawPath(arrow, borderPaint);
+          canvas.drawPath(arrow, calloutPaint);
         }
 
-        if (obj.fillColor != Colors.transparent) canvas.drawRect(updatedRect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
-        if (obj.borderColor != Colors.transparent) canvas.drawRect(updatedRect, borderPaint);
-        
-        textPainter.paint(canvas, updatedRect.topLeft + const Offset(10, 10));
+        if (obj.fillColor != Colors.transparent) canvas.drawRect(rect, Paint()..color = obj.fillColor.withOpacity(obj.opacity)..style = PaintingStyle.fill);
+        if (obj.borderColor != Colors.transparent) canvas.drawRect(rect, borderPaint);
 
-        if (!isInternal && !hideOverlays && obj.isSelected && obj.isCallout && obj.points != null) {
-          Paint hP = Paint()..color = Colors.blue; 
-          Paint wP = Paint()..color = Colors.white; 
-          // 🚀 Used scaled dots
+        if (obj.text != null && obj.text!.isNotEmpty && obj != editingObject) {
+          final textPainter = TextPainter(
+            text: TextSpan(text: obj.text, style: textStyle),
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.left,
+          );
+          double availableWidth = rect.width > 20 ? rect.width - 20 : 10;
+          textPainter.layout(maxWidth: availableWidth);
+
+          canvas.save();
+          canvas.clipRect(rect);
+          textPainter.paint(canvas, rect.topLeft + const Offset(10, 10));
+          canvas.restore();
+        }
+
+        if (!isInternal && !hideOverlays && obj.isSelected && obj.isCallout && obj.points != null && obj.points!.isNotEmpty) {
+          Paint hP = Paint()..color = Colors.blue;
+          Paint wP = Paint()..color = Colors.white;
+          // 🚀 Used scaled dots — only the arrow tip is a draggable anchor.
           canvas.drawCircle(obj.points![0], dotOuter, wP); canvas.drawCircle(obj.points![0], dotInner, hP);
-          canvas.drawCircle(obj.points![1], dotOuter, wP); canvas.drawCircle(obj.points![1], dotInner, hP);
         }
-      
+
       } else if (obj.type == DrawingType.pin) {
           double w = rect.width;
           double h = rect.height;

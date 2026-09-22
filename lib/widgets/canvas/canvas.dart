@@ -106,8 +106,12 @@ class CanvasState extends State<Canvas> {
   bool _textIsStrikethrough = false;
 
   DrawingObject? _currentPreview;
-  DrawingObject? _activeObject; 
-  DrawingObject? _clipboard; 
+  DrawingObject? _activeObject;
+  DrawingObject? _clipboard;
+
+  DrawingObject? _editingText;
+  final TextEditingController _inlineTextController = TextEditingController();
+  final FocusNode _inlineTextFocusNode = FocusNode();
   
   ResizeHandle _activeHandle = ResizeHandle.none;
   ResizeHandle _hoveredHandle = ResizeHandle.none;
@@ -184,24 +188,36 @@ class CanvasState extends State<Canvas> {
   @override
   void dispose() {
     _canvasFocusNode.dispose();
+    _inlineTextController.dispose();
+    _inlineTextFocusNode.dispose();
     _transformationController.removeListener(_onViewerTransformChanged);
     _transformationController.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge); 
     super.dispose();
   }
   
-  void applyExternalToolConfig(String tool, double stroke, Color color, Color fill, double opacity, {String? customToolId, List<DrawingObject>? customToolShapes}) {
+  void applyExternalToolConfig(
+    String tool, double stroke, Color color, Color fill, double opacity, {
+    String? customToolId,
+    List<DrawingObject>? customToolShapes,
+    Color? borderColor,
+    double? fontSize,
+    bool isBold = false,
+    bool isItalic = false,
+    bool isUnderline = false,
+    bool isStrikethrough = false,
+  }) {
     setState(() {
       _selectedTool = tool;
-      _selectedCustomToolId = customToolId;          
-      _selectedCustomToolShapes = customToolShapes;  
-      
+      _selectedCustomToolId = customToolId;
+      _selectedCustomToolShapes = customToolShapes;
+
       for (var obj in _drawingObjects) {
         obj.isSelected = false;
       }
       _activeObject = null;
-      widget.onSelectionChanged?.call(null); 
-      
+      widget.onSelectionChanged?.call(null);
+
       _pencilStrokeWidth = stroke;
       _pencilColor = color;
       _penFillColor = fill;
@@ -213,10 +229,18 @@ class CanvasState extends State<Canvas> {
       _shapeFillColor = fill;
       _shapeOpacity = opacity;
 
+      // 🚀 Carries over the same props a saved Text/Callout custom tool was
+      // drawn with, so drawing with it matches the preset exactly.
       _textStrokeWidth = stroke;
       _textColor = color;
       _textFillColor = fill;
       _textOpacity = opacity;
+      _textBorderColor = borderColor ?? _textBorderColor;
+      if (fontSize != null) _textSize = fontSize;
+      _textIsBold = isBold;
+      _textIsItalic = isItalic;
+      _textIsUnderline = isUnderline;
+      _textIsStrikethrough = isStrikethrough;
     });
   }
 
@@ -234,86 +258,70 @@ class CanvasState extends State<Canvas> {
   // DRAWING LOGIC
   // ==========================================
   
-  Future<void> _showTextDialog({required Offset position, DrawingObject? existingObject, bool isCallout = false, bool isNote = false}) async {
-    final TextEditingController controller = TextEditingController(text: existingObject?.text ?? "");
-    
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(existingObject == null ? "Enter Text" : "Edit Text"),
-        content: SizedBox(
-          width: 400,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: null,
-            keyboardType: TextInputType.multiline,
-            decoration: const InputDecoration(
-              hintText: "Type your text here...",
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                _saveSnapshot();
-                setState(() {
-                  final textPainter = TextPainter(
-                    text: TextSpan(text: controller.text, style: TextStyle(fontSize: _textStrokeWidth * 10)),
-                    textDirection: TextDirection.ltr,
-                  )..layout(maxWidth: 500);
+  // 🚀 Enters inline edit mode for a text/callout object: an on-canvas
+  // TextField is overlaid directly on the object's box so typing happens
+  // straight into the shape (no separate dialog) and the keyboard opens
+  // immediately. Must be called from within a setState (or followed by one).
+  void _beginInlineEdit(DrawingObject obj) {
+    _editingText = obj;
+    _inlineTextController.text = obj.text ?? '';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _inlineTextFocusNode.requestFocus();
+    });
+  }
 
-                  final calculatedSize = Offset(textPainter.width + 20, textPainter.height + 20);
+  // 🚀 Commits whatever is in the inline editor back onto the object, or
+  // discards the object entirely if it was left empty. Safe to call even
+  // when nothing is being edited. Does not wrap itself in setState so it can
+  // be composed inside a caller's own setState block.
+  void _commitInlineEditUnsafe() {
+    if (_editingText == null) return;
+    // 🚀 The box itself stays on the canvas even if left empty — the user
+    // decides whether to come back and type into it or delete it.
+    _editingText!.text = _inlineTextController.text;
+    _editingText = null;
+  }
 
-                  Color initialFill = _textFillColor;
-                  Color initialBorder = _textBorderColor;
-                  Color initialText = _textColor;
-                  
-                  if (isCallout) {
-                    if (initialFill == Colors.transparent) initialFill = const Color(0xFF7F4A46);
-                    if (initialBorder == Colors.transparent) initialBorder = Colors.redAccent;
-                    if (initialText == Colors.black) initialText = Colors.white;
-                  } else if (isNote) { 
-                    if (initialFill == Colors.transparent) initialFill = const Color(0xFFFFF59D);
-                    if (initialBorder == Colors.transparent) initialBorder = Colors.transparent;
-                    if (initialText == Colors.black) initialText = Colors.black87;
-                  }
+  void _commitInlineEdit() {
+    if (_editingText == null) return;
+    setState(_commitInlineEditUnsafe);
+    widget.onSelectionChanged?.call(_activeObject);
+  }
 
-                  if (existingObject != null) {
-                    existingObject.text = controller.text;
-                    existingObject.end = existingObject.start + calculatedSize;
-                    widget.onSelectionChanged?.call(existingObject); 
-                  } else {
-                    final textObj = DrawingObject(
-                      start: position, end: position + calculatedSize, type: DrawingType.text, text: controller.text,
-                      color: initialText, fillColor: initialFill, borderColor: initialBorder, opacity: _textOpacity,
-                      isSelected: true, strokeWidth: _textStrokeWidth, fontSize: _textSize,
-                      isBold: _textIsBold, isItalic: _textIsItalic, isUnderline: _textIsUnderline, isStrikethrough: _textIsStrikethrough,
-                      isCallout: isCallout, 
-                      points: isCallout ? [position + Offset(calculatedSize.dx / 2, calculatedSize.dy + 30), position + Offset(calculatedSize.dx / 2 + 40, calculatedSize.dy + 70)] : null,
-                    );
-                    for (var obj in _drawingObjects) obj.isSelected = false;
-                    _drawingObjects.add(textObj);
-                    _activeObject = textObj;
-                    widget.onSelectionChanged?.call(textObj); 
-                  }
+  // 🚀 Clears any canvas selection and drops back to the neutral 'Select'
+  // tool, which also un-highlights whatever tool was active in the sidebar.
+  void _deselectAll() {
+    setState(() {
+      _commitInlineEditUnsafe();
+      _selectedTool = 'Select';
 
-                  if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
-                    _selectedTool = 'Select';
-                    widget.onToolChanged?.call('Select');
-                  }
-                });
-              }
-              Navigator.pop(context);
-            },
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
+      if (_selectedCustomToolId != null) {
+        _selectedCustomToolId = null;
+        _selectedCustomToolShapes = null;
+
+        _pencilColor = Colors.red;
+        _penFillColor = Colors.transparent;
+        _pencilStrokeWidth = 2.0;
+        _pencilOpacity = 1.0;
+
+        _shapeLineColor = Colors.red;
+        _shapeBorderColor = Colors.red;
+        _shapeFillColor = Colors.transparent;
+        _shapeStrokeWidth = 2.0;
+        _shapeOpacity = 1.0;
+
+        _textColor = Colors.black;
+        _textBorderColor = Colors.red;
+        _textFillColor = Colors.transparent;
+        _textStrokeWidth = 2.0;
+        _textOpacity = 1.0;
+      }
+
+      for (var obj in _drawingObjects) obj.isSelected = false;
+      _activeObject = null;
+      widget.onSelectionChanged?.call(null);
+    });
+    widget.onToolChanged?.call('Select');
   }
 
   void _saveSnapshot() {
@@ -390,7 +398,7 @@ class CanvasState extends State<Canvas> {
   
   MouseCursor _getCursor(ResizeHandle handle) {
     if (_selectedTool == 'Eraser') return SystemMouseCursors.none;
-    if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note') return SystemMouseCursors.text;
+    if (_selectedTool == 'Text' || _selectedTool == 'Callout') return SystemMouseCursors.text;
     
     if (handle == ResizeHandle.none) {
       return _selectedTool == 'Select' 
@@ -400,7 +408,7 @@ class CanvasState extends State<Canvas> {
 
     if (handle == ResizeHandle.body) return SystemMouseCursors.move;
     if (handle == ResizeHandle.rotation) return SystemMouseCursors.grab;
-    if (handle == ResizeHandle.calloutKnee || handle == ResizeHandle.calloutTip) return SystemMouseCursors.move;
+    if (handle == ResizeHandle.calloutTip) return SystemMouseCursors.move;
 
     double rotation = _activeObject?.rotation ?? 0.0;
     double baseAngle = 0.0;
@@ -463,9 +471,8 @@ class CanvasState extends State<Canvas> {
     final r = obj.rect;
 
     if (obj.isSelected) {
-      if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.length >= 2) {
-        if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutKnee;
-        if ((localP - obj.points![1]).distance < hSize) return ResizeHandle.calloutTip;
+      if (obj.type == DrawingType.text && obj.isCallout && obj.points != null && obj.points!.isNotEmpty) {
+        if ((localP - obj.points![0]).distance < hSize) return ResizeHandle.calloutTip;
       }
 
       if (obj.type == DrawingType.line || obj.type == DrawingType.arrow) {
@@ -537,8 +544,28 @@ class CanvasState extends State<Canvas> {
     final now = DateTime.now();
 
     setState(() {
-      if (_selectedTool == 'Text' || _selectedTool == 'Callout' || _selectedTool == 'Note') {
-        _showTextDialog(position: pos, isCallout: _selectedTool == 'Callout', isNote: _selectedTool == 'Note');
+      _commitInlineEditUnsafe();
+
+      if (_selectedTool == 'Text' || _selectedTool == 'Callout') {
+        _saveSnapshot();
+        for (var obj in _drawingObjects) obj.isSelected = false;
+        _activeObject = null;
+        widget.onSelectionChanged?.call(null);
+
+        final bool isCallout = _selectedTool == 'Callout';
+        _currentPreview = DrawingObject(
+          start: pos,
+          end: isCallout ? pos + const Offset(160, 70) : pos,
+          type: DrawingType.text,
+          text: '',
+          color: _textColor,
+          fillColor: _textFillColor,
+          borderColor: _textBorderColor,
+          opacity: _textOpacity, strokeWidth: _textStrokeWidth, fontSize: _textSize,
+          isBold: _textIsBold, isItalic: _textIsItalic, isUnderline: _textIsUnderline, isStrikethrough: _textIsStrikethrough,
+          isCallout: isCallout,
+          points: isCallout ? [pos] : null,
+        );
       } else if (_selectedTool == 'Eraser') {
         _saveSnapshot();
         _drawingObjects.removeWhere((obj) => _getHitHandle(pos, obj) != ResizeHandle.none);
@@ -615,7 +642,12 @@ class CanvasState extends State<Canvas> {
 
         if (hitObj != null) {
           if (hitObj.type == DrawingType.text && _lastTapTime != null && now.difference(_lastTapTime!) < const Duration(milliseconds: 300)) {
-            _showTextDialog(position: pos, existingObject: hitObj); return;
+            for (var obj in _drawingObjects) obj.isSelected = false;
+            hitObj.isSelected = true;
+            _activeObject = hitObj;
+            widget.onSelectionChanged?.call(hitObj);
+            _beginInlineEdit(hitObj);
+            return;
           }
           _lastTapTime = now;
           if (!hitObj.isSelected) _saveSnapshot();
@@ -645,16 +677,16 @@ class CanvasState extends State<Canvas> {
       } else if (_currentPreview != null) {
         if (_currentPreview!.type == DrawingType.pencil) {
           _currentPreview!.points!.add(pos);
+        } else if (_currentPreview!.isCallout) {
+          _currentPreview!.points![0] = pos;
         } else {
           _currentPreview!.end = pos;
         }
       } else if (_activeObject != null && _activeHandle != ResizeHandle.none) {
         if (_activeHandle == ResizeHandle.rotation) {
           _activeObject!.rotation = math.atan2(pos.dy - _activeObject!.center.dy, pos.dx - _activeObject!.center.dx) - _initialRotationAngle;
-        } else if (_activeHandle == ResizeHandle.calloutKnee) {
-          _activeObject!.points![0] = pos; 
         } else if (_activeHandle == ResizeHandle.calloutTip) {
-          _activeObject!.points![1] = pos; 
+          _activeObject!.points![0] = pos;
         } else if (_activeHandle == ResizeHandle.body) {
           
           Offset rawMoveDelta = (pos - _dragOffset) - _activeObject!.start;
@@ -763,17 +795,30 @@ class CanvasState extends State<Canvas> {
   void _handlePointerUp(PointerUpEvent details) {
     setState(() {
       if (_currentPreview != null && _currentPreview!.type != DrawingType.pen) {
+        // 🚀 A click-without-drag (or a too-small drag) still gets a usable,
+        // freeform-editable default box instead of collapsing to ~0 size.
+        if (_currentPreview!.type == DrawingType.text && !_currentPreview!.isCallout) {
+          final r = _currentPreview!.rect;
+          if (r.width < 40 || r.height < 30) {
+            _currentPreview!.end = _currentPreview!.start + const Offset(180, 60);
+          }
+        }
+
+        final bool enterTextEdit = _currentPreview!.type == DrawingType.text;
+
         for (var obj in _drawingObjects) obj.isSelected = false;
         _currentPreview!.isSelected = true;
         _drawingObjects.add(_currentPreview!);
         _activeObject = _currentPreview;
         _currentPreview = null;
-        widget.onSelectionChanged?.call(_activeObject); 
+        widget.onSelectionChanged?.call(_activeObject);
 
         if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
           _selectedTool = 'Select';
           widget.onToolChanged?.call('Select');
         }
+
+        if (enterTextEdit) _beginInlineEdit(_activeObject!);
       }
       _activeHandle = ResizeHandle.none;
     });
@@ -1095,6 +1140,56 @@ class CanvasState extends State<Canvas> {
   // UI BUILDING HELPERS
   // ==========================================
 
+  // 🚀 Positioned directly inside the same canvas-space Stack as CanvasPaper,
+  // so it lines up with the object's box under any pan/zoom without any
+  // transform math of its own, and opens the keyboard immediately.
+  Widget _buildInlineTextEditor() {
+    final obj = _editingText!;
+    final rect = obj.rect;
+
+    TextDecoration textDecoration = TextDecoration.none;
+    if (obj.isUnderline && obj.isStrikethrough) {
+      textDecoration = TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]);
+    } else if (obj.isUnderline) {
+      textDecoration = TextDecoration.underline;
+    } else if (obj.isStrikethrough) {
+      textDecoration = TextDecoration.lineThrough;
+    }
+
+    return Positioned(
+      left: rect.left + 10,
+      top: rect.top + 10,
+      width: math.max(10, rect.width - 20),
+      height: math.max(10, rect.height - 20),
+      child: TextField(
+        controller: _inlineTextController,
+        focusNode: _inlineTextFocusNode,
+        autofocus: true,
+        maxLines: null,
+        minLines: null,
+        expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        keyboardType: TextInputType.multiline,
+        cursorColor: obj.color,
+        style: TextStyle(
+          color: obj.color,
+          fontSize: obj.fontSize,
+          fontWeight: obj.isBold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: obj.isItalic ? FontStyle.italic : FontStyle.normal,
+          decoration: textDecoration,
+          decorationColor: obj.color,
+        ),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+        onChanged: (v) => setState(() => obj.text = v),
+        onTapOutside: (_) => _commitInlineEdit(),
+      ),
+    );
+  }
+
   Widget _buildResizer({required bool isLeft, required Function(double) onPanUpdate}) {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
@@ -1267,6 +1362,8 @@ class CanvasState extends State<Canvas> {
                 return InkWell(
                   onTap: () {
                     setState(() {
+                      _commitInlineEditUnsafe();
+
                       if (_selectedTool == tool.name) {
                         _selectedTool = 'Select';
                       } else {
@@ -1386,7 +1483,6 @@ class CanvasState extends State<Canvas> {
                       _buildToolCategory(theme, "Text", [
                         _ToolItem("Text", Icons.title),
                         _ToolItem("Callout", Icons.chat_bubble_outline),
-                        _ToolItem("Note", Icons.sticky_note_2),
                       ], initiallyExpanded: true),
                       
                       _buildToolCategory(theme, "Patterns", [
@@ -1427,39 +1523,6 @@ class CanvasState extends State<Canvas> {
     final bool hasLeftActions = widget.leftActions != null && widget.leftActions!.isNotEmpty;
     final bool hasRightActions = widget.rightActions != null && widget.rightActions!.isNotEmpty;
 
-    void activateSelectTool() {
-      setState(() {
-        _selectedTool = 'Select';
-
-        if (_selectedCustomToolId != null) {
-          _selectedCustomToolId = null;
-          _selectedCustomToolShapes = null;
-          
-          _pencilColor = Colors.red;
-          _penFillColor = Colors.transparent;
-          _pencilStrokeWidth = 2.0;
-          _pencilOpacity = 1.0;
-
-          _shapeLineColor = Colors.red;
-          _shapeBorderColor = Colors.red;
-          _shapeFillColor = Colors.transparent;
-          _shapeStrokeWidth = 2.0;
-          _shapeOpacity = 1.0;
-
-          _textColor = Colors.black;
-          _textBorderColor = Colors.red;
-          _textFillColor = Colors.transparent;
-          _textStrokeWidth = 2.0;
-          _textOpacity = 1.0;
-        }
-
-        for (var obj in _drawingObjects) obj.isSelected = false;
-        _activeObject = null;
-        widget.onSelectionChanged?.call(null);
-      });
-      widget.onToolChanged?.call('Select');
-    }
-
     final leftGroup = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1476,7 +1539,14 @@ class CanvasState extends State<Canvas> {
           icon: Icons.near_me_outlined,
           tooltip: 'Select tool',
           isSelected: _selectedTool == 'Select',
-          onTap: activateSelectTool,
+          onTap: _deselectAll,
+        ),
+        SizedBox(width: itemGap),
+        _topToolbarButton(
+          theme: theme,
+          icon: Icons.deselect,
+          tooltip: 'Deselect',
+          onTap: (_activeObject != null || _selectedTool != 'Select') ? _deselectAll : null,
         ),
         if (hasLeftActions) ...[
           SizedBox(width: itemGap),
@@ -2103,7 +2173,7 @@ class CanvasState extends State<Canvas> {
 
   bool _isLineToolName(String tool) => tool == 'Line' || tool == 'Arrow';
 
-  bool _isTextToolName(String tool) => tool == 'Text' || tool == 'Callout' || tool == 'Note';
+  bool _isTextToolName(String tool) => tool == 'Text' || tool == 'Callout';
 
   bool _isFilledShapeToolName(String tool) =>
       (tool == 'Rect' || tool == 'Circle' || tool == 'Polygon') || _isPatternSelected(tool);
@@ -2140,8 +2210,6 @@ class CanvasState extends State<Canvas> {
         return Icons.title;
       case 'Callout':
         return Icons.chat_bubble_outline;
-      case 'Note':
-        return Icons.sticky_note_2;
       case 'Dots':
         return Icons.scatter_plot;
       case 'Grid':
@@ -2292,8 +2360,8 @@ class CanvasState extends State<Canvas> {
         actions.addAll([
           _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
           _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
-          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
           _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: object.color, onTap: (anchor) => _showColorPicker(anchor, theme, 4)),
+          _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
           _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: object.borderColor, onTap: (anchor) => _showColorPicker(anchor, theme, 5)),
           _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: object.fillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 6)),
         ]);
@@ -2332,8 +2400,8 @@ class CanvasState extends State<Canvas> {
       actions.addAll([
         _toolbarAction(theme: theme, icon: Icons.text_format, label: 'Text style', onTap: (anchor) => _showTextStylePopover(anchor, theme)),
         _toolbarAction(theme: theme, icon: Icons.format_size, label: 'Text size', onTap: (anchor) => _showTextSizePopover(anchor, theme)),
-        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
         _toolbarAction(theme: theme, icon: Icons.format_color_text, label: 'Text color', swatch: _textColor, onTap: (anchor) => _showColorPicker(anchor, theme, 4)),
+        _toolbarAction(theme: theme, icon: Icons.line_weight, label: 'Outline width', onTap: (anchor) => _showStrokePopover(anchor, theme, 2)),
         _toolbarAction(theme: theme, icon: Icons.border_color, label: 'Border color', swatch: _textBorderColor, onTap: (anchor) => _showColorPicker(anchor, theme, 5)),
         _toolbarAction(theme: theme, icon: Icons.format_color_fill, label: 'Fill color', swatch: _textFillColor, onTap: (anchor) => _showColorPicker(anchor, theme, 6)),
       ]);
@@ -2411,9 +2479,11 @@ class CanvasState extends State<Canvas> {
           const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _redo,
           const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
           const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
-          const SingleActivator(LogicalKeyboardKey.escape): () => setState(() {
-            if (_selectedTool == 'Pen') _finalizeCurrentPreview();
-          }),
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (_editingText != null) { _commitInlineEdit(); return; }
+            if (_selectedTool == 'Pen' && _currentPreview != null) { setState(_finalizeCurrentPreview); return; }
+            _deselectAll();
+          },
         },
         child: Focus(
           focusNode: _canvasFocusNode,
@@ -2472,14 +2542,21 @@ class CanvasState extends State<Canvas> {
                                                 BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, spreadRadius: 5, offset: const Offset(0, 10))
                                               ],
                                             ),
-                                            child: CanvasPaper(
-                                              objects: _drawingObjects,
-                                              preview: _currentPreview,
-                                              viewerScale: _viewerScale,
-                                              touchDevice: AppResponsive.isAndroid || AppResponsive.isIOS,
-                                              backgroundImageBytes: widget.initialBackgroundImage,
-                                              width: widget.width,
-                                              height: widget.height,
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                CanvasPaper(
+                                                  objects: _drawingObjects,
+                                                  preview: _currentPreview,
+                                                  editingObject: _editingText,
+                                                  viewerScale: _viewerScale,
+                                                  touchDevice: AppResponsive.isAndroid || AppResponsive.isIOS,
+                                                  backgroundImageBytes: widget.initialBackgroundImage,
+                                                  width: widget.width,
+                                                  height: widget.height,
+                                                ),
+                                                if (_editingText != null) _buildInlineTextEditor(),
+                                              ],
                                             ),
                                           ),
                                         ),
