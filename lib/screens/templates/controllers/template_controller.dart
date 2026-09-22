@@ -297,7 +297,8 @@ class TemplateController extends ChangeNotifier {
       // STEP 3: Save to Database
       final createRes = await apiService.post('/templateDocument/createTemplateDocument', {
         "document_url": documentKey,
-        "template_id": templateId
+        "template_id": templateId,
+        "document_name": file.name,
       });
       
       final createData = jsonDecode(createRes.body);
