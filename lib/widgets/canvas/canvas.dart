@@ -85,17 +85,17 @@ class CanvasState extends State<Canvas> {
   double _shapeStrokeWidth = 2.0;
   double _textStrokeWidth = 2.0;
   
-  Color _pencilColor = Colors.black;
+  Color _pencilColor = Colors.red;
   Color _penFillColor = Colors.transparent;
-  double _pencilOpacity = 1.0; 
+  double _pencilOpacity = 1.0;
 
-  Color _shapeLineColor = Colors.black;
-  Color _shapeBorderColor = Colors.black;
+  Color _shapeLineColor = Colors.red;
+  Color _shapeBorderColor = Colors.red;
   Color _shapeFillColor = Colors.transparent;
   double _shapeOpacity = 1.0;
 
   Color _textColor = Colors.black;
-  Color _textBorderColor = Colors.transparent;
+  Color _textBorderColor = Colors.red;
   Color _textFillColor = Colors.transparent;
   double _textOpacity = 1.0;
 
@@ -1277,19 +1277,19 @@ class CanvasState extends State<Canvas> {
                         _selectedCustomToolId = null;
                         _selectedCustomToolShapes = null;
                         
-                        _pencilColor = Colors.black;
+                        _pencilColor = Colors.red;
                         _penFillColor = Colors.transparent;
                         _pencilStrokeWidth = 2.0;
                         _pencilOpacity = 1.0;
-                        
-                        _shapeLineColor = Colors.black;
-                        _shapeBorderColor = Colors.black;
+
+                        _shapeLineColor = Colors.red;
+                        _shapeBorderColor = Colors.red;
                         _shapeFillColor = Colors.transparent;
                         _shapeStrokeWidth = 2.0;
                         _shapeOpacity = 1.0;
 
                         _textColor = Colors.black;
-                        _textBorderColor = Colors.transparent;
+                        _textBorderColor = Colors.red;
                         _textFillColor = Colors.transparent;
                         _textStrokeWidth = 2.0;
                         _textOpacity = 1.0;
@@ -1435,19 +1435,19 @@ class CanvasState extends State<Canvas> {
           _selectedCustomToolId = null;
           _selectedCustomToolShapes = null;
           
-          _pencilColor = Colors.black;
+          _pencilColor = Colors.red;
           _penFillColor = Colors.transparent;
           _pencilStrokeWidth = 2.0;
           _pencilOpacity = 1.0;
-          
-          _shapeLineColor = Colors.black;
-          _shapeBorderColor = Colors.black;
+
+          _shapeLineColor = Colors.red;
+          _shapeBorderColor = Colors.red;
           _shapeFillColor = Colors.transparent;
           _shapeStrokeWidth = 2.0;
           _shapeOpacity = 1.0;
 
           _textColor = Colors.black;
-          _textBorderColor = Colors.transparent;
+          _textBorderColor = Colors.red;
           _textFillColor = Colors.transparent;
           _textStrokeWidth = 2.0;
           _textOpacity = 1.0;
