@@ -259,11 +259,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
       Map<String, dynamic>? pollData;
       bool isComplete = false;
-      const int maxAttempts = 30;
+      const int maxAttempts = 90; // 15 minutes max
       int attempts = 0;
 
       while (!isComplete && attempts < maxAttempts) {
-        await Future.delayed(const Duration(seconds: 3));
+        await Future.delayed(const Duration(seconds: 10));
         attempts++;
 
         final pollRes = await _apiService.get(statusEndpoint);
