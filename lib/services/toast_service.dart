@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 enum ToastType { success, error, warning, info }
 
+// [auto]: top-right on wide screens, bottom-center on phones.
+// [topCenter]: top-middle of the screen on every screen size.
+enum ToastPosition { auto, topCenter }
+
 // Toasts render in the app's root [Overlay] rather than as floating
 // SnackBars: a SnackBar pinned to the top-right via a huge bottom margin
 // trips Flutter's "Floating SnackBar presented off screen" assertion as soon
@@ -18,6 +22,7 @@ class ToastService {
     required String message,
     required ToastType type,
     String? title,
+    ToastPosition position = ToastPosition.auto,
   }) {
     final overlay = Overlay.of(context, rootOverlay: true);
 
@@ -117,6 +122,15 @@ class ToastService {
             ),
           ),
         );
+
+        if (position == ToastPosition.topCenter) {
+          return Positioned(
+            top: media.padding.top + 20,
+            left: 20,
+            right: 20,
+            child: Align(alignment: Alignment.topCenter, child: toast),
+          );
+        }
 
         // Wide screens: pinned top-right. Phones: bottom-centered, lifted
         // above the keyboard when it's open.

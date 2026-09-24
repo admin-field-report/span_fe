@@ -126,7 +126,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
   void _switchPage(String newPage) async {
     if (_overlayImageKey != null || widget.annotateImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
+      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning, position: ToastPosition.topCenter);
       return;
     }
 
@@ -164,7 +164,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
   Future<void> _handleImageTap(String s3Key) async {
     if (_overlayImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
+      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning, position: ToastPosition.topCenter);
       return;
     }
 
@@ -186,7 +186,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     }
 
     if (imgData == null || imgData['preview_image'] == null || imgData['preview_image'].isEmpty) {
-      ToastService.show(context, message: "Image preview not available.", type: ToastType.error);
+      ToastService.show(context, message: "Image preview not available.", type: ToastType.error, position: ToastPosition.topCenter);
       return;
     }
 
@@ -220,7 +220,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       });
     } catch (e) {
       setState(() => _isPageLoading = false);
-      ToastService.show(context, message: "Failed to load image preview.", type: ToastType.error);
+      ToastService.show(context, message: "Failed to load image preview.", type: ToastType.error, position: ToastPosition.topCenter);
     }
   }
 
@@ -256,7 +256,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       });
     } catch (e) {
       setState(() => _isUploadingImage = false);
-      ToastService.show(context, message: "Failed to process image.", type: ToastType.error);
+      ToastService.show(context, message: "Failed to process image.", type: ToastType.error, position: ToastPosition.topCenter);
     }
   }
 
@@ -295,7 +295,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           _hasUnsavedChanges = true;
           _closeOverlay();
         });
-        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success);
+        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success, position: ToastPosition.topCenter);
       }
       return;
     }
@@ -334,7 +334,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       _hasUnsavedChanges = true;
       _closeOverlay();
     });
-    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
+    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info, position: ToastPosition.topCenter);
   }
 
   Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes, bool isInspection) async {
@@ -879,7 +879,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
           await _uploadDirtyPageImages();
 
-          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success);
+          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success, position: ToastPosition.topCenter);
         } else {
           throw Exception("Failed to upload document data to S3. Status: ${putResponse.statusCode}");
         }
@@ -889,7 +889,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
     } catch (e) {
       debugPrint("Save Error: $e");
-      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
+      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error, position: ToastPosition.topCenter);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
