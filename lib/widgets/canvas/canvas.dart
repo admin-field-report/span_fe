@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:universal_html/html.dart' as html;
@@ -77,6 +77,13 @@ class CanvasState extends State<Canvas> {
   double _rightPanelWidth = 260.0;
 
   String _selectedTool = 'Select';
+
+  // 🚀 Double-tapping a tool locks it: it stays active after each stroke
+  // instead of dropping back to 'Select'. A single tap on the locked tool,
+  // picking another tool, or deselecting releases the lock.
+  bool _isToolLocked = false;
+  String? _lastToolTapName;
+  DateTime? _lastToolTapTime;
 
   String? _selectedCustomToolId;
   List<DrawingObject>? _selectedCustomToolShapes;
@@ -206,9 +213,11 @@ class CanvasState extends State<Canvas> {
     bool isItalic = false,
     bool isUnderline = false,
     bool isStrikethrough = false,
+    bool locked = false,
   }) {
     setState(() {
       _selectedTool = tool;
+      _isToolLocked = locked && tool != 'Select';
       _selectedCustomToolId = customToolId;
       _selectedCustomToolShapes = customToolShapes;
 
@@ -294,6 +303,7 @@ class CanvasState extends State<Canvas> {
     setState(() {
       _commitInlineEditUnsafe();
       _selectedTool = 'Select';
+      _isToolLocked = false;
 
       if (_selectedCustomToolId != null) {
         _selectedCustomToolId = null;
@@ -813,7 +823,7 @@ class CanvasState extends State<Canvas> {
         _currentPreview = null;
         widget.onSelectionChanged?.call(_activeObject);
 
-        if (_selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
+        if (!_isToolLocked && _selectedTool != 'Pencil' && _selectedTool != 'Pen' && _selectedTool != 'Eraser') {
           _selectedTool = 'Select';
           widget.onToolChanged?.call('Select');
         }
@@ -1359,15 +1369,30 @@ class CanvasState extends State<Canvas> {
               itemBuilder: (context, index) {
                 final tool = tools[index];
                 final isSelected = _selectedTool == tool.name;
+                final isLocked = isSelected && _isToolLocked;
                 return InkWell(
+                  // 🚀 Double-tap is detected by hand rather than via
+                  // onDoubleTap so single taps keep firing instantly.
                   onTap: () {
+                    final now = DateTime.now();
+                    final bool isDoubleTap = _lastToolTapName == tool.name &&
+                        _lastToolTapTime != null &&
+                        now.difference(_lastToolTapTime!) <= kDoubleTapTimeout;
+                    _lastToolTapName = isDoubleTap ? null : tool.name;
+                    _lastToolTapTime = isDoubleTap ? null : now;
+
                     setState(() {
                       _commitInlineEditUnsafe();
 
-                      if (_selectedTool == tool.name) {
+                      if (isDoubleTap) {
+                        _selectedTool = tool.name;
+                        _isToolLocked = true;
+                      } else if (_selectedTool == tool.name) {
                         _selectedTool = 'Select';
+                        _isToolLocked = false;
                       } else {
                         _selectedTool = tool.name;
+                        _isToolLocked = false;
                       }
 
                       if (_selectedCustomToolId != null) {
@@ -1409,25 +1434,37 @@ class CanvasState extends State<Canvas> {
                       color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
                     ),
                     padding: const EdgeInsets.all(2),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    child: Stack(
                       children: [
-                        Icon(
-                          tool.icon, 
-                          size: isMobile ? 14 : 16, 
-                          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7)
+                        Positioned.fill(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                tool.icon,
+                                size: isMobile ? 14 : 16,
+                                color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7)
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                tool.name,
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          tool.name, 
-                          style: TextStyle(
-                            fontSize: 8, 
-                            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface
-                          ), 
-                          textAlign: TextAlign.center, 
-                          maxLines: 1, 
-                          overflow: TextOverflow.ellipsis
-                        ),
+                        if (isLocked)
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: Icon(Icons.lock, size: 9, color: theme.colorScheme.primary),
+                          ),
                       ],
                     ),
                   ),

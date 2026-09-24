@@ -6,6 +6,7 @@ import '../../../widgets/canvas/widgets/canvas_painter.dart';
 class CustomToolsPanel extends StatelessWidget {
   final List<CustomToolGroup> groups;
   final CustomTool? selectedTool;
+  final bool isSelectedToolLocked;
   final Function(CustomTool) onToolSelected;
   final VoidCallback onClose;
   final bool isLoading;
@@ -15,6 +16,7 @@ class CustomToolsPanel extends StatelessWidget {
     required this.groups,
     required this.isLoading,
     required this.selectedTool,
+    this.isSelectedToolLocked = false,
     required this.onToolSelected,
     required this.onClose,
   });
@@ -99,36 +101,55 @@ class CustomToolsPanel extends StatelessWidget {
                         color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
                       ),
                       padding: const EdgeInsets.all(4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Stack(
                         children: [
-                          // 🌟 USING THE CENTERED PREVIEW PAINTER 🌟
-                          Expanded(
-                            child: tool.toolObjects.isNotEmpty 
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Container(
-                                      color: Colors.white, // Clean background for the thumbnail
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      child: CustomPaint(
-                                        painter: CenteredPreviewPainter(context, tool.toolObjects),
+                          Positioned.fill(
+                            child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // 🌟 USING THE CENTERED PREVIEW PAINTER 🌟
+                              Expanded(
+                                child: tool.toolObjects.isNotEmpty 
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Container(
+                                          color: Colors.white, // Clean background for the thumbnail
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          child: CustomPaint(
+                                            painter: CenteredPreviewPainter(context, tool.toolObjects),
+                                          ),
+                                        ),
+                                      )
+                                    : const Center(
+                                        child: Icon(Icons.extension_outlined, size: 20, color: Colors.grey)
                                       ),
-                                    ),
-                                  )
-                                : const Center(
-                                    child: Icon(Icons.extension_outlined, size: 20, color: Colors.grey)
-                                  ),
-                          ),
+                              ),
                           
-                          const SizedBox(height: 4),
-                          Text(
-                            tool.toolName, 
-                            style: const TextStyle(fontSize: 9), 
-                            textAlign: TextAlign.center, 
-                            maxLines: 1, 
-                            overflow: TextOverflow.ellipsis
+                              const SizedBox(height: 4),
+                              Text(
+                                tool.toolName, 
+                                style: const TextStyle(fontSize: 9), 
+                                textAlign: TextAlign.center, 
+                                maxLines: 1, 
+                                overflow: TextOverflow.ellipsis
+                              ),
+                            ],
                           ),
+                          ),
+                          if (isSelected && isSelectedToolLocked)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(1),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.lock, size: 10, color: theme.colorScheme.primary),
+                              ),
+                            ),
                         ],
                       ),
                     ),

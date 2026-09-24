@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
@@ -58,6 +59,12 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   List<CustomToolGroup> _customToolGroups = [];
   bool _isLoadingCustomTools = true;
   CustomTool? _selectedCustomTool;
+
+  // 🚀 Double-tapping a custom tool locks it on the canvas so it can be
+  // drawn repeatedly; mirrors the built-in tool lock in the canvas widget.
+  bool _isCustomToolLocked = false;
+  String? _lastCustomToolTapId;
+  DateTime? _lastCustomToolTapTime;
 
   Map<String, dynamic> _rawDocumentData = {};
 
@@ -1138,6 +1145,60 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     }
   }
 
+  // 🚀 Single tap toggles the custom tool (one-shot, like before); a quick
+  // second tap on the same tool re-applies it locked. Double-tap is detected
+  // by hand so single taps don't wait on the double-tap timeout.
+  void _handleCustomToolTap(CustomTool tool) {
+    final now = DateTime.now();
+    final bool isDoubleTap = _lastCustomToolTapId == tool.toolId &&
+        _lastCustomToolTapTime != null &&
+        now.difference(_lastCustomToolTapTime!) <= kDoubleTapTimeout;
+    _lastCustomToolTapId = isDoubleTap ? null : tool.toolId;
+    _lastCustomToolTapTime = isDoubleTap ? null : now;
+
+    setState(() {
+      if (!isDoubleTap && _selectedCustomTool?.toolId == tool.toolId) {
+        _selectedCustomTool = null;
+        _isCustomToolLocked = false;
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          'Select', 2.0, Colors.black, Colors.transparent, 1.0,
+        );
+        return;
+      }
+
+      _selectedCustomTool = tool;
+      _isCustomToolLocked = isDoubleTap;
+
+      if (tool.toolObjects.length == 1) {
+        final obj = tool.toolObjects.first;
+        final nativeToolName = _getToolNameFromObject(obj);
+
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          nativeToolName,
+          obj.strokeWidth,
+          obj.color,
+          obj.fillColor ?? Colors.transparent,
+          obj.opacity,
+          customToolId: tool.toolId,
+          borderColor: obj.borderColor,
+          fontSize: obj.fontSize,
+          isBold: obj.isBold,
+          isItalic: obj.isItalic,
+          isUnderline: obj.isUnderline,
+          isStrikethrough: obj.isStrikethrough,
+          locked: isDoubleTap,
+        );
+      } else {
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+          customToolId: tool.toolId,
+          customToolShapes: tool.toolObjects,
+          locked: isDoubleTap,
+        );
+      }
+    });
+  }
+
   String _getToolNameFromObject(DrawingObject obj) {
     if (obj.type == DrawingType.text && obj.isCallout) {
       return 'Callout';
@@ -1322,7 +1383,10 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
           onToolChanged: (toolName) {
             if (toolName != 'CustomTool' && _selectedCustomTool != null) {
-              setState(() => _selectedCustomTool = null);
+              setState(() {
+                _selectedCustomTool = null;
+                _isCustomToolLocked = false;
+              });
             }
           },
           customTabLabel: "Custom Tools",
@@ -1330,46 +1394,13 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
             groups: _customToolGroups,
             isLoading: _isLoadingCustomTools,
             selectedTool: _selectedCustomTool,
-            onToolSelected: (tool) {
-              setState(() {
-                if (_selectedCustomTool?.toolId == tool.toolId) {
-                  _selectedCustomTool = null;
-                  _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                    'Select', 2.0, Colors.black, Colors.transparent, 1.0,
-                  );
-                } else {
-                  _selectedCustomTool = tool;
-
-                  if (tool.toolObjects.length == 1) {
-                    final obj = tool.toolObjects.first;
-                    final nativeToolName = _getToolNameFromObject(obj);
-
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      nativeToolName,
-                      obj.strokeWidth,
-                      obj.color,
-                      obj.fillColor ?? Colors.transparent,
-                      obj.opacity,
-                      customToolId: tool.toolId,
-                      borderColor: obj.borderColor,
-                      fontSize: obj.fontSize,
-                      isBold: obj.isBold,
-                      isItalic: obj.isItalic,
-                      isUnderline: obj.isUnderline,
-                      isStrikethrough: obj.isStrikethrough,
-                    );
-                  } else {
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                      customToolId: tool.toolId,
-                      customToolShapes: tool.toolObjects,
-                    );
-                  }
-                }
-              });
-            },
+            isSelectedToolLocked: _isCustomToolLocked,
+            onToolSelected: _handleCustomToolTap,
             onClose: () {
-              setState(() => _selectedCustomTool = null);
+              setState(() {
+                _selectedCustomTool = null;
+                _isCustomToolLocked = false;
+              });
               _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
             },
           ),
