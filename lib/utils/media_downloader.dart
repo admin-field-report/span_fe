@@ -19,7 +19,7 @@ class MediaDownloader {
     return validExtensions.contains(ext) ? ext : fallback;
   }
 
-  // Same storage-permission flow as ProjectReports/PdfExportButton: ask once
+  // Same storage-permission flow as ProjectReports/DocumentPdfExporter: ask once
   // via a dialog, send the user to settings when permanently denied, and
   // require a fresh tap after granting.
   static Future<bool> _ensureStoragePermission(BuildContext context) async {

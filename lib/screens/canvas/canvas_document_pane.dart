@@ -16,7 +16,6 @@ import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
-import 'widgets/pdf_export_button.dart';
 
 
 class CanvasDocumentPane extends StatefulWidget {
@@ -48,12 +47,10 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   bool _isLoadingAnnotations = false;
   bool _isUploadingImage = false;
   bool _isSaving = false;
-  bool _isExporting = false;
   bool _isFirstLoadComplete = false;
 
   bool _hasUnsavedChanges = false;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
-  bool _hasUnsavedImageChanges = false;
 
   DrawingObject? _selectedCanvasObject;
   List<CustomToolGroup> _customToolGroups = [];
@@ -335,7 +332,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       }
 
       _hasUnsavedChanges = true;
-      _hasUnsavedImageChanges = true;
       _closeOverlay();
     });
     // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
@@ -499,7 +495,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
         }
       }
       _hasUnsavedChanges = true;
-      _hasUnsavedImageChanges = true;
     });
   }
 
@@ -880,7 +875,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
         if (putResponse.statusCode == 200 || putResponse.statusCode == 201) {
           _hasUnsavedChanges = false;
-          _hasUnsavedImageChanges = false;
           _rawDocumentData = masterPayload;
 
           await _uploadDirtyPageImages();
@@ -1445,7 +1439,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
                 setState(() {
                   _inspectionImages.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
                   _rawDocumentData['image_list'] = List.from(_inspectionImages);
-                  _hasUnsavedImageChanges = true;
                   _hasUnsavedChanges = true;
                 });
               }
@@ -1476,13 +1469,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               : [
                   _buildPageSelector(theme),
                   const SizedBox(width: 12),
-                  PdfExportButton(
-                    documentId: widget.documentId,
-                    hasUnsavedChanges: _hasUnsavedChanges || _hasUnsavedImageChanges,
-                    onExportStart: () => setState(() => _isExporting = true),
-                    onExportEnd: () => setState(() => _isExporting = false),
-                  ),
-                  const SizedBox(width: 8),
                   CanvasToolbarActionButton(
                     tooltip: "Save Annotations",
                     icon: Icons.save_outlined,
@@ -1502,7 +1488,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           },
         ),
 
-        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage || _isExporting)
+        if (_isInitializing || _isPageLoading || _isLoadingAnnotations || _isSaving || _isUploadingImage)
           _buildLoadingOverlay(theme),
       ],
     );

@@ -7,6 +7,7 @@ import '../controllers/inspection_controller.dart';
 import '../../projects/controllers/project_controller.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
+import '../../../utils/document_pdf_exporter.dart';
 import '../../../utils/media_downloader.dart';
 import '../../../widgets/button/button.dart';
 import '../../../widgets/breadcrumb/breadcrumb.dart';
@@ -26,6 +27,7 @@ class InspectionDetailsScreen extends StatefulWidget {
 class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
   final ApiService _apiService = ApiService();
   bool _isDownloadingZip = false;
+  final Set<String> _exportingDocumentIds = {};
 
   @override
   void initState() {
@@ -106,6 +108,17 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
 
     if (assignmentSuccessful == true && mounted) {
       inspectionController.fetchInspectionDetails(widget.inspectionId);
+    }
+  }
+
+  Future<void> _exportDocumentPdf(String documentId) async {
+    if (_exportingDocumentIds.contains(documentId)) return;
+    setState(() => _exportingDocumentIds.add(documentId));
+
+    try {
+      await DocumentPdfExporter.export(context, documentId: documentId);
+    } finally {
+      if (mounted) setState(() => _exportingDocumentIds.remove(documentId));
     }
   }
 
@@ -349,6 +362,8 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
         final doc = documents[index];
         final docName = doc['document_name'] ?? 'Document ${index + 1}'; 
         final docDescription = doc['description']?.toString().trim() ?? ''; 
+        final String documentId = doc['id'].toString();
+        final bool isExporting = _exportingDocumentIds.contains(documentId);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -371,8 +386,6 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
-                final String documentId = doc['id']; 
-
                 final currentPath = GoRouterState.of(context).uri.path;
                 final cleanPath = currentPath.endsWith('/') 
                     ? currentPath.substring(0, currentPath.length - 1) 
@@ -437,7 +450,22 @@ class _InspectionDetailsScreenState extends State<InspectionDetailsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 8),
+                    isExporting
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: "Download PDF",
+                            icon: Icon(Icons.file_download_outlined, color: theme.colorScheme.primary),
+                            onPressed: () => _exportDocumentPdf(documentId),
+                          ),
+                    const SizedBox(width: 8),
                     Icon(
                       Icons.arrow_forward_ios_rounded,
                       color: theme.colorScheme.onSurface.withOpacity(0.3),

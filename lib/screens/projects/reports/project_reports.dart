@@ -35,7 +35,7 @@ class _ProjectReportsState extends State<ProjectReports> {
   // Reports currently downloading — shows a per-row spinner and blocks re-taps.
   final Set<String> _downloadingReportIds = {};
 
-  // Same storage-permission flow as the canvas PdfExportButton: ask once via
+  // Same storage-permission flow as DocumentPdfExporter: ask once via
   // a dialog, send the user to settings when permanently denied, and require
   // a fresh tap after granting.
   Future<bool> _ensureStoragePermission() async {
