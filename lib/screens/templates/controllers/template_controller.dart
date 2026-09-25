@@ -6,6 +6,7 @@ import '../../../models/template.dart';
 import '../../../models/tag_models.dart';
 import '../../tools/models/tool_group.dart';
 import '../../../core/api_service.dart';
+import '../../reports/controllers/report_controller.dart';
 
 
 class TemplateController extends ChangeNotifier {
@@ -30,10 +31,14 @@ class TemplateController extends ChangeNotifier {
   List<TemplateDocument> currentDocuments = [];
   bool isDocumentsLoading = false;
 
+  List<ReportTemplate> currentReportTemplates = [];
+  bool isReportTemplatesLoading = false;
+
   // 🚀 ADD THIS TO TEMPLATE CONTROLLER
   void clearTemplateDetails() {
     currentTagGroups = [];
     currentToolGroups = [];
+    currentReportTemplates = [];
     // Reset any other lists you might add later (like documents)
     notifyListeners(); 
   }
@@ -320,6 +325,51 @@ class TemplateController extends ChangeNotifier {
       } else {
         return false;
       }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 🚀 FETCH REPORT TEMPLATES ASSIGNED TO A TEMPLATE
+  Future<void> getReportTemplatesForTemplate(String templateId) async {
+    isReportTemplatesLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await apiService.get('/template/templateReportTemplateByTemplateId/$templateId');
+      final data = jsonDecode(response.body);
+
+      if (data['success'] == true && data['data'] != null) {
+        // Each item is a mapping row; the actual report template is nested
+        currentReportTemplates = (data['data'] as List)
+            .where((json) => json['report_template'] != null)
+            .map((json) => ReportTemplate.fromJson(json['report_template']))
+            .toList();
+      } else {
+        currentReportTemplates = [];
+      }
+    } catch (e) {
+      currentReportTemplates = [];
+    } finally {
+      isReportTemplatesLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // 🚀 ASSIGN REPORT TEMPLATES TO TEMPLATE
+  Future<bool> assignReportTemplatesToTemplate({
+    required String templateId,
+    required List<String> reportTemplateIds,
+  }) async {
+    try {
+      final payload = {
+        "report_template_id": reportTemplateIds,
+      };
+
+      final response = await apiService.post('/template/templateReportTemplate/create/$templateId', payload);
+      final responseData = jsonDecode(response.body);
+
+      return responseData['success'] == true;
     } catch (e) {
       return false;
     }
