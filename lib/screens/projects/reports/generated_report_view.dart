@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:html_editor_enhanced/html_editor.dart';
 import '../../../widgets/widgets.dart';
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
+import '../controllers/project_controller.dart';
 import 'preview_report_pdf_screen.dart';
 
 class GeneratedReportView extends StatefulWidget {
@@ -60,7 +62,10 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
     final didFinish = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PreviewReportPdfScreen(reportId: widget.reportId),
+        builder: (context) => PreviewReportPdfScreen(
+          reportId: widget.reportId,
+          reportName: _nameController.text.trim(),
+        ),
         fullscreenDialog: true,
       ),
     );
@@ -131,22 +136,75 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
     }
   }
 
+  // Page header in the same shape as the other project screens: breadcrumb
+  // (Projects · <project name> · Reports · <report name>) on top, then the
+  // title row. No back arrow here on purpose — this step is left via
+  // Update & Next. This screen is pushed imperatively on top of the
+  // project's reports route, so "Reports" pops back to that route while the
+  // other crumbs navigate through the router.
+  Widget _buildHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final project = projectController.currentProject;
+    final String? projectId = project?.id;
+
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Rebuilds with the name field so the last crumb tracks edits.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _nameController,
+            builder: (context, value, _) {
+              final String reportName = value.text.trim().isNotEmpty ? value.text.trim() : "Final Report";
+              return AppBreadcrumbs(
+                items: [
+                  BreadcrumbItem(
+                    label: "Projects",
+                    onTap: () => context.go('/projects'),
+                  ),
+                  BreadcrumbItem(
+                    label: project?.name ?? "Project",
+                    onTap: projectId == null || projectId.isEmpty
+                        ? null
+                        : () => context.go('/projects/details/$projectId/inspections'),
+                  ),
+                  BreadcrumbItem(
+                    label: "Reports",
+                    onTap: () => Navigator.of(context).popUntil((route) => route.settings is Page),
+                  ),
+                  BreadcrumbItem(label: reportName),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Final Report",
+            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
-      appBar: AppBar(
-        backgroundColor: colorScheme.surface,
-        centerTitle: true,
-        title: const Text("Final Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        automaticallyImplyLeading: false, // Remove back button
-      ),
-      body: Stack(
+      body: SafeArea(
+        bottom: false,
+        child: Stack(
         children: [
           Column(
             children: [
+          _buildHeader(theme),
+          Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
           // 🚀 REPORT NAME (mandatory — sent as `name` in the update API)
           Container(
             width: double.infinity,
@@ -263,6 +321,7 @@ class _GeneratedReportViewState extends State<GeneratedReportView> {
           ),
         ),
       ],
+    ),
     ),
   );
 }

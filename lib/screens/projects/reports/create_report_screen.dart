@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
+import '../controllers/project_controller.dart';
 // import 'report_skill_preview_screen.dart'; // Clarification-questions step is commented out below.
 import 'generated_report_view.dart';
 
@@ -454,6 +456,62 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
   */
 
+  // Page header in the same shape as the other project screens: breadcrumb
+  // (Projects · <project name> · Reports · Create Report) on top, then a back
+  // arrow + title row. This screen is pushed imperatively on top of the
+  // project's reports route, so "Reports" pops back to that route while the
+  // other crumbs navigate through the router.
+  Widget _buildHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final project = projectController.currentProject;
+
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppBreadcrumbs(
+            items: [
+              BreadcrumbItem(
+                label: "Projects",
+                onTap: () => context.go('/projects'),
+              ),
+              BreadcrumbItem(
+                label: project?.name ?? "Project",
+                onTap: () => context.go('/projects/details/${widget.projectId}/inspections'),
+              ),
+              BreadcrumbItem(
+                label: "Reports",
+                onTap: () => Navigator.of(context).popUntil((route) => route.settings is Page),
+              ),
+              BreadcrumbItem(label: "Create Report"),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.of(context).maybePop(),
+                color: colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                "Create Report",
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -461,16 +519,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
-      appBar: AppBar(
-        title: const Text("Create Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        backgroundColor: colorScheme.surface,
-        centerTitle: false,
-      ),
       body: PopScope(
         canPop: !_isProcessing,
         child: AbsorbPointer(
           absorbing: _isProcessing,
-          child: Stack(
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                _buildHeader(theme),
+                Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                Expanded(
+                  child: Stack(
             children: [
               Stepper(
                 type: StepperType.vertical, 
@@ -758,6 +818,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   ),
                 ),
             ],
+          ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

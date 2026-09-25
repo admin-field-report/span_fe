@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:html_editor_enhanced/html_editor.dart';
 
 import '../../../core/api_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../services/toast_service.dart';
+import '../controllers/project_controller.dart';
 
 class EditReportScreen extends StatefulWidget {
   final String reportId;
@@ -133,6 +135,72 @@ class _EditReportScreenState extends State<EditReportScreen> {
     }
   }
 
+  // Page header in the same shape as the other project screens: breadcrumb
+  // (Projects · <project name> · Reports · <report name>) on top, then a back
+  // arrow + title row. This screen is pushed imperatively on top of the
+  // project's reports route, so "Reports" pops back to that route while the
+  // other crumbs navigate through the router.
+  Widget _buildHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final project = projectController.currentProject;
+    final String? projectId = project?.id;
+
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Rebuilds with the name field so the last crumb tracks edits.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _nameController,
+            builder: (context, value, _) {
+              final String reportName = value.text.trim().isNotEmpty ? value.text.trim() : "Edit Report";
+              return AppBreadcrumbs(
+                items: [
+                  BreadcrumbItem(
+                    label: "Projects",
+                    onTap: () => context.go('/projects'),
+                  ),
+                  BreadcrumbItem(
+                    label: project?.name ?? "Project",
+                    onTap: projectId == null || projectId.isEmpty
+                        ? null
+                        : () => context.go('/projects/details/$projectId/inspections'),
+                  ),
+                  BreadcrumbItem(
+                    label: "Reports",
+                    onTap: () => Navigator.of(context).popUntil((route) => route.settings is Page),
+                  ),
+                  BreadcrumbItem(label: reportName),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+                color: colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                "Edit Report",
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -140,17 +208,18 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
-      appBar: AppBar(
-        centerTitle: false,
-        titleSpacing: 0,
-        title: Text("Edit Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        backgroundColor: colorScheme.surface,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Stack(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Header stays visible during save but can't be tapped.
+            AbsorbPointer(
+              absorbing: _isUpdating,
+              child: _buildHeader(theme),
+            ),
+            Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+            Expanded(
+              child: Stack(
         children: [
           if (_isLoading)
             const Center(child: CircularProgressIndicator())
@@ -278,6 +347,10 @@ class _EditReportScreenState extends State<EditReportScreen> {
               ),
             ),
         ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

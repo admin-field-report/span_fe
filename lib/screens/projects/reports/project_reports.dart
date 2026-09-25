@@ -297,6 +297,7 @@ class _ProjectReportsState extends State<ProjectReports> {
                                 MaterialPageRoute(
                                   builder: (context) => PreviewReportPdfScreen(
                                     reportId: report.id,
+                                    reportName: report.name,
                                     isReadOnly: true,
                                   ),
                                   fullscreenDialog: true,
