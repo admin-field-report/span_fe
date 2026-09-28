@@ -310,7 +310,7 @@ class EveProfileApi {
     return _decodeOrThrow(
       response,
       {200, 201, 202},
-      'Failed to start Eve profile generation.',
+      'Failed to start Span profile generation.',
     );
   }
 
@@ -340,7 +340,7 @@ class EveProfileApi {
         response.statusCode != 500) {
       final message = payload['message']?.toString() ?? response.body;
       throw Exception(
-        'Failed to fetch Eve profile job status. '
+        'Failed to fetch Span profile job status. '
         'Status code: ${response.statusCode}, Body: $message',
       );
     }
@@ -414,7 +414,7 @@ class EveProfileApi {
     final payload = _decodeOrThrow(
       response,
       {200},
-      'Failed to load Eve profile metadata.',
+      'Failed to load Span profile metadata.',
     );
 
     final data = _asMap(payload['data']);

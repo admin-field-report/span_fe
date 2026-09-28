@@ -110,10 +110,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   theme: theme,
                   icon: Icons.description_outlined,
                   title: 'Create from Word examples',
-                  subtitle: 'Eve learns a reusable .docx profile from sample reports.',
+                  subtitle: 'Span learns a reusable .docx profile from sample reports.',
                   onTap: () {
                     Navigator.of(dialogContext).pop();
                     context.go('/templates/reports/word-profile');
+                  },
+                ),
+                const SizedBox(height: 12),
+                _createOptionTile(
+                  theme: theme,
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'Span Report Profiler',
+                  subtitle: 'Span builds a Word template, instructions and style guide from examples.',
+                  onTap: () {
+                    Navigator.of(dialogContext).pop();
+                    context.go('/templates/reports/profiler');
                   },
                 ),
                 const SizedBox(height: 12),

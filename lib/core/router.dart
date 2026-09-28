@@ -17,6 +17,8 @@ import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../screens/reports/word_profile_template_screen.dart';
+import '../screens/reports/report_profiler_screen.dart';
+import '../screens/reports/report_profiler_detail_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -161,6 +163,23 @@ GoRoute(
               initialJobId: query['jobId'],
             );
           },
+        ),
+        // Report Profiler (Eve dev tool): list, new, and one template's
+        // setup / progress / outputs. 'new' must stay before ':templateId'.
+        GoRoute(
+          path: '/templates/reports/profiler',
+          builder: (context, state) => const ReportProfilerScreen(),
+        ),
+        GoRoute(
+          path: '/templates/reports/profiler/new',
+          builder: (context, state) => const ReportProfilerDetailScreen(),
+        ),
+        GoRoute(
+          path: '/templates/reports/profiler/:templateId',
+          builder: (context, state) => ReportProfilerDetailScreen(
+            key: ValueKey(state.pathParameters['templateId']),
+            templateId: state.pathParameters['templateId'],
+          ),
         ),
         GoRoute(
           path: '/ai',

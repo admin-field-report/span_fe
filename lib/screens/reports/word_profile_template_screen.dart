@@ -339,7 +339,7 @@ class _WordProfileTemplateScreenState extends State<WordProfileTemplateScreen> {
         if (status == 'failed') {
           throw Exception(
             _profileError ??
-                'Eve profile job failed. Check the template and try again.',
+                'Span profile job failed. Check the template and try again.',
           );
         }
 
@@ -575,7 +575,7 @@ class _WordProfileTemplateScreenState extends State<WordProfileTemplateScreen> {
               Text(
                 _isCreateMode
                     ? 'Upload example Word reports. Span will build a reusable profile pack for this company template.'
-                    : 'Manage the Eve Word profile for this template. Upload more examples if needed, then build or resume the profile job.',
+                    : 'Manage the Span Word profile for this template. Upload more examples if needed, then build or resume the profile job.',
                 style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
               ),
               const SizedBox(height: 20),
