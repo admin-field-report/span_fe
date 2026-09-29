@@ -73,7 +73,7 @@ class CanvasState extends State<Canvas> {
   double _maxScale = 5.0;
 
   // 🚀 OPTIMIZATION: Slimmed down default panel widths
-  double _leftPanelWidth = 220.0; 
+  double _leftPanelWidth = 240.0; 
   double _rightPanelWidth = 260.0;
 
   String _selectedTool = 'Select';
@@ -82,6 +82,8 @@ class CanvasState extends State<Canvas> {
   // instead of dropping back to 'Select'. A single tap on the locked tool,
   // picking another tool, or deselecting releases the lock.
   bool _isToolLocked = false;
+  // Expanded state of each standard tool category (by title), to drive the chevron.
+  final Map<String, bool> _toolCategoryExpanded = {};
   String? _lastToolTapName;
   DateTime? _lastToolTapTime;
 
@@ -1344,11 +1346,24 @@ class CanvasState extends State<Canvas> {
   // 🚀 OPTIMIZATION: Slimmer, denser folder structure for tools
   Widget _buildToolCategory(ThemeData theme, String title, List<_ToolItem> tools, {bool initiallyExpanded = false}) {
     final isMobile = AppResponsive.isMobileScreen(context);
-    
+    final isExpanded = _toolCategoryExpanded[title] ?? initiallyExpanded;
+
     return Theme(
-      data: theme.copyWith(dividerColor: Colors.transparent),
+      data: theme.copyWith(
+        dividerColor: Colors.transparent,
+        listTileTheme: theme.listTileTheme.copyWith(horizontalTitleGap: 6, minLeadingWidth: 0),
+      ),
       child: ExpansionTile(
         title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: isMobile ? 11 : 12)),
+        // Chevron on the left (right → down), matching the Custom Tools panel.
+        controlAffinity: ListTileControlAffinity.leading,
+        leading: AnimatedRotation(
+          turns: isExpanded ? 0.25 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: Icon(Icons.chevron_right, size: 20, color: theme.colorScheme.onSurfaceVariant),
+        ),
+        trailing: const SizedBox.shrink(),
+        onExpansionChanged: (expanded) => setState(() => _toolCategoryExpanded[title] = expanded),
         initiallyExpanded: initiallyExpanded,
         visualDensity: VisualDensity.compact,
         tilePadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 0.0),
@@ -1493,6 +1508,8 @@ class CanvasState extends State<Canvas> {
               labelColor: theme.colorScheme.primary,
               unselectedLabelColor: theme.colorScheme.onSurface.withOpacity(0.6),
               indicatorSize: TabBarIndicatorSize.tab,
+              labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
               tabs: [
                 const Tab(text: "Tools"),
                 if (hasCustomTab) Tab(text: widget.customTabLabel ?? "Custom"),

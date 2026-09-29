@@ -14,7 +14,7 @@ class ToolItem {
   });
 
   factory ToolItem.fromJson(Map<String, dynamic> json) {
-    final rawJsonData = json['jsonData'] ?? json['json_data'];
+    final rawJsonData = json['jsonData'] ?? json['json_data'] ?? json['imageJsonData'];
     
     String canvasDataString = '[]'; 
 

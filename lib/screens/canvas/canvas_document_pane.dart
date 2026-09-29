@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
@@ -14,6 +15,8 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/canvas/widgets/canvas_painter.dart';
 import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
+import 'widgets/leave_inspection_dialog.dart';
+import '../projects/widgets/project_settings.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
 
@@ -899,6 +902,36 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   // INITIALIZATION
   // ==========================================
 
+  Future<void> _openTagGroupSettings() async {
+    final changed = await ProjectSettingsManager.show(
+      context,
+      projectId: widget.projectId,
+      mode: ProjectSettingsMode.tags,
+      confirmCreate: _confirmLeaveToCreate,
+    );
+    if (!changed || !mounted) return;
+    setState(() => _isLoadingTags = true);
+    await _fetchAvailableTags();
+  }
+
+  /// Confirms leaving the inspection for a create page, saving pending changes first.
+  /// Returns false if the user stays or the save fails.
+  Future<bool> _confirmLeaveToCreate(ProjectSettingsMode mode) {
+    return LeaveInspectionDialog.show(
+      context,
+      noun: mode == ProjectSettingsMode.tags ? "Tag Group" : "Tool Set",
+      onConfirm: () async {
+        if (_hasUnsavedChanges) await _saveAnnotations();
+        return !_hasUnsavedChanges;
+      },
+    );
+  }
+
+  Future<void> _openCreateTagGroup() async {
+    if (!await _confirmLeaveToCreate(ProjectSettingsMode.tags) || !mounted) return;
+    context.go('/templates/tags');
+  }
+
   Future<void> _fetchAvailableTags() async {
     try {
       final response = await _apiService.get('/projectTagGroup/${widget.projectId}?includeTags=true');
@@ -917,6 +950,23 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     } finally {
       if (mounted) setState(() => _isLoadingTags = false);
     }
+  }
+
+  Future<void> _openToolSetSettings() async {
+    final changed = await ProjectSettingsManager.show(
+      context,
+      projectId: widget.projectId,
+      mode: ProjectSettingsMode.tools,
+      confirmCreate: _confirmLeaveToCreate,
+    );
+    if (!changed || !mounted) return;
+    setState(() => _isLoadingCustomTools = true);
+    await _fetchCustomTools();
+  }
+
+  Future<void> _openCreateToolSet() async {
+    if (!await _confirmLeaveToCreate(ProjectSettingsMode.tools) || !mounted) return;
+    context.go('/templates/tools');
   }
 
   Future<void> _fetchCustomTools() async {
@@ -1390,6 +1440,8 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
             selectedTool: _selectedCustomTool,
             isSelectedToolLocked: _isCustomToolLocked,
             onToolSelected: _handleCustomToolTap,
+            onAddToolSets: _openToolSetSettings,
+            onCreateToolSet: _openCreateToolSet,
             onClose: () {
               setState(() {
                 _selectedCustomTool = null;
@@ -1419,6 +1471,8 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               setState(() => _inspectionTagIds = val);
               _hasUnsavedChanges = true;
             },
+            onAddTagGroups: _openTagGroupSettings,
+            onCreateTagGroup: _openCreateTagGroup,
 
             onUpdate: () {
               _hasUnsavedChanges = true;

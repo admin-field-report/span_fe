@@ -8,6 +8,7 @@ import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
 import '../../../models/project.dart';
 import 'multi_camera_capture_screen.dart';
+import 'empty_selection_card.dart';
 
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
@@ -20,6 +21,8 @@ class PropertiesPanel extends StatefulWidget {
   
   final ValueChanged<String>? onInspectionDescriptionChanged;
   final ValueChanged<List<String>>? onInspectionTagsChanged;
+  final VoidCallback? onAddTagGroups;
+  final VoidCallback? onCreateTagGroup;
 
   final VoidCallback onUpdate;
   final VoidCallback onClose;
@@ -43,6 +46,8 @@ class PropertiesPanel extends StatefulWidget {
     this.inspectionImageUrls,
     this.onInspectionDescriptionChanged,
     this.onInspectionTagsChanged,
+    this.onAddTagGroups,
+    this.onCreateTagGroup,
 
     required this.onUpdate,
     required this.onClose,
@@ -376,7 +381,29 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   
                   const SizedBox(height: 24),
 
-                  Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      ),
+                      if (widget.onAddTagGroups != null)
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: IconButton(
+                            onPressed: widget.onAddTagGroups,
+                            tooltip: "Add Tag Groups",
+                            padding: EdgeInsets.zero,
+                            iconSize: 18,
+                            style: IconButton.styleFrom(
+                              side: BorderSide(color: theme.colorScheme.outlineVariant),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            icon: Icon(Icons.add, color: theme.colorScheme.onSurface),
+                          ),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
 
                   if (widget.isLoadingTags) 
@@ -387,17 +414,13 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       ),
                     )
                   else if (widget.availableTags.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Text(
-                          "No tag groups available.",
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
+                    EmptySelectionCard(
+                      icon: Icons.sell_outlined,
+                      title: "No Tag Group selected for this project.",
+                      actionLabel: "Add Tag Groups",
+                      onAction: widget.onAddTagGroups,
+                      linkLabel: "Create a new Tag Group",
+                      onLink: widget.onCreateTagGroup,
                     )
                   else
                     // 🚀 The scrollable tag area with matching layout
@@ -513,6 +536,13 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       Text("Attached Images", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                     ],
+
+                    if (imageUrls.isEmpty && widget.allowImageUpload)
+                      const EmptySelectionCard(
+                        icon: Icons.image_outlined,
+                        title: "No images attached.",
+                        subtitle: "Use Upload Image below to add photos.",
+                      ),
 
                     if (imageUrls.isNotEmpty)
                       GridView.builder(
