@@ -67,7 +67,7 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
     });
     try {
       final results = await Future.wait([
-        ReportGenerationApi.listInspections(),
+        ReportGenerationApi.listInspections(widget.projectId),
         ReportGenerationApi.listReadyTemplates(),
       ]);
       if (!mounted) return;
@@ -101,7 +101,7 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
     final id = _inspectionId;
     if (id == null) return;
     try {
-      final runs = await ReportGenerationApi.listRuns(inspectionId: id, limit: 3);
+      final runs = await ReportGenerationApi.listRuns(projectId: widget.projectId, inspectionId: id, limit: 3);
       if (mounted && id == _inspectionId) setState(() => _recentRuns = runs);
     } catch (_) {
       // Optional context only.
@@ -128,7 +128,11 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
     if (inspection == null || template == null) return;
     setState(() => _starting = true);
     try {
-      final run = await ReportGenerationApi.startRun(templateId: template.id, inspectionId: inspection.id);
+      final run = await ReportGenerationApi.startRun(
+        projectId: widget.projectId,
+        templateId: template.id,
+        inspectionId: inspection.id,
+      );
       if (!mounted) return;
       context.go('/projects/${widget.projectId}/reports/runs/${run.jobId}');
     } catch (e) {
@@ -153,8 +157,8 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
         AppBreadcrumbs(
           items: [
             BreadcrumbItem(label: 'Projects', onTap: () => context.go('/projects')),
-            BreadcrumbItem(label: projectName, onTap: () => context.go('/projects/${widget.projectId}/reports')),
-            BreadcrumbItem(label: 'Reports', onTap: () => context.go('/projects/${widget.projectId}/reports')),
+            BreadcrumbItem(label: projectName, onTap: () => context.go('/projects/details/${widget.projectId}/reports')),
+            BreadcrumbItem(label: 'Reports', onTap: () => context.go('/projects/details/${widget.projectId}/reports')),
             BreadcrumbItem(label: 'Generate report'),
           ],
         ),
@@ -165,7 +169,7 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-              onPressed: () => context.go('/projects/${widget.projectId}/reports'),
+              onPressed: () => context.go('/projects/details/${widget.projectId}/reports'),
             ),
             const SizedBox(width: 12),
             Text('Generate report', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
@@ -178,14 +182,6 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
   }
 
   Widget _buildBody(ThemeData theme) {
-    if (!ReportGenerationApi.isConfigured) {
-      return Center(
-        child: Text(
-          'Report generation is not configured: set EVE_UI_BASE_URL (and EVE_UI_KEY), then reload.',
-          style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-        ),
-      );
-    }
     if (_loading) return Center(child: CircularProgressIndicator(color: theme.colorScheme.primary));
     if (_loadError != null) {
       return Center(
@@ -229,7 +225,7 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
           children: [
             Expanded(child: _sectionTitle(theme, '2', 'Report template')),
             TextButton.icon(
-              onPressed: () => context.go('/templates/reports/profiler'),
+              onPressed: () => context.go('/templates/reports'),
               icon: const Icon(Icons.tune_rounded, size: 16),
               label: const Text('Manage templates'),
             ),

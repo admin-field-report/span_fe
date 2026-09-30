@@ -12,11 +12,10 @@ import './report_templete_details_screen.dart';
 import '../../services/toast_service.dart';
 import '../../widgets/confirmation/confirmation_remove.dart';
 
-/// Word-profile statuses that mean "this template's Word flow has started" —
-/// rows in any of these states open [WordProfileTemplateScreen] instead of
-/// the plain HTML-skill details screen, since the Word job status panel is
-/// the more useful place to land while a profile build is in progress.
-const Set<String> _wordProfileActiveStatuses = {
+/// Profile statuses that mean Span has built (or is building) this
+/// template from example reports: those rows open the Span template screen
+/// (progress, outputs, re-build) instead of the skill details screen.
+const Set<String> _spanProfileStatuses = {
   'queued',
   'running',
   'needs_clarification',
@@ -72,10 +71,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  /// "Create Report" now offers two starting points: the Eve Word-profile
-  /// flow (build a profile from example `.docx`/`.pdf` reports) or the
-  /// existing PDF/skill-example flow ([AddReportForm]). Shown as a small
-  /// centered dialog on both desktop and mobile since it's just two choices.
+  /// "Create Report" offers two starting points: Span builds a Word template
+  /// from example `.docx`/`.pdf` reports (the report agent), or the existing
+  /// PDF/skill-example flow ([AddReportForm]). Shown as a small centered
+  /// dialog on both desktop and mobile since it's just two choices.
   void _showCreateReportChooser(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -108,23 +107,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 const SizedBox(height: 20),
                 _createOptionTile(
                   theme: theme,
-                  icon: Icons.description_outlined,
-                  title: 'Create from Word examples',
-                  subtitle: 'Span learns a reusable .docx profile from sample reports.',
-                  onTap: () {
-                    Navigator.of(dialogContext).pop();
-                    context.go('/templates/reports/word-profile');
-                  },
-                ),
-                const SizedBox(height: 12),
-                _createOptionTile(
-                  theme: theme,
                   icon: Icons.auto_awesome_outlined,
-                  title: 'Span Report Profiler',
-                  subtitle: 'Span builds a Word template, instructions and style guide from examples.',
+                  title: 'Build from example reports',
+                  subtitle: 'Span builds a Word template, instructions and style guide from your examples.',
                   onTap: () {
                     Navigator.of(dialogContext).pop();
-                    context.go('/templates/reports/profiler');
+                    context.go('/templates/reports/profiler/new');
                   },
                 ),
                 const SizedBox(height: 12),
@@ -241,23 +229,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  /// Rows whose Word profile has ever been started land on the Word job
-  /// status screen (resuming with whatever we already know); everything
-  /// else keeps opening the plain HTML-skill details screen.
+  /// Templates Span has built (or is building) open the Span template
+  /// screen; everything else keeps opening the skill details screen.
   void _onRowTap(BuildContext context, ReportTemplate report) {
     final status = (report.profileStatus ?? 'none').toLowerCase();
-    if (_wordProfileActiveStatuses.contains(status)) {
-      context.go(
-        Uri(
-          path: '/templates/reports/word-profile/${report.id}',
-          queryParameters: {
-            'title': report.name,
-            'status': status,
-            if (report.profileJobId != null && report.profileJobId!.isNotEmpty)
-              'jobId': report.profileJobId!,
-          },
-        ).toString(),
-      );
+    if (_spanProfileStatuses.contains(status)) {
+      context.go('/templates/reports/profiler/${report.id}');
       return;
     }
 

@@ -43,7 +43,7 @@ class _SpanReportsListState extends State<SpanReportsList> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final runs = await ReportGenerationApi.listRuns(inspectionId: widget.inspectionId, limit: 30);
+      final runs = await ReportGenerationApi.listRuns(projectId: widget.projectId, inspectionId: widget.inspectionId, limit: 30);
       if (!mounted) return;
       setState(() {
         _runs = runs;

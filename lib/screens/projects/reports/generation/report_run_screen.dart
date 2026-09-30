@@ -93,6 +93,10 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
   bool _regenerating = false;
   bool _previewApplied = false;
 
+  // After a save the server rebuilds the Word file (seconds); poll until done.
+  static const Duration _rebuildPollInterval = Duration(seconds: 3);
+  Timer? _rebuildTimer;
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +114,7 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _clockTimer?.cancel();
+    _rebuildTimer?.cancel();
     super.dispose();
   }
 
@@ -164,6 +169,7 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
         _working = working;
         _dirty = !fillMapsEqual(working, _saved!);
       });
+      if (document.edit?.isPending == true) _watchRebuild();
       if (edit?.openDetails == true) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _detail != null) showReportDetailsSheet(context, _detail!);
@@ -289,7 +295,11 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
     if (run == null || run.inspectionId == null) return;
     setState(() => _regenerating = true);
     try {
-      final next = await ReportGenerationApi.startRun(templateId: run.templateId, inspectionId: run.inspectionId!);
+      final next = await ReportGenerationApi.startRun(
+        projectId: widget.projectId,
+        templateId: run.templateId,
+        inspectionId: run.inspectionId!,
+      );
       if (mounted) _openRun(next.jobId);
     } catch (e) {
       if (mounted) ToastService.show(context, type: ToastType.error, message: _error(e));
@@ -357,12 +367,52 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
           blanks: document.blanks,
         );
       });
-      ToastService.show(context, type: ToastType.success, message: 'Changes saved. The Word file is being updated.');
+      if (status.status == 'rebuild_failed') {
+        ToastService.show(context, type: ToastType.error, message: "Changes saved, but the Word file couldn't be updated. Save again to retry.");
+      } else {
+        ToastService.show(context, type: ToastType.success, message: 'Changes saved. The Word file is being updated.');
+        _watchRebuild();
+      }
     } catch (e) {
       if (mounted) ToastService.show(context, type: ToastType.error, message: _error(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Poll the saved edit until the Word file is rebuilt (or the rebuild
+  /// fails), then record the result so Download serves the edited file.
+  void _watchRebuild() {
+    if (widget.preview != null || _rebuildTimer != null) return;
+    _rebuildTimer = Timer.periodic(_rebuildPollInterval, (_) async {
+      try {
+        final latest = await ReportGenerationApi.getFillMap(widget.jobId);
+        final edit = latest.edit;
+        if (!mounted || edit == null || edit.isPending) return;
+        _rebuildTimer?.cancel();
+        _rebuildTimer = null;
+        final document = _document;
+        if (document == null) return;
+        setState(() {
+          _document = ReportFillDocument(
+            fillMap: document.fillMap,
+            source: document.source,
+            edit: edit,
+            title: document.title,
+            sections: document.sections,
+            labels: document.labels,
+            blanks: document.blanks,
+          );
+        });
+        if (edit.status == 'rebuild_failed') {
+          ToastService.show(context, type: ToastType.error, message: "The Word file couldn't be updated with your changes. Save again to retry.");
+        } else {
+          ToastService.show(context, type: ToastType.success, message: 'The Word file now includes your changes.');
+        }
+      } catch (_) {
+        // Keep polling; a later tick may succeed.
+      }
+    });
   }
 
   Future<String?> _pickPhoto() async {
@@ -401,8 +451,8 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
         AppBreadcrumbs(
           items: [
             BreadcrumbItem(label: 'Projects', onTap: () => context.go('/projects')),
-            BreadcrumbItem(label: run?.inspectionName ?? 'Project', onTap: () => context.go('/projects/${widget.projectId}/reports')),
-            BreadcrumbItem(label: 'Reports', onTap: () => context.go('/projects/${widget.projectId}/reports')),
+            BreadcrumbItem(label: run?.inspectionName ?? 'Project', onTap: () => context.go('/projects/details/${widget.projectId}/reports')),
+            BreadcrumbItem(label: 'Reports', onTap: () => context.go('/projects/details/${widget.projectId}/reports')),
             BreadcrumbItem(label: _title),
           ],
         ),
@@ -426,7 +476,7 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
           constraints: const BoxConstraints(),
           tooltip: 'Back to reports',
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.go('/projects/${widget.projectId}/reports'),
+          onPressed: () => context.go('/projects/details/${widget.projectId}/reports'),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -473,7 +523,8 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
             icon: Icons.download_rounded,
             variant: _dirty ? ButtonVariant.outline : ButtonVariant.filled,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            onPressed: detail?.reportPath == null ? null : _download,
+            // Wait for the rebuilt file so a download never misses saved edits.
+            onPressed: detail?.reportPath == null || (edit != null && edit.isPending) ? null : _download,
           ),
           const SizedBox(width: 4),
           PopupMenuButton<String>(
@@ -512,14 +563,6 @@ class _ReportRunScreenState extends State<ReportRunScreen> {
   }
 
   Widget _buildBody(ThemeData theme) {
-    if (widget.preview == null && !ReportGenerationApi.isConfigured) {
-      return _centeredMessage(
-        theme,
-        icon: Icons.settings_outlined,
-        title: 'Report generation is not configured',
-        message: 'Set EVE_UI_BASE_URL (and EVE_UI_KEY) in the app config, then reload.',
-      );
-    }
     final detail = _detail;
     if (detail == null) {
       if (_loadError != null) {

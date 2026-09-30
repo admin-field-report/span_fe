@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import '../../../../core/api_service.dart';
-import 'eve_profile_api.dart';
 
 enum CreateReportStatus { success, partialSuccess, failure }
 
@@ -348,7 +347,7 @@ class ReportController extends ChangeNotifier {
       final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
       final String s3Key = urlInfo['key'];
       final String contentType = urlInfo['content_type']?.toString() ??
-          EveProfileApi.contentTypeForFileName(file.name);
+          _contentTypeForExtension(file.extension);
 
       if (file.bytes == null) continue;
 

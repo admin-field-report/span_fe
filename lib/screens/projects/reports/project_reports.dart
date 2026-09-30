@@ -6,6 +6,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -17,7 +18,7 @@ import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
 import './edit_report_screen.dart';
-import './generate_word_report_screen.dart';
+import './generation/report_generation_api.dart';
 import './preview_report_pdf_screen.dart';
 
 class ProjectReports extends StatefulWidget {
@@ -35,6 +36,27 @@ class _ProjectReportsState extends State<ProjectReports> {
 
   // Reports currently downloading — shows a per-row spinner and blocks re-taps.
   final Set<String> _downloadingReportIds = {};
+
+  // Report id -> Span report run: reports Span wrote open in the report
+  // screen (progress, then the editable document) instead of the HTML editor.
+  Map<String, String> _spanRunByReport = {};
+
+  Future<void> _loadSpanRuns() async {
+    try {
+      final runs = await ReportGenerationApi.listRuns(projectId: widget.projectId, limit: 100);
+      if (!mounted) return;
+      setState(() {
+        _spanRunByReport = {
+          for (final run in runs)
+            if (run.reportId != null) run.reportId!: run.jobId,
+        };
+      });
+    } catch (_) {
+      // Optional: without it these rows open like any other report.
+    }
+  }
+
+  void _openSpanRun(String jobId) => context.go('/projects/${widget.projectId}/reports/runs/$jobId');
 
   // Same storage-permission flow as DocumentPdfExporter: ask once via
   // a dialog, send the user to settings when permanently denied, and require
@@ -208,6 +230,7 @@ class _ProjectReportsState extends State<ProjectReports> {
   void initState() {
     super.initState();
     projectController.getAllReports(widget.projectId);
+    _loadSpanRuns();
   }
 
   List<ProjectReport> _getFilteredReports() {
@@ -278,17 +301,11 @@ class _ProjectReportsState extends State<ProjectReports> {
                 _createOptionTile(
                   theme: theme,
                   icon: Icons.description_outlined,
-                  title: 'Word report',
-                  subtitle: 'Fill a ready Eve Word profile using selected inspections.',
-                  onTap: () async {
+                  title: 'Write with Span',
+                  subtitle: "Span writes a Word report from an inspection, in your template's format.",
+                  onTap: () {
                     Navigator.of(dialogContext).pop();
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => GenerateWordReportScreen(projectId: widget.projectId),
-                      ),
-                    );
-                    if (mounted) projectController.getAllReports(widget.projectId);
+                    context.go('/projects/${widget.projectId}/reports/generate');
                   },
                 ),
                 const SizedBox(height: 12),
@@ -412,6 +429,11 @@ class _ProjectReportsState extends State<ProjectReports> {
                             data: displayData,
                             showCheckboxes: false,
                             onRowTap: (report) {
+                              final spanRun = _spanRunByReport[report.id];
+                              if (spanRun != null) {
+                                _openSpanRun(spanRun);
+                                return;
+                              }
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -500,6 +522,11 @@ class _ProjectReportsState extends State<ProjectReports> {
                                       color: colorScheme.primary,
                                       tooltip: "Edit Report",
                                       onPressed: () async {
+                                        final spanRun = _spanRunByReport[report.id];
+                                        if (spanRun != null) {
+                                          _openSpanRun(spanRun);
+                                          return;
+                                        }
                                         final didUpdate = await Navigator.push(
                                           context,
                                           MaterialPageRoute(

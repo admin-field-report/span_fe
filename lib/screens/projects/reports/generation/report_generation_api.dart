@@ -1,42 +1,20 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../../core/api_service.dart';
 import '../../../reports/controllers/report_profiler_api.dart' show ProfilerTemplate, spanText;
 
-/// Client for Span report generation, served by the dev tool's Span UI API
-/// (`span-eve-agent`, routes under `/api/span-ui/runs` and
-/// `/api/span-ui/inspections`). Same configuration as [ReportProfilerApi]:
-/// `EVE_UI_BASE_URL` and `EVE_UI_KEY` (compile-time define wins over `.env`).
+/// Client for writing reports with the Span report agent: the Span backend's
+/// `/span-report/*` routes (be_rest_api), called through [apiService] so they
+/// carry the signed-in user's token. Report files and photos are fetched
+/// through short-lived links, and replacement photos go straight to storage.
 class ReportGenerationApi {
-  static const String _definedBaseUrl = String.fromEnvironment('EVE_UI_BASE_URL');
-  static const String _definedKey = String.fromEnvironment('EVE_UI_KEY');
+  static final http.Client _storage = http.Client();
 
-  static final http.Client _client = http.Client();
-
-  static String get baseUrl {
-    final value = _definedBaseUrl.isNotEmpty ? _definedBaseUrl : dotenv.get('EVE_UI_BASE_URL', fallback: '');
-    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
-  }
-
-  static String get _key => _definedKey.isNotEmpty ? _definedKey : dotenv.get('EVE_UI_KEY', fallback: '');
-
-  static bool get isConfigured => baseUrl.isNotEmpty;
-
-  static Uri _uri(String path, [Map<String, String>? query]) {
-    if (!isConfigured) {
-      throw Exception('Report generation is not configured: set EVE_UI_BASE_URL in .env.');
-    }
-    return Uri.parse('$baseUrl/api/span-ui$path').replace(queryParameters: query);
-  }
-
-  static Map<String, String> _headers({bool json = false}) => {
-        'Accept': 'application/json',
-        if (json) 'Content-Type': 'application/json',
-        if (_key.isNotEmpty) 'x-span-ui-key': _key,
-      };
+  static String _path(String path, [Map<String, String>? query]) =>
+      Uri(path: '/span-report$path', queryParameters: query == null || query.isEmpty ? null : query).toString();
 
   static Map<String, dynamic> _decode(http.Response response, String failure) {
     dynamic body;
@@ -47,99 +25,107 @@ class ReportGenerationApi {
     }
     final map = _map(body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      if (response.statusCode == 401) {
-        throw Exception('$failure The Span UI key is missing or wrong (EVE_UI_KEY).');
-      }
-      throw Exception(spanText('$failure ${map['error'] ?? 'HTTP ${response.statusCode}'}'));
+      throw Exception(spanText('$failure ${map['error'] ?? map['message'] ?? 'HTTP ${response.statusCode}'}'));
     }
     return map;
   }
 
-  static Future<List<GenerationInspection>> listInspections() async {
-    final data = _decode(await _client.get(_uri('/inspections'), headers: _headers()), 'Could not load inspections.');
+  /// Fetch a file through the short-lived link the API returns for it.
+  static Future<Uint8List> _download(String endpoint, String failure) async {
+    final link = _decode(await apiService.get(endpoint), failure);
+    final response = await _storage.get(Uri.parse(link['url'].toString()));
+    if (response.statusCode != 200) {
+      throw Exception('$failure (storage returned ${response.statusCode})');
+    }
+    return response.bodyBytes;
+  }
+
+  /// The project's inspections, newest first.
+  static Future<List<GenerationInspection>> listInspections(String projectId) async {
+    final data = _decode(
+      await apiService.get(_path('/inspections', {'projectId': projectId})),
+      'Could not load inspections.',
+    );
     return _mapList(data['inspections']).map(GenerationInspection.fromJson).toList();
   }
 
   /// Report templates Span can write with (profile ready), newest first.
   static Future<List<ProfilerTemplate>> listReadyTemplates() async {
-    final data = _decode(await _client.get(_uri('/report-templates'), headers: _headers()), 'Could not load report templates.');
+    final data = _decode(await apiService.get(_path('/report-templates')), 'Could not load report templates.');
     return _mapList(data['templates']).map(ProfilerTemplate.fromJson).toList();
   }
 
-  static Future<List<ReportRun>> listRuns({String? inspectionId, String? templateId, int limit = 25}) async {
+  static Future<List<ReportRun>> listRuns({
+    required String projectId,
+    String? inspectionId,
+    String? templateId,
+    int limit = 25,
+  }) async {
     final data = _decode(
-      await _client.get(
-        _uri('/runs', {
-          'limit': '$limit',
-          'inspectionId': ?inspectionId,
-          'templateId': ?templateId,
-        }),
-        headers: _headers(),
-      ),
+      await apiService.get(_path('/runs', {
+        'projectId': projectId,
+        'limit': '$limit',
+        'inspectionId': ?inspectionId,
+        'templateId': ?templateId,
+      })),
       'Could not load reports.',
     );
     return _mapList(data['runs']).map(ReportRun.fromJson).toList();
   }
 
-  static Future<ReportRun> startRun({required String templateId, required String inspectionId}) async {
+  static Future<ReportRun> startRun({
+    required String projectId,
+    required String templateId,
+    required String inspectionId,
+  }) async {
     final data = _decode(
-      await _client.post(
-        _uri('/runs'),
-        headers: _headers(json: true),
-        body: jsonEncode({'templateId': templateId, 'inspectionId': inspectionId}),
-      ),
+      await apiService.post(_path('/runs'), {
+        'projectId': projectId,
+        'templateId': templateId,
+        'inspectionId': inspectionId,
+      }),
       'Could not start the report.',
     );
     return ReportRun.fromJson(_map(data['run']));
   }
 
   static Future<ReportRunDetail> getRun(String jobId) async {
-    final data = _decode(await _client.get(_uri('/runs/$jobId'), headers: _headers()), 'Could not load the report.');
+    final data = _decode(await apiService.get(_path('/runs/$jobId')), 'Could not load the report.');
     return ReportRunDetail.fromJson(data);
   }
 
   static Future<GenerationEvents> getEvents(String jobId, {int? since}) async {
     final data = _decode(
-      await _client.get(_uri('/runs/$jobId/events', since == null ? null : {'since': '$since'}), headers: _headers()),
+      await apiService.get(_path('/runs/$jobId/events', since == null ? null : {'since': '$since'})),
       'Could not load progress.',
     );
     return GenerationEvents.fromJson(data);
   }
 
-  static Future<Uint8List> getFileBytes(String jobId, String path) async {
-    final response = await _client.get(_uri('/runs/$jobId/file', {'path': path}), headers: _headers());
-    if (response.statusCode != 200) _decode(response, 'Could not load $path.');
-    return response.bodyBytes;
-  }
+  static Future<Uint8List> getFileBytes(String jobId, String path) =>
+      _download(_path('/runs/$jobId/file', {'path': path}), 'Could not load $path.');
 
   /// The report as an editable document: its fill map (every template
   /// placeholder and the value used), the template's section order and field
   /// labels, the fields the inspection didn't answer, and the photos used.
   static Future<ReportFillDocument> getFillMap(String jobId) async {
-    final data = _decode(await _client.get(_uri('/runs/$jobId/fill-map'), headers: _headers()), 'Could not load the report for editing.');
+    final data = _decode(await apiService.get(_path('/runs/$jobId/fill-map')), 'Could not load the report for editing.');
     return ReportFillDocument.fromJson(data);
   }
 
   /// Save the edited fill map. The server stores it and rebuilds the Word file
-  /// from the template (deterministic fill, no model call).
+  /// from the template (deterministic fill, no writing).
   static Future<ReportEditStatus> saveEdits(String jobId, Map<String, dynamic> fillMap) async {
     final data = _decode(
-      await _client.post(
-        _uri('/runs/$jobId/edit'),
-        headers: _headers(json: true),
-        body: jsonEncode({'fillMap': fillMap}),
-      ),
+      await apiService.post(_path('/runs/$jobId/edit'), {'fillMap': fillMap}),
       'Could not save your changes.',
     );
     return ReportEditStatus.fromJson(data);
   }
 
   /// A photo the report uses (a path from the fill map).
-  static Future<Uint8List> getPhotoBytes(String jobId, String path) async {
-    final response = await _client.get(_uri('/runs/$jobId/photo', {'path': path}), headers: _headers());
-    if (response.statusCode != 200) _decode(response, 'Could not load the photo.');
-    return response.bodyBytes;
-  }
+  static Future<Uint8List> getPhotoBytes(String jobId, String path) =>
+      _download(_path('/runs/$jobId/photo', {'path': path}), 'Could not load the photo.');
 
   /// Upload a replacement photo; returns the path to put in the fill map.
   static Future<String> uploadPhoto(String jobId, Uint8List bytes, String fileName) async {
@@ -149,23 +135,22 @@ class ReportGenerationApi {
         : lower.endsWith('.webp')
             ? 'image/webp'
             : 'image/jpeg';
-    final data = _decode(
-      await _client.post(
-        _uri('/runs/$jobId/photo'),
-        headers: {..._headers(), 'Content-Type': type},
-        body: bytes,
-      ),
+    final grant = _decode(
+      await apiService.post(_path('/runs/$jobId/photo/upload-url'), {'contentType': type}),
       'Could not upload the photo.',
     );
-    return data['path']?.toString() ?? '';
+    final upload = _map(grant['upload']);
+    final headers = _map(upload['headers']).map((k, v) => MapEntry(k, v.toString()));
+    final put = await _storage.put(Uri.parse(upload['url'].toString()), headers: headers, body: bytes);
+    if (put.statusCode < 200 || put.statusCode >= 300) {
+      throw Exception('Could not upload the photo (storage returned ${put.statusCode}).');
+    }
+    return grant['path']?.toString() ?? '';
   }
 
   /// Cancel a running report (shared job action route).
   static Future<void> cancelRun(String jobId) async {
-    _decode(
-      await _client.post(_uri('/jobs/$jobId'), headers: _headers(json: true), body: jsonEncode({'action': 'cancel'})),
-      'Could not cancel the report.',
-    );
+    _decode(await apiService.post(_path('/jobs/$jobId'), {'action': 'cancel'}), 'Could not cancel the report.');
   }
 }
 
@@ -233,6 +218,9 @@ class ReportRun {
   final String? templateName;
   final String? inspectionId;
   final String? inspectionName;
+
+  /// The project report row this run writes (the Reports tab lists it).
+  final String? reportId;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final int? durationSeconds;
@@ -251,6 +239,7 @@ class ReportRun {
     this.templateName,
     this.inspectionId,
     this.inspectionName,
+    this.reportId,
     this.updatedAt,
     this.durationSeconds,
     this.qaResult,
@@ -270,6 +259,7 @@ class ReportRun {
       templateName: json['templateName']?.toString(),
       inspectionId: json['inspectionId']?.toString(),
       inspectionName: json['inspectionName']?.toString(),
+      reportId: json['reportId']?.toString(),
       createdAt: _date(json['createdAt']) ?? DateTime.now(),
       updatedAt: _date(json['updatedAt']),
       durationSeconds: _int(json['durationSeconds']),

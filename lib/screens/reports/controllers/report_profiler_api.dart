@@ -1,54 +1,21 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
-/// Client for the Report Profiler API served by the Eve dev tool
-/// (`span-eve-agent`, routes under `/api/span-ui/*`).
+import '../../../core/api_service.dart';
+
+/// Client for building report templates with the Span report agent: the Span
+/// backend's `/span-report/*` routes (be_rest_api), called through
+/// [apiService] so they carry the signed-in user's token.
 ///
-/// Configuration (read once, compile-time define wins over `.env`):
-/// - `EVE_UI_BASE_URL` — dev tool origin, e.g. `https://span-eve-devtool.vercel.app`
-///   or `http://localhost:3100` for a local `next dev`.
-/// - `EVE_UI_KEY` — the dev tool password, sent as `x-span-ui-key`. Pass it
-///   with `--dart-define=EVE_UI_KEY=...` rather than committing it to `.env`.
-///
-/// This is separate from the Span backend ([apiService]): profiler templates
-/// live in the dev tool's store until the flow moves into the Span BE.
+/// Files never pass through the API: uploads go straight to storage with a
+/// one-off upload URL, and downloads use a short-lived link.
 class ReportProfilerApi {
-  static const String _definedBaseUrl = String.fromEnvironment('EVE_UI_BASE_URL');
-  static const String _definedKey = String.fromEnvironment('EVE_UI_KEY');
+  static final http.Client _storage = http.Client();
 
-  /// Files up to this size go through the API as multipart; larger ones are
-  /// PUT straight to storage (Vercel functions cap request bodies at 4.5 MB).
-  static const int maxMultipartBytes = 4 * 1024 * 1024;
-
-  static final http.Client _client = http.Client();
-
-  static String get baseUrl {
-    final value = _definedBaseUrl.isNotEmpty
-        ? _definedBaseUrl
-        : dotenv.get('EVE_UI_BASE_URL', fallback: '');
-    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
-  }
-
-  static String get _key =>
-      _definedKey.isNotEmpty ? _definedKey : dotenv.get('EVE_UI_KEY', fallback: '');
-
-  static bool get isConfigured => baseUrl.isNotEmpty;
-
-  static Uri _uri(String path, [Map<String, String>? query]) {
-    if (!isConfigured) {
-      throw Exception('Report Profiler is not configured: set EVE_UI_BASE_URL in .env.');
-    }
-    return Uri.parse('$baseUrl/api/span-ui$path').replace(queryParameters: query);
-  }
-
-  static Map<String, String> _headers({bool json = false}) => {
-        'Accept': 'application/json',
-        if (json) 'Content-Type': 'application/json',
-        if (_key.isNotEmpty) 'x-span-ui-key': _key,
-      };
+  static String _path(String path, [Map<String, String>? query]) =>
+      Uri(path: '/span-report$path', queryParameters: query == null || query.isEmpty ? null : query).toString();
 
   static Map<String, dynamic> _asMap(dynamic raw) {
     if (raw is Map<String, dynamic>) return raw;
@@ -67,13 +34,20 @@ class ReportProfilerApi {
     }
     final map = _asMap(body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      if (response.statusCode == 401) {
-        throw Exception('$failure The Report Profiler key is missing or wrong (EVE_UI_KEY).');
-      }
       final message = map['error']?.toString() ?? map['message']?.toString() ?? 'HTTP ${response.statusCode}';
       throw Exception(spanText('$failure $message'));
     }
     return map;
+  }
+
+  /// Fetch a file through the short-lived link the API returns for it.
+  static Future<Uint8List> _download(String endpoint, String failure) async {
+    final link = _decode(await apiService.get(endpoint), failure);
+    final response = await _storage.get(Uri.parse(link['url'].toString()));
+    if (response.statusCode != 200) {
+      throw Exception('$failure (storage returned ${response.statusCode})');
+    }
+    return response.bodyBytes;
   }
 
   // ---------------------------------------------------------------------------
@@ -81,25 +55,23 @@ class ReportProfilerApi {
   // ---------------------------------------------------------------------------
 
   static Future<List<ProfilerTemplate>> listTemplates() async {
-    final response = await _client.get(_uri('/templates'), headers: _headers());
-    final data = _decode(response, 'Could not load profiler templates.');
+    final data = _decode(await apiService.get(_path('/templates')), 'Could not load report templates.');
     final list = data['templates'] is List ? data['templates'] as List : const [];
     return list.map((item) => ProfilerTemplate.fromJson(_asMap(item))).toList();
   }
 
   static Future<ProfilerTemplate> createTemplate(String name) async {
-    final response = await _client.post(
-      _uri('/templates'),
-      headers: _headers(json: true),
-      body: jsonEncode({'name': name.trim()}),
+    final data = _decode(
+      await apiService.post(_path('/templates'), {'name': name.trim()}),
+      'Could not create the template.',
     );
-    final data = _decode(response, 'Could not create the template.');
     return ProfilerTemplate.fromJson(_asMap(data['template']));
   }
 
   static Future<ProfilerDetail> getTemplate(String templateId) async {
-    final response = await _client.get(_uri('/templates/$templateId'), headers: _headers());
-    return ProfilerDetail.fromJson(_decode(response, 'Could not load the template.'));
+    return ProfilerDetail.fromJson(
+      _decode(await apiService.get(_path('/templates/$templateId')), 'Could not load the template.'),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -115,63 +87,42 @@ class ReportProfilerApi {
     return 'application/octet-stream';
   }
 
-  /// Upload one example report. Small files go multipart through the API;
-  /// large ones get a one-off direct upload URL, then are registered.
+  /// Upload one example report straight to storage, then register it.
   static Future<void> uploadExample(
     String templateId, {
     required String name,
     required Uint8List bytes,
   }) async {
     final contentType = contentTypeFor(name);
-    if (bytes.length <= maxMultipartBytes) {
-      final request = http.MultipartRequest('POST', _uri('/templates/$templateId/examples'))
-        ..headers.addAll(_headers())
-        // The API infers the type from the extension (no http_parser dep here).
-        ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: name));
-      final streamed = await _client.send(request);
-      _decode(await http.Response.fromStream(streamed), 'Could not upload "$name".');
-      return;
-    }
-
     final grant = _decode(
-      await _client.post(
-        _uri('/templates/$templateId/examples/upload-url'),
-        headers: _headers(json: true),
-        body: jsonEncode({'name': name, 'contentType': contentType, 'size': bytes.length}),
+      await apiService.post(
+        _path('/templates/$templateId/examples/upload-url'),
+        {'name': name, 'contentType': contentType, 'size': bytes.length},
       ),
       'Could not prepare the upload for "$name".',
     );
     final upload = _asMap(grant['upload']);
     final headers = _asMap(upload['headers']).map((k, v) => MapEntry(k, v.toString()));
-    final put = await _client.put(
-      Uri.parse(upload['url'].toString()),
-      headers: headers,
-      body: bytes,
-    );
+    final put = await _storage.put(Uri.parse(upload['url'].toString()), headers: headers, body: bytes);
     if (put.statusCode < 200 || put.statusCode >= 300) {
       throw Exception('Could not upload "$name" (storage returned ${put.statusCode}).');
     }
     _decode(
-      await _client.post(
-        _uri('/templates/$templateId/examples'),
-        headers: _headers(json: true),
-        body: jsonEncode({
-          'pathname': grant['pathname'],
-          'name': name,
-          'size': bytes.length,
-          'contentType': contentType,
-        }),
-      ),
+      await apiService.post(_path('/templates/$templateId/examples'), {
+        'pathname': grant['pathname'],
+        'name': name,
+        'size': bytes.length,
+        'contentType': contentType,
+      }),
       'Could not register "$name".',
     );
   }
 
   static Future<void> deleteExample(String templateId, String pathname) async {
-    final response = await _client.delete(
-      _uri('/templates/$templateId/examples', {'pathname': pathname}),
-      headers: _headers(),
+    _decode(
+      await apiService.delete(_path('/templates/$templateId/examples', {'pathname': pathname})),
+      'Could not remove the example.',
     );
-    _decode(response, 'Could not remove the example.');
   }
 
   // ---------------------------------------------------------------------------
@@ -179,20 +130,15 @@ class ReportProfilerApi {
   // ---------------------------------------------------------------------------
 
   static Future<ProfilerJob> startProfile(String templateId) async {
-    final response = await _client.post(
-      _uri('/templates/$templateId/profile'),
-      headers: _headers(json: true),
-      body: jsonEncode(<String, dynamic>{}),
+    final data = _decode(
+      await apiService.post(_path('/templates/$templateId/profile'), <String, dynamic>{}),
+      'Could not start building the template.',
     );
-    final data = _decode(response, 'Could not start profiling.');
     return ProfilerJob.fromJson(_asMap(data['job']));
   }
 
   static Future<ProfilerEvents> getEvents(String jobId, {int? since}) async {
-    final response = await _client.get(
-      _uri('/jobs/$jobId/events', since == null ? null : {'since': '$since'}),
-      headers: _headers(),
-    );
+    final response = await apiService.get(_path('/jobs/$jobId/events', since == null ? null : {'since': '$since'}));
     return ProfilerEvents.fromJson(_decode(response, 'Could not load agent activity.'));
   }
 
@@ -204,28 +150,15 @@ class ReportProfilerApi {
       _jobAction(jobId, {'action': 'answer', 'answers': answers});
 
   static Future<void> _jobAction(String jobId, Map<String, dynamic> body) async {
-    final response = await _client.post(
-      _uri('/jobs/$jobId'),
-      headers: _headers(json: true),
-      body: jsonEncode(body),
-    );
-    _decode(response, 'The request failed.');
+    _decode(await apiService.post(_path('/jobs/$jobId'), body), 'The request failed.');
   }
 
   // ---------------------------------------------------------------------------
   // Profile pack files
   // ---------------------------------------------------------------------------
 
-  static Future<Uint8List> getFileBytes(String templateId, String path) async {
-    final response = await _client.get(
-      _uri('/templates/$templateId/files', {'path': path}),
-      headers: _headers(),
-    );
-    if (response.statusCode != 200) {
-      _decode(response, 'Could not load $path.');
-    }
-    return response.bodyBytes;
-  }
+  static Future<Uint8List> getFileBytes(String templateId, String path) =>
+      _download(_path('/templates/$templateId/files', {'path': path}), 'Could not load $path.');
 
   static Future<String> getFileText(String templateId, String path) async {
     return utf8.decode(await getFileBytes(templateId, path), allowMalformed: true);
@@ -237,12 +170,13 @@ class ReportProfilerApi {
     Uint8List bytes, {
     required String contentType,
   }) async {
-    final response = await _client.put(
-      _uri('/templates/$templateId/files', {'path': path}),
-      headers: {..._headers(), 'Content-Type': contentType},
-      body: bytes,
+    _decode(
+      await apiService.put(
+        _path('/templates/$templateId/files', {'path': path}),
+        {'contentBase64': base64Encode(bytes), 'contentType': contentType},
+      ),
+      'Could not save $path.',
     );
-    _decode(response, 'Could not save $path.');
   }
 
   static Future<void> saveText(String templateId, String path, String text) => saveFile(

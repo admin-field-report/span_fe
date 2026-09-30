@@ -461,7 +461,6 @@ class _ReportProfilerDetailScreenState extends State<ReportProfilerDetailScreen>
         AppBreadcrumbs(
           items: [
             BreadcrumbItem(label: 'Reports', onTap: () => context.go('/templates/reports')),
-            BreadcrumbItem(label: 'Span Report Profiler', onTap: () => context.go('/templates/reports/profiler')),
             BreadcrumbItem(label: _title),
           ],
         ),
@@ -472,7 +471,7 @@ class _ReportProfilerDetailScreenState extends State<ReportProfilerDetailScreen>
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-              onPressed: () => context.go('/templates/reports/profiler'),
+              onPressed: () => context.go('/templates/reports'),
             ),
             const SizedBox(width: 12),
             Flexible(
@@ -499,14 +498,6 @@ class _ReportProfilerDetailScreenState extends State<ReportProfilerDetailScreen>
   }
 
   Widget _buildBody(ThemeData theme) {
-    if (!ReportProfilerApi.isConfigured) {
-      return _centeredMessage(
-        theme,
-        icon: Icons.settings_outlined,
-        title: 'Report Profiler is not configured',
-        message: 'Set EVE_UI_BASE_URL (and EVE_UI_KEY) in the app config, then reload.',
-      );
-    }
     if (_templateId != null && _detail == null) {
       if (_loadError != null) {
         return _centeredMessage(
