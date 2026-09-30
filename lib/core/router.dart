@@ -16,6 +16,9 @@ import '../screens/ai_data/ai_data_screen.dart';
 import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
 import '../screens/reports/reports_screen.dart';
+import '../screens/reports/report_profiler_detail_screen.dart';
+import '../screens/projects/reports/generation/generate_report_screen.dart';
+import '../screens/projects/reports/generation/report_run_screen.dart';
 import '../screens/report_placeholder/report_placeholder_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -130,6 +133,25 @@ GoRoute(
             ),
           ],
         ),
+        // Reports written by Span for a project: choose the inspection and
+        // template, then follow the run (progress, then the editable report).
+        // Kept outside 'details/:id/:section' so ':inspectionId' can't match.
+        GoRoute(
+          path: '/projects/:projectId/reports/generate',
+          builder: (context, state) => GenerateReportScreen(
+            projectId: state.pathParameters['projectId']!,
+            inspectionId: state.uri.queryParameters['inspectionId'],
+            templateId: state.uri.queryParameters['templateId'],
+          ),
+        ),
+        GoRoute(
+          path: '/projects/:projectId/reports/runs/:jobId',
+          builder: (context, state) => ReportRunScreen(
+            key: ValueKey(state.pathParameters['jobId']),
+            projectId: state.pathParameters['projectId']!,
+            jobId: state.pathParameters['jobId']!,
+          ),
+        ),
         GoRoute(
           path: '/templates/projects',
           builder: (context, state) => const TemplateManagementScreen(),
@@ -145,6 +167,20 @@ GoRoute(
         GoRoute(
           path: '/templates/reports',
           builder: (context, state) => const ReportsScreen(),
+        ),
+        // Span builds a report template from example reports: new, and one
+        // template's setup / progress / outputs. 'new' must stay before
+        // ':templateId'.
+        GoRoute(
+          path: '/templates/reports/profiler/new',
+          builder: (context, state) => const ReportProfilerDetailScreen(),
+        ),
+        GoRoute(
+          path: '/templates/reports/profiler/:templateId',
+          builder: (context, state) => ReportProfilerDetailScreen(
+            key: ValueKey(state.pathParameters['templateId']),
+            templateId: state.pathParameters['templateId'],
+          ),
         ),
         GoRoute(
           path: '/ai',

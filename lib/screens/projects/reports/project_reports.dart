@@ -6,6 +6,7 @@ import 'package:file_saver/file_saver.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -17,6 +18,7 @@ import '../../../widgets/widgets.dart';
 import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
 import './edit_report_screen.dart';
+import './generation/report_generation_api.dart';
 import './preview_report_pdf_screen.dart';
 
 class ProjectReports extends StatefulWidget {
@@ -34,6 +36,27 @@ class _ProjectReportsState extends State<ProjectReports> {
 
   // Reports currently downloading — shows a per-row spinner and blocks re-taps.
   final Set<String> _downloadingReportIds = {};
+
+  // Report id -> Span report run: reports Span wrote open in the report
+  // screen (progress, then the editable document) instead of the HTML editor.
+  Map<String, String> _spanRunByReport = {};
+
+  Future<void> _loadSpanRuns() async {
+    try {
+      final runs = await ReportGenerationApi.listRuns(projectId: widget.projectId, limit: 100);
+      if (!mounted) return;
+      setState(() {
+        _spanRunByReport = {
+          for (final run in runs)
+            if (run.reportId != null) run.reportId!: run.jobId,
+        };
+      });
+    } catch (_) {
+      // Optional: without it these rows open like any other report.
+    }
+  }
+
+  void _openSpanRun(String jobId) => context.go('/projects/${widget.projectId}/reports/runs/$jobId');
 
   // Same storage-permission flow as DocumentPdfExporter: ask once via
   // a dialog, send the user to settings when permanently denied, and require
@@ -207,6 +230,7 @@ class _ProjectReportsState extends State<ProjectReports> {
   void initState() {
     super.initState();
     projectController.getAllReports(widget.projectId);
+    _loadSpanRuns();
   }
 
   List<ProjectReport> _getFilteredReports() {
@@ -239,6 +263,119 @@ class _ProjectReportsState extends State<ProjectReports> {
         type: ToastType.error
       );
     }
+  }
+
+  /// "Create Report" offers two paths for a project report: the Eve Word
+  /// flow (fill a ready Word profile's `.docx` for selected inspections) or
+  /// the existing HTML/skill-based flow ([CreateReportScreen]).
+  void _showCreateReportChooser(BuildContext context) {
+    final theme = Theme.of(context);
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (dialogContext) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 420,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Create Report',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose which report format to generate for this project.',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                _createOptionTile(
+                  theme: theme,
+                  icon: Icons.description_outlined,
+                  title: 'Write with Span',
+                  subtitle: "Span writes a Word report from an inspection, in your template's format.",
+                  onTap: () {
+                    Navigator.of(dialogContext).pop();
+                    context.go('/projects/${widget.projectId}/reports/generate');
+                  },
+                ),
+                const SizedBox(height: 12),
+                _createOptionTile(
+                  theme: theme,
+                  icon: Icons.article_outlined,
+                  title: 'HTML report',
+                  subtitle: 'Existing flow: select a skill-based template and finalize.',
+                  onTap: () async {
+                    Navigator.of(dialogContext).pop();
+                    final bool? didCreate = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
+                    );
+                    if (didCreate == true && mounted) {
+                      projectController.getAllReports(widget.projectId);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _createOptionTile({
+    required ThemeData theme,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 20, color: theme.colorScheme.onPrimaryContainer),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmDelete(BuildContext context, ProjectReport report) {
@@ -292,6 +429,11 @@ class _ProjectReportsState extends State<ProjectReports> {
                             data: displayData,
                             showCheckboxes: false,
                             onRowTap: (report) {
+                              final spanRun = _spanRunByReport[report.id];
+                              if (spanRun != null) {
+                                _openSpanRun(spanRun);
+                                return;
+                              }
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -380,6 +522,11 @@ class _ProjectReportsState extends State<ProjectReports> {
                                       color: colorScheme.primary,
                                       tooltip: "Edit Report",
                                       onPressed: () async {
+                                        final spanRun = _spanRunByReport[report.id];
+                                        if (spanRun != null) {
+                                          _openSpanRun(spanRun);
+                                          return;
+                                        }
                                         final didUpdate = await Navigator.push(
                                           context,
                                           MaterialPageRoute(
@@ -462,23 +609,12 @@ class _ProjectReportsState extends State<ProjectReports> {
             const SizedBox(width: 16),
           ],
 
-          // Create Report Button
+          // Create Report Button — opens the Word vs HTML chooser dialog.
           Button(
             label: isDesktop ? "Create Report" : "Create", 
             variant: ButtonVariant.filled,
             icon: Icons.add,
-            onPressed: () async {
-              // Push the new screen and wait for it to return true
-              final bool? didCreate = await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => CreateReportScreen(projectId: widget.projectId)),
-              );
-
-              // If report was created successfully, refresh the table!
-              if (didCreate == true && mounted) {
-                projectController.getAllReports(widget.projectId);
-              }
-            },
+            onPressed: () => _showCreateReportChooser(context),
           ),
         ],
       )
