@@ -318,7 +318,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 10),
-            Text("Reports", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+            Text("Report Templates", style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
 
             Expanded(
@@ -338,7 +338,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         onRowTap: (item) => _onRowTap(context, item),
                         columns: [
                           TableColumn(
-                            title: "Report Name",
+                            title: "Name",
                             flex: 3,
                             minWidth: 250,
                             sortable: true,

@@ -10,7 +10,7 @@
 //   final bool isVisible;
 //   final VoidCallback? onToggleVisibility;
 
-//   static const Color emerald = Color(0xFF00AB55);
+//   static const Color emerald = Color(0xFF1C58F6);
 //   static const Color inactiveText = Color(0xFF919EAB);
 //   static const Color errorRed = Color(0xFFFF4842);
 
@@ -115,7 +115,7 @@ class EmeraldTextField extends StatefulWidget {
 class _EmeraldTextFieldtate extends State<EmeraldTextField> {
   bool _obscureText = true;
 
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
   static const Color inactiveText = Color(0xFF919EAB);
   static const Color errorRed = Color(0xFFFF4842);
 

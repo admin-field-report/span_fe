@@ -9,6 +9,7 @@ import '../../models/template.dart';
 import '../../models/tag_models.dart';
 import '../tools/models/tool_group.dart';
 import './controllers/template_controller.dart';
+import '../reports/controllers/report_controller.dart';
 import '../../utils/app_responsive.dart';
 
 // ==========================================
@@ -33,7 +34,7 @@ final Set<int> _fetchedTabs = {};
     super.initState();
     
     // 🚀 2. INITIALIZE THE TAB CONTROLLER AND LISTENER
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_handleTabSelection);
 
     // Fetch data for the FIRST tab when the screen opens
@@ -58,6 +59,8 @@ final Set<int> _fetchedTabs = {};
       templateController.getToolGroupsForTemplate(templateId);
     } else if (tabIndex == 2) {
       templateController.getDocumentsForTemplate(templateId);
+    } else if (tabIndex == 3) {
+      templateController.getReportTemplatesForTemplate(templateId);
     }
   }
 
@@ -149,9 +152,10 @@ final Set<int> _fetchedTabs = {};
         final tagGroups = templateController.currentTagGroups;
         final toolGroups = templateController.currentToolGroups;
         final documents = templateController.currentDocuments;
+        final reportTemplates = templateController.currentReportTemplates;
 
         return DefaultTabController(
-          length: 3,
+          length: 4,
           child: Container(
             color: theme.colorScheme.surface,
             child: Column(
@@ -181,7 +185,8 @@ final Set<int> _fetchedTabs = {};
                   indicatorColor: theme.colorScheme.primary,
                   labelColor: theme.colorScheme.primary,
                   unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                  tabs: const [Tab(text: "Tag Groups"), Tab(text: "Tool Sets"), Tab(text: "Documents")],
+                  isScrollable: isMobile,
+                  tabs: const [Tab(text: "Tag Groups"), Tab(text: "Tool Sets"), Tab(text: "Documents"), Tab(text: "Report Templates")],
                 ),
                 Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
 
@@ -338,6 +343,35 @@ final Set<int> _fetchedTabs = {};
                               icon: const Icon(Icons.delete_outline, color: Colors.red),
                               tooltip: "Delete Document",
                               onPressed: () => _deleteDocument(doc),
+                            ),
+                          );
+                        }
+                      ),
+
+                      // 🚀 REPORT TEMPLATES TAB
+                      _buildTabContent(
+                        theme: theme,
+                        isLoading: templateController.isReportTemplatesLoading,
+                        title: "Assigned Report Templates",
+                        itemCount: reportTemplates.length,
+                        emptyMessage: "No report templates assigned yet.",
+                        onActionButtonPressed: () => _openManageReportTemplatesModal(context, reportTemplates),
+                        itemBuilder: (context, index) {
+                          final report = reportTemplates[index];
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(8)
+                              ),
+                              child: Icon(Icons.description_outlined, color: theme.colorScheme.primary),
+                            ),
+                            title: Text(
+                              report.name,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)
                             ),
                           );
                         }
@@ -546,6 +580,58 @@ final Set<int> _fetchedTabs = {};
     // Refresh data if saved successfully
     if (didUpdate == true && mounted) {
       templateController.getToolGroupsForTemplate(widget.template.id);
+    }
+  }
+
+  Future<void> _openManageReportTemplatesModal(BuildContext context, List<ReportTemplate> assigned) async {
+    final isDesktop = MediaQuery.of(context).size.width >= 800; // Your breakpoint
+
+    bool? didUpdate;
+
+    if (isDesktop) {
+      // 🚀 DESKTOP: Show Dialog
+      didUpdate = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+            child: ManageReportTemplatesContent(
+              templateId: widget.template.id,
+              currentlyAssigned: assigned,
+              isMobile: false,
+            ),
+          ),
+        ),
+      );
+    } else {
+      // 🚀 MOBILE: Show Bottom Sheet
+      didUpdate = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+            child: ManageReportTemplatesContent(
+              templateId: widget.template.id,
+              currentlyAssigned: assigned,
+              isMobile: true,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Refresh data if saved successfully
+    if (didUpdate == true && mounted) {
+      templateController.getReportTemplatesForTemplate(widget.template.id);
     }
   }
 
@@ -997,6 +1083,214 @@ class _ManageToolSetsContentState extends State<ManageToolSetsContent> {
     );
   }
 }
+
+
+
+class ManageReportTemplatesContent extends StatefulWidget {
+  final String templateId;
+  final List<ReportTemplate> currentlyAssigned;
+  final bool isMobile;
+
+  const ManageReportTemplatesContent({
+    super.key,
+    required this.templateId,
+    required this.currentlyAssigned,
+    required this.isMobile,
+  });
+
+  @override
+  State<ManageReportTemplatesContent> createState() => _ManageReportTemplatesContentState();
+}
+
+class _ManageReportTemplatesContentState extends State<ManageReportTemplatesContent> {
+  bool _isLoading = true;
+  bool _isSaving = false;
+  
+  List<ReportTemplate> _masterList = [];
+  late Set<String> _selectedIds;
+  
+  String _searchQuery = '';
+  TagFilter _currentFilter = TagFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = widget.currentlyAssigned.map((g) => g.id).toSet();
+    _fetchMasterList();
+  }
+
+  Future<void> _fetchMasterList() async {
+    // Reuses the Reports screen's controller & API
+    await reportController.getAllReports();
+    if (mounted) {
+      setState(() {
+        _masterList = reportController.reports;
+        _isLoading = false;
+      });
+    }
+  }
+
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+
+    bool success = await templateController.assignReportTemplatesToTemplate(
+      templateId: widget.templateId,
+      reportTemplateIds: _selectedIds.toList(),
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pop(context, true);
+      ToastService.show(context, message: "Report Templates updated!", type: ToastType.success);
+    } else {
+      setState(() => _isSaving = false);
+      ToastService.show(context, message: "Failed to update Report Templates.", type: ToastType.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // 1. Apply Search Filter
+    var filteredList = _masterList.where((g) => 
+      g.name.toLowerCase().contains(_searchQuery.toLowerCase())
+    ).toList();
+
+    // 2. Apply Selection Filter
+    if (_currentFilter == TagFilter.selected) {
+      filteredList = filteredList.where((g) => _selectedIds.contains(g.id)).toList();
+    } else if (_currentFilter == TagFilter.unselected) {
+      filteredList = filteredList.where((g) => !_selectedIds.contains(g.id)).toList();
+    }
+
+    return PopScope(
+      canPop: !_isSaving,
+      child: AbsorbPointer(
+          absorbing: _isSaving, 
+          child:Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // HEADER
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 16.0, 
+                  top: widget.isMobile ? 16.0 : 24.0, 
+                  bottom: 16.0
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Manage Report Templates", style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context))
+                  ],
+                ),
+              ),
+              
+              // SEARCH BAR
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: SearchField(
+                  width: 350,
+                  hintText: "Search report templates...",
+                  onChanged: (val) => setState(() => _searchQuery = val),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // FILTER CHIPS
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    _buildFilterChip("All", TagFilter.all, theme),
+                    _buildFilterChip("Selected (${_selectedIds.length})", TagFilter.selected, theme),
+                    _buildFilterChip("Unselected", TagFilter.unselected, theme),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+              // THE LIST
+              Expanded(
+                child: _isLoading
+                    ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+                    : filteredList.isEmpty
+                        ? Center(child: Text("No report templates match your filters.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)))
+                        : ListView.builder(
+                            itemCount: filteredList.length,
+                            itemBuilder: (context, index) {
+                              final group = filteredList[index];
+                              final isSelected = _selectedIds.contains(group.id);
+
+                              return CheckboxListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                                title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                                value: isSelected,
+                                activeColor: theme.colorScheme.primary,
+                                controlAffinity: ListTileControlAffinity.trailing,
+                                onChanged: (bool? checked) {
+                                  setState(() {
+                                    checked == true ? _selectedIds.add(group.id) : _selectedIds.remove(group.id);
+                                  });
+                                },
+                              );
+                            },
+                          ),
+              ),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+
+              // ACTIONS
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 24.0, right: 24.0, 
+                  top: 16.0, 
+                  bottom: widget.isMobile ? 32.0 : 24.0
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Button(
+                      label: "Cancel",
+                      variant: ButtonVariant.outline,
+                      onPressed: _isSaving ? null : () => Navigator.pop(context),
+                    ),
+                    const SizedBox(width: 12),
+                    Button(
+                      label: "Save Changes",
+                      variant: ButtonVariant.filled,
+                      isLoading: _isSaving,
+                      onPressed: _isSaving ? null : _save,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+      )
+    );
+  }
+
+  Widget _buildFilterChip(String label, TagFilter filterValue, ThemeData theme) {
+    final isSelected = _currentFilter == filterValue;
+    return FilterChip(
+      label: Text(label, style: TextStyle(fontSize: 13, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      selected: isSelected,
+      showCheckmark: false,
+      selectedColor: theme.colorScheme.primaryContainer,
+      onSelected: (_) => setState(() => _currentFilter = filterValue),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      side: BorderSide(color: isSelected ? Colors.transparent : theme.colorScheme.outlineVariant),
+    );
+  }
+}
+
+
 
 
 

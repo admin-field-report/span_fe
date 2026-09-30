@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import '../../../core/api_service.dart';
+import '../../../models/tag_models.dart';
+import '../../tools/models/tool_group.dart';
 
 
 class ProjectController extends ChangeNotifier {
@@ -105,16 +107,15 @@ class ProjectController extends ChangeNotifier {
   // ----------------------------------------------------------------
   // FETCH MASTER LISTS FOR SETTINGS
   // ----------------------------------------------------------------
-  Future<List<Map<String, dynamic>>> getCompanyTagGroups() async {
+  Future<List<AppTagGroup>> getCompanyTagGroups() async {
     try {
       final response = await _apiService.get('/tagGroupItem/company');
       final resData = jsonDecode(response.body);
 
       if (resData['success'] == true && resData['data'] != null) {
-        return (resData['data'] as List).map((item) => {
-          'id': item['tag_group_id'],
-          'name': item['tag_group_name'],
-        }).toList();
+        return (resData['data'] as List)
+            .map((item) => AppTagGroup.fromJson(item as Map<String, dynamic>))
+            .toList();
       }
       return [];
     } catch (e) {
@@ -123,15 +124,19 @@ class ProjectController extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getCompanyToolGroups() async {
+  Future<List<ToolGroup>> getCompanyToolGroups() async {
     try {
       final response = await _apiService.get('/customToolGroup/company');
       final resData = jsonDecode(response.body);
 
       if (resData['message'] != null && resData['data'] != null) {
-        return (resData['data'] as List).map((item) => {
-          'id': item['id'],
-          'name': item['name'],
+        // Each set comes with its tools embedded under `custom_tool`.
+        return (resData['data'] as List).map((item) {
+          final group = ToolGroup.fromJson(item as Map<String, dynamic>);
+          group.tools = ((item['custom_tool'] as List?) ?? [])
+              .map((tool) => ToolItem.fromJson(tool as Map<String, dynamic>))
+              .toList();
+          return group;
         }).toList();
       }
       return [];

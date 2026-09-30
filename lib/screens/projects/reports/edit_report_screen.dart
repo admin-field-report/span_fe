@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:html2md/html2md.dart' as html2md;
-import 'package:markdown/markdown.dart' as md;
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:html_editor_enhanced/html_editor.dart';
 
 import '../../../core/api_service.dart';
 import '../../../widgets/widgets.dart';
 import '../../../services/toast_service.dart';
+import '../controllers/project_controller.dart';
 
 class EditReportScreen extends StatefulWidget {
   final String reportId;
@@ -19,26 +20,27 @@ class EditReportScreen extends StatefulWidget {
 
 class _EditReportScreenState extends State<EditReportScreen> {
   final ApiService _apiService = ApiService();
-  late TextEditingController _contentController;
-  
+  final HtmlEditorController _editorController = HtmlEditorController();
+  final TextEditingController _nameController = TextEditingController();
+
   bool _isLoading = true;
   bool _isUpdating = false;
-  bool _isEditMode = true;
+  String _currentHtml = "";
+  String? _nameError;
 
   @override
   void initState() {
     super.initState();
-    _contentController = TextEditingController();
     _fetchReportDetails();
   }
 
   @override
   void dispose() {
-    _contentController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
-  // 🚀 FETCH & CONVERT: HTML -> MARKDOWN
+  // 🚀 FETCH REPORT NAME + HTML (HTML is stored in S3, fetched via pre-signed URL)
   Future<void> _fetchReportDetails() async {
     try {
       final response = await _apiService.get('/report/getById/${widget.reportId}');
@@ -46,17 +48,32 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
       if (!mounted) return;
 
-      if (responseData['data'] != null) {
-        final data = responseData['data'];
-        setState(() {          
-          final rawHtml = data['report_body'] ?? "";
-          
-          // 🚀 Convert the backend HTML into clean Markdown for the editor
-          _contentController.text = html2md.convert(rawHtml);
-          
-          _isLoading = false;
-        });
+      final data = responseData['data'];
+      if (data == null) {
+        setState(() => _isLoading = false);
+        return;
       }
+
+      final String reportName = data['name'] ?? "";
+
+      final preSignedResponse = await _apiService.get('/report/preSignedUrl/${widget.reportId}');
+      final preSignedData = jsonDecode(preSignedResponse.body)['data'];
+      final String? preSignedUrl = preSignedData?['preSignedUrl'];
+
+      String html = "";
+      if (preSignedUrl != null && preSignedUrl.isNotEmpty) {
+        final htmlResponse = await http.get(Uri.parse(preSignedUrl));
+        if (htmlResponse.statusCode == 200) {
+          html = utf8.decode(htmlResponse.bodyBytes);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _currentHtml = html;
+        _nameController.text = reportName;
+        _isLoading = false;
+      });
     } catch (e) {
       if (mounted) {
         ToastService.show(context, message: "Failed to load report.", type: ToastType.error);
@@ -65,20 +82,45 @@ class _EditReportScreenState extends State<EditReportScreen> {
     }
   }
 
-  // 🚀 CONVERT & SAVE: MARKDOWN -> HTML
+  // 🚀 SAVE EDITED HTML
   Future<void> _handleUpdateReport() async {
     if (_isUpdating) return;
-    
+
+    // Name is mandatory
+    final String reportName = _nameController.text.trim();
+    if (reportName.isEmpty) {
+      setState(() => _nameError = "Report name is required.");
+      return;
+    }
+    setState(() => _nameError = null);
+
     setState(() => _isUpdating = true);
-    
+
     try {
-      // 🚀 Convert the user's Markdown back to standard HTML for the API
-      final htmlPayload = md.markdownToHtml(_contentController.text);
-      
-      final payload = {"report_body": htmlPayload};
+      final htmlPayload = await _editorController.getText();
+
+      final payload = {"name": reportName};
       final response = await _apiService.patch('/report/update/${widget.reportId}', payload);
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final String? putSignedUrl = responseData['data']?['putSignedUrl'];
+        final String contentType = responseData['data']?['contentType'] ?? 'text/html';
+
+        if (putSignedUrl == null || putSignedUrl.isEmpty) {
+          throw Exception("Missing upload URL in server response.");
+        }
+
+        final uploadResponse = await http.put(
+          Uri.parse(putSignedUrl),
+          headers: {'Content-Type': contentType},
+          body: utf8.encode(htmlPayload),
+        );
+
+        if (uploadResponse.statusCode != 200) {
+          throw Exception("Failed to upload report HTML (${uploadResponse.statusCode}).");
+        }
+
         if (mounted) {
           ToastService.show(context, message: "Report updated successfully!", type: ToastType.success);
           Navigator.pop(context, true); // Refresh table
@@ -93,6 +135,72 @@ class _EditReportScreenState extends State<EditReportScreen> {
     }
   }
 
+  // Page header in the same shape as the other project screens: breadcrumb
+  // (Projects · <project name> · Reports · <report name>) on top, then a back
+  // arrow + title row. This screen is pushed imperatively on top of the
+  // project's reports route, so "Reports" pops back to that route while the
+  // other crumbs navigate through the router.
+  Widget _buildHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final project = projectController.currentProject;
+    final String? projectId = project?.id;
+
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Rebuilds with the name field so the last crumb tracks edits.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _nameController,
+            builder: (context, value, _) {
+              final String reportName = value.text.trim().isNotEmpty ? value.text.trim() : "Edit Report";
+              return AppBreadcrumbs(
+                items: [
+                  BreadcrumbItem(
+                    label: "Projects",
+                    onTap: () => context.go('/projects'),
+                  ),
+                  BreadcrumbItem(
+                    label: project?.name ?? "Project",
+                    onTap: projectId == null || projectId.isEmpty
+                        ? null
+                        : () => context.go('/projects/details/$projectId/inspections'),
+                  ),
+                  BreadcrumbItem(
+                    label: "Reports",
+                    onTap: () => Navigator.of(context).popUntil((route) => route.settings is Page),
+                  ),
+                  BreadcrumbItem(label: reportName),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.pop(context),
+                color: colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                "Edit Report",
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -100,110 +208,150 @@ class _EditReportScreenState extends State<EditReportScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
-      appBar: AppBar(
-        centerTitle: false,
-        titleSpacing: 0,
-        title: Text("Edit Report", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        backgroundColor: colorScheme.surface,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        // 🚀 TOGGLE ICONS IN HEADER RIGHT SIDE
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit_note, color: _isEditMode ? colorScheme.primary : colorScheme.onSurfaceVariant),
-            tooltip: "Edit Mode",
-            onPressed: () => setState(() => _isEditMode = true),
-          ),
-          IconButton(
-            icon: Icon(Icons.remove_red_eye_outlined, color: !_isEditMode ? colorScheme.primary : colorScheme.onSurfaceVariant),
-            tooltip: "Preview Mode",
-            onPressed: () {
-              FocusScope.of(context).unfocus(); // Dismiss keyboard when previewing
-              setState(() => _isEditMode = false);
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 🚀 MAIN CONTENT AREA (Full Width & Height)
-              Expanded(
-                child: Container(
-                  // Removed margins, borders, radius, and shadow for edge-to-edge feel
-                  color: Colors.white,
-                  child: _isEditMode 
-                    ? TextField(
-                        controller: _contentController,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(
-                          fontFamily: 'monospace', // Monospace is standard for Markdown editing
-                          fontSize: 14,
-                          height: 1.6,
-                          color: Colors.black87,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.all(24), // Keeps text readable away from screen edge
-                          hintText: "# Report Title\n\nStart typing in Markdown...",
-                        ),
-                      )
-                    : Markdown(
-                        data: _contentController.text.isEmpty ? "*No content*" : _contentController.text,
-                        padding: const EdgeInsets.all(24), // Keeps text readable away from screen edge
-                        selectable: true,
-                        styleSheet: MarkdownStyleSheet(
-                          h1: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black),
-                          h2: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black87),
-                          h3: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, height: 1.5, color: Colors.black87),
-                          p: const TextStyle(fontSize: 15, height: 1.6, color: Colors.black87),
-                          listBullet: TextStyle(color: colorScheme.primary),
-                          code: TextStyle(backgroundColor: colorScheme.surfaceContainer, fontFamily: 'monospace'),
-                          codeblockDecoration: BoxDecoration(color: colorScheme.surfaceContainer, borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                ),
-              ),
-
-              // 🚀 SAVE ACTION BAR
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Header stays visible during save but can't be tapped.
+            AbsorbPointer(
+              absorbing: _isUpdating,
+              child: _buildHeader(theme),
+            ),
+            Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+            Expanded(
+              child: Stack(
+        children: [
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 🚀 REPORT NAME (mandatory — sent as `name` in the update API)
+                Container(
                   color: colorScheme.surface,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))
-                  ]
-                ),
-                child: SafeArea(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Button(
-                        label: "Cancel",
-                        variant: ButtonVariant.outline,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const SizedBox(width: 12),
-                      Button(
-                        label: "Save Changes",
-                        icon: Icons.check_circle_outline,
-                        variant: ButtonVariant.filled,
-                        isLoading: _isUpdating,
-                        onPressed: _handleUpdateReport,
-                      ),
-                    ],
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                  child: FormControlTextField(
+                    controller: _nameController,
+                    labelText: "Report Name *",
+                    hintText: "Enter report name",
+                    errorText: _nameError,
+                    textInputAction: TextInputAction.done,
                   ),
                 ),
-              )
-            ],
-          ),
+
+                // 🚀 MAIN CONTENT AREA (Full Width & Height)
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDark = Theme.of(context).brightness == Brightness.dark;
+                      return Container(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: HtmlEditor(
+                          controller: _editorController,
+                          htmlEditorOptions: HtmlEditorOptions(
+                            initialText: _currentHtml,
+                            shouldEnsureVisible: true,
+                            darkMode: isDark,
+                            customOptions: 'disableResizeEditor: true,', // The trailing comma is critical
+                          ),
+                          htmlToolbarOptions: const HtmlToolbarOptions(
+                            toolbarPosition: ToolbarPosition.aboveEditor,
+                            toolbarType: ToolbarType.nativeGrid,
+                            defaultToolbarButtons: [
+                              StyleButtons(),
+                              FontSettingButtons(),
+                              FontButtons(clearAll: false),
+                              ColorButtons(),
+                              ListButtons(listStyles: false),
+                              ParagraphButtons(textDirection: false, caseConverter: false, lineHeight: false),
+                              InsertButtons(picture: false, audio: false, video: false, otherFile: false),
+                              OtherButtons(fullscreen: false, codeview: false, help: false),
+                            ],
+                          ),
+                          otherOptions: OtherOptions(
+                            height: constraints.maxHeight,
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                              borderRadius: BorderRadius.circular(0),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                // 🚀 SAVE ACTION BAR
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4))
+                    ]
+                  ),
+                  child: SafeArea(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Button(
+                          label: "Cancel",
+                          variant: ButtonVariant.outline,
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Button(
+                          label: "Save Changes",
+                          icon: Icons.check_circle_outline,
+                          variant: ButtonVariant.filled,
+                          // No longer need isLoading here since we show a full overlay
+                          onPressed: _handleUpdateReport,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              ],
+            ),
+            
+          // 🚀 FULL SCREEN UPDATING OVERLAY
+          if (_isUpdating)
+            Container(
+              color: Colors.black.withValues(alpha: 0.3),
+              alignment: Alignment.center,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text(
+                      "Saving changes...", 
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -21,7 +21,7 @@ class _LoginFormState extends State<LoginForm> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
   static const Color inactiveText = Color(0xFF919EAB);
 
   @override

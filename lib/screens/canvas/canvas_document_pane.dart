@@ -1,16 +1,22 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api_service.dart';
 import '../../services/toast_service.dart';
 
 import '../../../widgets/canvas/canvas.dart' as custom_canvas;
 import '../../../widgets/canvas/models/canvas_models.dart';
+import '../../../widgets/canvas/widgets/canvas_painter.dart';
 import '../../../widgets/button/button.dart';
 import 'widgets/properties_panel.dart';
+import 'widgets/leave_inspection_dialog.dart';
+import '../projects/widgets/project_settings.dart';
 import 'widgets/custom_tools_panel.dart';
 import 'widgets/custom_action_button.dart';
 
@@ -48,18 +54,29 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
   bool _hasUnsavedChanges = false;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
-  bool _hasUnsavedImageChanges = false;
 
   DrawingObject? _selectedCanvasObject;
   List<CustomToolGroup> _customToolGroups = [];
   bool _isLoadingCustomTools = true;
   CustomTool? _selectedCustomTool;
 
+  // 🚀 Double-tapping a custom tool locks it on the canvas so it can be
+  // drawn repeatedly; mirrors the built-in tool lock in the canvas widget.
+  bool _isCustomToolLocked = false;
+  String? _lastCustomToolTapId;
+  DateTime? _lastCustomToolTapTime;
+
   Map<String, dynamic> _rawDocumentData = {};
 
   List<String> _pages = [];
   String _currentPage = '';
   Map<String, PageData> _pageDataMap = {};
+
+  // Page names (keys of _pageDataMap) whose annotations were edited since
+  // the last successful save — only these get their rasterized image
+  // re-uploaded to S3 on save, instead of every page every time.
+  final Set<String> _dirtyPageKeys = {};
+
   List<TagGroup> _availableTagGroups = [];
   bool _isLoadingTags = false;
 
@@ -90,6 +107,16 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     return _canvasKeys[activeKey]!;
   }
 
+  // Marks the currently viewed document page as needing its annotated image
+  // re-uploaded to S3 on the next save. Overlay image annotations (attached
+  // images, not document pages) aren't tracked here — they upload through
+  // their own existing flow.
+  void _markCurrentPageDirty() {
+    if (_overlayImageKey == null && widget.annotateImageKey == null && _currentPage.isNotEmpty) {
+      _dirtyPageKeys.add(_currentPage);
+    }
+  }
+
   void _syncCurrentPageObjects() {
     String activeKey = _overlayImageKey != null ? 'IMG_$_overlayImageKey' : _currentPage;
     if (activeKey.isEmpty) return;
@@ -102,7 +129,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
   void _switchPage(String newPage) async {
     if (_overlayImageKey != null || widget.annotateImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
+      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning, position: ToastPosition.topCenter);
       return;
     }
 
@@ -140,7 +167,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
   Future<void> _handleImageTap(String s3Key) async {
     if (_overlayImageKey != null) {
-      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning);
+      ToastService.show(context, message: "Please finish or discard current image first.", type: ToastType.warning, position: ToastPosition.topCenter);
       return;
     }
 
@@ -162,7 +189,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     }
 
     if (imgData == null || imgData['preview_image'] == null || imgData['preview_image'].isEmpty) {
-      ToastService.show(context, message: "Image preview not available.", type: ToastType.error);
+      ToastService.show(context, message: "Image preview not available.", type: ToastType.error, position: ToastPosition.topCenter);
       return;
     }
 
@@ -196,7 +223,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       });
     } catch (e) {
       setState(() => _isPageLoading = false);
-      ToastService.show(context, message: "Failed to load image preview.", type: ToastType.error);
+      ToastService.show(context, message: "Failed to load image preview.", type: ToastType.error, position: ToastPosition.topCenter);
     }
   }
 
@@ -232,7 +259,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       });
     } catch (e) {
       setState(() => _isUploadingImage = false);
-      ToastService.show(context, message: "Failed to process image.", type: ToastType.error);
+      ToastService.show(context, message: "Failed to process image.", type: ToastType.error, position: ToastPosition.topCenter);
     }
   }
 
@@ -271,7 +298,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           _hasUnsavedChanges = true;
           _closeOverlay();
         });
-        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success);
+        // ToastService.show(context, message: "Annotations applied.", type: ToastType.success, position: ToastPosition.topCenter);
       }
       return;
     }
@@ -308,10 +335,9 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
       }
 
       _hasUnsavedChanges = true;
-      _hasUnsavedImageChanges = true;
       _closeOverlay();
     });
-    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info);
+    // ToastService.show(context, message: "Annotations applied successfully.", type: ToastType.info, position: ToastPosition.topCenter);
   }
 
   Future<Map<String, String>> _executeDirectS3Upload(String fileName, Uint8List bytes, bool isInspection) async {
@@ -373,6 +399,106 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     } else {
        throw Exception("Failed to get presigned URL");
     }
+  }
+
+  Future<String> _pollForBulkImagePreview(String s3Key) async {
+    final encodedKey = Uri.encodeComponent(s3Key);
+    String previewBase64 = "";
+    bool isPreviewReady = false;
+    int attempts = 0;
+    const int maxAttempts = 10;
+
+    while (!isPreviewReady && attempts < maxAttempts) {
+      attempts++;
+      final previewResponse = await _apiService.get('/dummyImageCompress/by-image-url?imageUrl=$encodedKey');
+      if (previewResponse.statusCode == 200) {
+        final previewData = jsonDecode(previewResponse.body);
+        if (previewData['success'] == true && previewData['data'] != null && previewData['data']['compressed_base64'] != null) {
+          previewBase64 = previewData['data']['compressed_base64'];
+          isPreviewReady = true;
+        } else {
+          throw Exception("Missing base64 data");
+        }
+      } else if (previewResponse.statusCode == 404) {
+        if (attempts < maxAttempts) await Future.delayed(const Duration(seconds: 2));
+      } else {
+        throw Exception("API returned error: ${previewResponse.statusCode}");
+      }
+    }
+
+    if (!isPreviewReady) throw Exception("Image compression timeout");
+    return previewBase64;
+  }
+
+  Future<void> _executeBulkS3Upload(
+    List<Map<String, dynamic>> photos,
+    void Function(int uploaded, int total) onProgress,
+  ) async {
+    final bool isInspection = _selectedCanvasObject == null;
+    final DrawingObject? targetObject = _selectedCanvasObject;
+    final String currentPageId = _pageDataMap[_currentPage]?.pageId ?? "";
+
+    final Map<String, dynamic> body = {
+      "file_names": photos.map((p) => p['fileName'] as String).toList(),
+      "project_id": widget.projectId,
+      "inspection_id": widget.inspectionId,
+      "project_document_id": widget.documentId,
+    };
+    if (!isInspection && currentPageId.isNotEmpty) {
+      body["page_id"] = currentPageId;
+    }
+
+    final response = await _apiService.post('/image/presigned-url-for-multiple-images', body);
+    final responseData = jsonDecode(response.body);
+    final List<dynamic> signedUrls = responseData['signedUrls'] ?? [];
+
+    if (signedUrls.length != photos.length) {
+      throw Exception("Failed to get presigned URLs for all photos");
+    }
+
+    final List<Map<String, dynamic>> newEntries = [];
+
+    for (int i = 0; i < photos.length; i++) {
+      final String fileName = photos[i]['fileName'] as String;
+      final Uint8List bytes = photos[i]['bytes'] as Uint8List;
+      final urlData = signedUrls[i];
+      final String signedUrl = urlData['signedUrl'];
+      final String s3Key = urlData['key'];
+      final String imageId = urlData['id'] ?? "";
+
+      final uploadResponse = await http.put(Uri.parse(signedUrl), body: bytes);
+      if (uploadResponse.statusCode != 200) {
+        throw Exception("Upload failed for $fileName with status: ${uploadResponse.statusCode}");
+      }
+
+      final previewBase64 = await _pollForBulkImagePreview(s3Key);
+
+      newEntries.add({
+        "image_id": imageId,
+        "image_url": s3Key,
+        "preview_image": previewBase64,
+        "image_name": fileName,
+      });
+
+      onProgress(i + 1, photos.length);
+    }
+
+    setState(() {
+      if (isInspection) {
+        for (final entry in newEntries) {
+          entry["sort_order"] = _inspectionImages.length + 1;
+          _inspectionImages.add(entry);
+        }
+        _rawDocumentData['image_list'] = List.from(_inspectionImages);
+      } else if (targetObject != null) {
+        targetObject.imageUrls ??= [];
+        for (final entry in newEntries) {
+          entry["sort_order"] = targetObject.imageUrls!.length + 1;
+          targetObject.imageUrls!.add(entry);
+        }
+      }
+      _hasUnsavedChanges = true;
+    });
   }
 
 
@@ -574,6 +700,128 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     return itemsList;
   }
 
+  // Uploads a rasterized PNG (annotations baked in) for every page tracked
+  // as dirty since the last save. Only pages that actually changed get a
+  // fresh presigned URL + upload, so an edit to 2 of 4 pages uploads 2.
+  Future<void> _uploadDirtyPageImages() async {
+    if (_dirtyPageKeys.isEmpty) return;
+
+    final Map<String, String> pageIdByKey = {};
+    for (final pageKey in _dirtyPageKeys) {
+      final String? pageId = _pageDataMap[pageKey]?.pageId;
+      if (pageId != null && pageId.isNotEmpty) {
+        pageIdByKey[pageId] = pageKey;
+      }
+    }
+
+    if (pageIdByKey.isEmpty) {
+      _dirtyPageKeys.clear();
+      return;
+    }
+
+    try {
+      final queryParams = <String, dynamic>{
+        "project_document_page": pageIdByKey.keys.toList(),
+        "inspection_id": widget.inspectionId,
+        "project_id": widget.projectId,
+      };
+      final queryString = Uri(queryParameters: queryParams).query;
+
+      final presignResponse = await _apiService.get('/projectDocumentPage/preSigned/Inspection-annotation/image?$queryString');
+      final presignData = jsonDecode(presignResponse.body);
+
+      if (presignData['success'] != true || presignData['data'] == null) {
+        throw Exception(presignData['message'] ?? "Failed to get image upload URLs.");
+      }
+
+      final List<dynamic> uploadTargets = presignData['data'];
+      final Set<String> uploadedKeys = {};
+
+      for (final target in uploadTargets) {
+        final String pageId = target['project_document_page_id'] ?? '';
+        final String signedUrl = target['signedUrl'] ?? '';
+        final String contentType = target['contentType'] ?? 'image/png';
+
+        final String? pageKey = pageIdByKey[pageId];
+        final PageData? pageData = pageKey != null ? _pageDataMap[pageKey] : null;
+        if (pageKey == null || pageData == null || signedUrl.isEmpty) continue;
+
+        final Uint8List? pngBytes = await _rasterizePageToPng(pageData);
+        if (pngBytes == null) continue;
+
+        final uploadResponse = await http.put(
+          Uri.parse(signedUrl),
+          headers: {'Content-Type': contentType},
+          body: pngBytes,
+        );
+
+        if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {
+          uploadedKeys.add(pageKey);
+        } else {
+          debugPrint("Failed to upload annotated image for page '$pageKey'. Status: ${uploadResponse.statusCode}");
+        }
+      }
+
+      _dirtyPageKeys.removeAll(uploadedKeys);
+    } catch (e) {
+      debugPrint("Annotation image upload error: $e");
+    }
+  }
+
+  // Rasterizes a page's annotations (grid lines and selection markers
+  // hidden) at its actual document resolution. Only the currently viewed
+  // page's Canvas is mounted in the widget tree, so other dirty pages are
+  // rendered by briefly mounting their CanvasPaper off-screen via an
+  // OverlayEntry, then capturing it through a RepaintBoundary.
+  Future<Uint8List?> _rasterizePageToPng(PageData pageData) async {
+    if (!mounted) return null;
+
+    if (pageData.backgroundImageBytes != null) {
+      await precacheImage(MemoryImage(pageData.backgroundImageBytes!), context);
+      if (!mounted) return null;
+    }
+
+    final OverlayState? overlay = Overlay.maybeOf(context);
+    if (overlay == null) return null;
+
+    final GlobalKey boundaryKey = GlobalKey();
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -100000,
+        top: -100000,
+        width: pageData.width,
+        height: pageData.height,
+        child: RepaintBoundary(
+          key: boundaryKey,
+          child: CanvasPaper(
+            objects: pageData.objects,
+            backgroundImageBytes: pageData.backgroundImageBytes,
+            width: pageData.width,
+            height: pageData.height,
+            hideOverlays: true,
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(entry);
+
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+
+      final renderObject = boundaryKey.currentContext?.findRenderObject();
+      if (renderObject is! RenderRepaintBoundary) return null;
+
+      final ui.Image image = await renderObject.toImage(pixelRatio: 1.0);
+      final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      return byteData?.buffer.asUint8List();
+    } finally {
+      entry.remove();
+    }
+  }
+
   Future<void> _saveAnnotations() async {
     setState(() => _isSaving = true);
     _syncCurrentPageObjects();
@@ -630,10 +878,11 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
         if (putResponse.statusCode == 200 || putResponse.statusCode == 201) {
           _hasUnsavedChanges = false;
-          _hasUnsavedImageChanges = false;
           _rawDocumentData = masterPayload;
 
-          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success);
+          await _uploadDirtyPageImages();
+
+          if (mounted) ToastService.show(context, message: "Document saved securely to cloud!", type: ToastType.success, position: ToastPosition.topCenter);
         } else {
           throw Exception("Failed to upload document data to S3. Status: ${putResponse.statusCode}");
         }
@@ -643,7 +892,7 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
     } catch (e) {
       debugPrint("Save Error: $e");
-      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error);
+      if (mounted) ToastService.show(context, message: "Error saving annotations.", type: ToastType.error, position: ToastPosition.topCenter);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -652,6 +901,36 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
   // ==========================================
   // INITIALIZATION
   // ==========================================
+
+  Future<void> _openTagGroupSettings() async {
+    final changed = await ProjectSettingsManager.show(
+      context,
+      projectId: widget.projectId,
+      mode: ProjectSettingsMode.tags,
+      confirmCreate: _confirmLeaveToCreate,
+    );
+    if (!changed || !mounted) return;
+    setState(() => _isLoadingTags = true);
+    await _fetchAvailableTags();
+  }
+
+  /// Confirms leaving the inspection for a create page, saving pending changes first.
+  /// Returns false if the user stays or the save fails.
+  Future<bool> _confirmLeaveToCreate(ProjectSettingsMode mode) {
+    return LeaveInspectionDialog.show(
+      context,
+      noun: mode == ProjectSettingsMode.tags ? "Tag Group" : "Tool Set",
+      onConfirm: () async {
+        if (_hasUnsavedChanges) await _saveAnnotations();
+        return !_hasUnsavedChanges;
+      },
+    );
+  }
+
+  Future<void> _openCreateTagGroup() async {
+    if (!await _confirmLeaveToCreate(ProjectSettingsMode.tags) || !mounted) return;
+    context.go('/templates/tags');
+  }
 
   Future<void> _fetchAvailableTags() async {
     try {
@@ -671,6 +950,23 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     } finally {
       if (mounted) setState(() => _isLoadingTags = false);
     }
+  }
+
+  Future<void> _openToolSetSettings() async {
+    final changed = await ProjectSettingsManager.show(
+      context,
+      projectId: widget.projectId,
+      mode: ProjectSettingsMode.tools,
+      confirmCreate: _confirmLeaveToCreate,
+    );
+    if (!changed || !mounted) return;
+    setState(() => _isLoadingCustomTools = true);
+    await _fetchCustomTools();
+  }
+
+  Future<void> _openCreateToolSet() async {
+    if (!await _confirmLeaveToCreate(ProjectSettingsMode.tools) || !mounted) return;
+    context.go('/templates/tools');
   }
 
   Future<void> _fetchCustomTools() async {
@@ -789,29 +1085,36 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     if (pageData == null || pageData.backgroundImageBytes != null) return;
 
     try {
-      final response = await _apiService.get('/projectDocumentPage/project-document-page-pdf/${pageData.pageId}');
+      final response = await _apiService.get('/projectDocumentPage/project-document-page-pre-signed-url/${pageData.pageId}');
       final responseData = jsonDecode(response.body);
 
       if (responseData['success'] == true && responseData['data'] != null) {
-        final String base64String = responseData['data']['image'] ?? '';
-        if (base64String.isNotEmpty) {
-          pageData.backgroundImageBytes = base64Decode(base64String.replaceAll('\n', ''));
-          final ui.Image decodedImage = await _decodeBase64Image(base64String);
+        final String preSignedUrl = responseData['data'];
+        if (preSignedUrl.isNotEmpty) {
+          final imageResponse = await http.get(Uri.parse(preSignedUrl));
+          
+          if (imageResponse.statusCode == 200) {
+            final Uint8List imageBytes = imageResponse.bodyBytes;
+            pageData.backgroundImageBytes = imageBytes;
+            final ui.Image decodedImage = await _decodeBytesToImage(imageBytes);
 
-          pageData.width = decodedImage.width.toDouble();
-          pageData.height = decodedImage.height.toDouble();
+            pageData.width = decodedImage.width.toDouble();
+            pageData.height = decodedImage.height.toDouble();
 
-          if (_rawDocumentData['page_list'] != null) {
-            final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
-              (p) => p['page_id'] == pageData.pageId,
-              orElse: () => null
-            );
-            if (pageJson != null && pageJson['annotation_list'] != null) {
-              pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
+            if (_rawDocumentData['page_list'] != null) {
+              final pageJson = (_rawDocumentData['page_list'] as List).firstWhere(
+                (p) => p['page_id'] == pageData.pageId,
+                orElse: () => null
+              );
+              if (pageJson != null && pageJson['annotation_list'] != null) {
+                pageData.objects = _parseAnnotationsList(pageJson['annotation_list'], pageData.width, pageData.height);
+              }
             }
-          }
 
-          _canvasKeys.remove(pageName);
+            _canvasKeys.remove(pageName);
+          } else {
+            debugPrint("Failed to download image from presigned URL. Status: ${imageResponse.statusCode}");
+          }
         }
       }
     } catch (e) { debugPrint("Error loading page image: $e"); }
@@ -886,8 +1189,65 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
     }
   }
 
-  String _getToolNameFromType(DrawingType type) {
-    switch (type) {
+  // 🚀 Single tap toggles the custom tool (one-shot, like before); a quick
+  // second tap on the same tool re-applies it locked. Double-tap is detected
+  // by hand so single taps don't wait on the double-tap timeout.
+  void _handleCustomToolTap(CustomTool tool) {
+    final now = DateTime.now();
+    final bool isDoubleTap = _lastCustomToolTapId == tool.toolId &&
+        _lastCustomToolTapTime != null &&
+        now.difference(_lastCustomToolTapTime!) <= kDoubleTapTimeout;
+    _lastCustomToolTapId = isDoubleTap ? null : tool.toolId;
+    _lastCustomToolTapTime = isDoubleTap ? null : now;
+
+    setState(() {
+      if (!isDoubleTap && _selectedCustomTool?.toolId == tool.toolId) {
+        _selectedCustomTool = null;
+        _isCustomToolLocked = false;
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          'Select', 2.0, Colors.black, Colors.transparent, 1.0,
+        );
+        return;
+      }
+
+      _selectedCustomTool = tool;
+      _isCustomToolLocked = isDoubleTap;
+
+      if (tool.toolObjects.length == 1) {
+        final obj = tool.toolObjects.first;
+        final nativeToolName = _getToolNameFromObject(obj);
+
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          nativeToolName,
+          obj.strokeWidth,
+          obj.color,
+          obj.fillColor ?? Colors.transparent,
+          obj.opacity,
+          customToolId: tool.toolId,
+          borderColor: obj.borderColor,
+          fontSize: obj.fontSize,
+          isBold: obj.isBold,
+          isItalic: obj.isItalic,
+          isUnderline: obj.isUnderline,
+          isStrikethrough: obj.isStrikethrough,
+          locked: isDoubleTap,
+        );
+      } else {
+        _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
+          'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
+          customToolId: tool.toolId,
+          customToolShapes: tool.toolObjects,
+          locked: isDoubleTap,
+        );
+      }
+    });
+  }
+
+  String _getToolNameFromObject(DrawingObject obj) {
+    if (obj.type == DrawingType.text && obj.isCallout) {
+      return 'Callout';
+    }
+    switch (obj.type) {
       case DrawingType.pencil: return 'Pencil';
       case DrawingType.pen: return 'Pen';
       case DrawingType.rect: return 'Rect';
@@ -1067,7 +1427,10 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
 
           onToolChanged: (toolName) {
             if (toolName != 'CustomTool' && _selectedCustomTool != null) {
-              setState(() => _selectedCustomTool = null);
+              setState(() {
+                _selectedCustomTool = null;
+                _isCustomToolLocked = false;
+              });
             }
           },
           customTabLabel: "Custom Tools",
@@ -1075,39 +1438,15 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
             groups: _customToolGroups,
             isLoading: _isLoadingCustomTools,
             selectedTool: _selectedCustomTool,
-            onToolSelected: (tool) {
-              setState(() {
-                if (_selectedCustomTool?.toolId == tool.toolId) {
-                  _selectedCustomTool = null;
-                  _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                    'Select', 2.0, Colors.black, Colors.transparent, 1.0,
-                  );
-                } else {
-                  _selectedCustomTool = tool;
-
-                  if (tool.toolObjects.length == 1) {
-                    final obj = tool.toolObjects.first;
-                    final nativeToolName = _getToolNameFromType(obj.type);
-
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      nativeToolName,
-                      obj.strokeWidth,
-                      obj.color,
-                      obj.fillColor ?? Colors.transparent,
-                      obj.opacity,
-                    );
-                  } else {
-                    _getCurrentCanvasKey().currentState?.applyExternalToolConfig(
-                      'CustomTool', 2.0, Colors.black, Colors.transparent, 1.0,
-                      customToolId: tool.toolId,
-                      customToolShapes: tool.toolObjects,
-                    );
-                  }
-                }
-              });
-            },
+            isSelectedToolLocked: _isCustomToolLocked,
+            onToolSelected: _handleCustomToolTap,
+            onAddToolSets: _openToolSetSettings,
+            onCreateToolSet: _openCreateToolSet,
             onClose: () {
-              setState(() => _selectedCustomTool = null);
+              setState(() {
+                _selectedCustomTool = null;
+                _isCustomToolLocked = false;
+              });
               _getCurrentCanvasKey().currentState?.applyExternalToolConfig('Select', 2, Colors.black, Colors.transparent, 1);
             },
           ),
@@ -1132,15 +1471,20 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
               setState(() => _inspectionTagIds = val);
               _hasUnsavedChanges = true;
             },
+            onAddTagGroups: _openTagGroupSettings,
+            onCreateTagGroup: _openCreateTagGroup,
 
             onUpdate: () {
               _hasUnsavedChanges = true;
+              _markCurrentPageDirty();
               _getCurrentCanvasKey().currentState?.refreshCanvas();
             },
 
             onImageUpload: (fileName, bytes) async {
               await _setupLocalImageOverlay(fileName, bytes, _selectedCanvasObject == null);
             },
+
+            onBulkImageUpload: _executeBulkS3Upload,
 
             onImageDelete: (s3Key) async {
               if (_selectedCanvasObject != null) {
@@ -1149,7 +1493,6 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
                 setState(() {
                   _inspectionImages.removeWhere((img) => img['image_url'] == s3Key || img['key'] == s3Key);
                   _rawDocumentData['image_list'] = List.from(_inspectionImages);
-                  _hasUnsavedImageChanges = true;
                   _hasUnsavedChanges = true;
                 });
               }
@@ -1191,7 +1534,10 @@ class CanvasDocumentPaneState extends State<CanvasDocumentPane> {
           onSelectionChanged: (selectedObject) {
             setState(() {
               _selectedCanvasObject = selectedObject;
-              if (selectedObject != null) _hasUnsavedChanges = true;
+              if (selectedObject != null) {
+                _hasUnsavedChanges = true;
+                _markCurrentPageDirty();
+              }
             });
           },
         ),

@@ -7,6 +7,8 @@ import 'eve_profile_api.dart';
 
 enum CreateReportStatus { success, partialSuccess, failure }
 
+enum ReportCreationPhase { creatingTemplate, uploadingDocument, assigningDocument, generatingSkills }
+
 // --- MODEL ---
 class ReportTemplate {
   final String id;
@@ -90,23 +92,37 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  Future<CreateReportStatus> createReportWithDocuments(String name, List<PlatformFile> files) async {
-    bool isReportCreated = false;
+  String _contentTypeForExtension(String? extension) {
+    switch (extension?.toLowerCase()) {
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'pdf':
+      default:
+        return 'application/pdf';
+    }
+  }
+
+  Future<({CreateReportStatus status, String? reportId, String? message})> createReportWithDocuments(
+    String name,
+    List<PlatformFile> files, {
+    void Function(ReportCreationPhase phase)? onPhaseChange,
+  }) async {
+    String? reportId;
 
     try {
       // 1. Create the Report Template
+      onPhaseChange?.call(ReportCreationPhase.creatingTemplate);
       final createPayload = {"name": name};
       final createResponse = await _apiService.post('/reportTemplate/create', createPayload);
       final createData = jsonDecode(createResponse.body);
-      
-      if (createData['data'] == null) {
-        return CreateReportStatus.failure;
-      }
-      
-      final String reportId = createData['data']['id'];
-      isReportCreated = true; // 🚀 Flag as created, but defer refreshing to the UI
 
-      if (files.isEmpty) return CreateReportStatus.success;
+      if (createData['data'] == null) {
+        return (status: CreateReportStatus.failure, reportId: null, message: null);
+      }
+
+      reportId = createData['data']['id'];
+
+      if (files.isEmpty) return (status: CreateReportStatus.success, reportId: reportId, message: null);
 
       // 2. Get Pre-signed URLs
       // 🚀 FIX: use the real per-file content type (docx/pdf/doc/txt) instead
@@ -116,63 +132,135 @@ class ReportController extends ChangeNotifier {
       final presignPayload = {
         "files": files.map((f) => {
           "file_name": f.name,
-          "content_type": EveProfileApi.contentTypeForFileName(f.name)
+          "content_type": _contentTypeForExtension(f.extension)
         }).toList()
       };
-      
+
       final presignResponse = await _apiService.post('/reportTemplate/$reportId/documents/presigned-urls', presignPayload);
       final presignData = jsonDecode(presignResponse.body);
-      
-      if (presignData['uploads'] == null) return CreateReportStatus.partialSuccess;
-      
-      final List urlsData = presignData['uploads']; 
+
+      if (presignData['uploads'] == null) {
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document couldn't be prepared for upload.",
+        );
+      }
+
+      final List urlsData = presignData['uploads'];
       List<Map<String, String>> registeredDocs = [];
 
       // 3. Upload files to S3 via Pre-signed URLs
+      onPhaseChange?.call(ReportCreationPhase.uploadingDocument);
       for (int i = 0; i < files.length; i++) {
         final file = files[i];
-        final urlInfo = urlsData[i]; 
-        
-        final String signedUrl = urlInfo['signedUrl'] ?? urlInfo['presignedUrl'] ?? urlInfo['url'];
+        final urlInfo = urlsData[i];
+
+        final String signedUrl = urlInfo['signedUrl'];
         final String s3Key = urlInfo['key'];
-        // 🚀 FIX: PUT with the matching Content-Type header — S3 requires the
-        // header to match what the presigned URL was signed with, and the
-        // stored object's Content-Type is what browsers use when opening it.
+        final String fileName = urlInfo['file_name'];
+        // PUT with the Content-Type the URL was signed with: S3 rejects a
+        // mismatch, and it is what browsers use when opening the file.
         final String contentType = urlInfo['content_type']?.toString() ??
-            EveProfileApi.contentTypeForFileName(file.name);
+            _contentTypeForExtension(file.extension);
 
         final uploadResponse = await http.put(
           Uri.parse(signedUrl),
           headers: {'Content-Type': contentType},
           body: file.bytes,
         );
-        
+
         if (uploadResponse.statusCode == 200) {
           registeredDocs.add({
-            "name": file.name,
+            "name": fileName,
             "key": s3Key
           });
         }
       }
 
-      if (registeredDocs.isEmpty) return CreateReportStatus.partialSuccess;
-
-      // 4. Register the uploaded documents to the template
-      final registerPayload = {"documents": registeredDocs};
-      final registerResponse = await _apiService.post('/reportTemplate/$reportId/documents', registerPayload);
-      
-      if (registerResponse.statusCode != 200 && registerResponse.statusCode != 201) {
-        return CreateReportStatus.partialSuccess;
+      if (registeredDocs.isEmpty) {
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document upload failed.",
+        );
       }
 
-      if (registeredDocs.length < files.length) return CreateReportStatus.partialSuccess;
+      // 4. Assign the uploaded document to the report template and extract its HTML
+      // (the UI only ever uploads one document at a time, so use the first).
+      onPhaseChange?.call(ReportCreationPhase.assigningDocument);
+      final doc = registeredDocs.first;
+      final assignPayload = {
+        "key": doc["key"],
+        "name": doc["name"],
+        // "signedUrl": urlsData.first['signedUrl'],
+      };
+      final assignResponse = await _apiService.post(
+        '/reportTemplate/assign-document-to-report-template/$reportId',
+        assignPayload,
+      );
 
-      return CreateReportStatus.success;
-
+      if (assignResponse.statusCode != 200 && assignResponse.statusCode != 201) {
+        return (
+          status: CreateReportStatus.partialSuccess,
+          reportId: reportId,
+          message: "Report template created, but the document couldn't be assigned to it.",
+        );
+      }
+      return (status: CreateReportStatus.success, reportId: reportId, message: null);
     } catch (e) {
       debugPrint("Error in createReportWithDocuments: $e");
-      return isReportCreated ? CreateReportStatus.partialSuccess : CreateReportStatus.failure;
+      return (
+        status: reportId != null ? CreateReportStatus.partialSuccess : CreateReportStatus.failure,
+        reportId: reportId,
+        message: reportId != null ? "Report template created, but an unexpected error occurred: $e" : null,
+      );
     }
+  }
+
+  /// Fetches the rendered HTML fragments (header/footer/etc.) for a single
+  /// report template document, keyed by its own document id (not the
+  /// template id).
+  Future<List<Map<String, dynamic>>> fetchDocumentHtml(String documentId) async {
+    final response = await _apiService.get('/reportTemplate/document-html/getByDocumentId/$documentId');
+    final resData = jsonDecode(response.body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300 && resData['data'] != null) {
+      return List<Map<String, dynamic>>.from(resData['data']);
+    }
+    throw Exception(resData['message'] ?? "Failed to fetch document preview.");
+  }
+
+  /// Fetches the full report template record including its `header_html`/
+  /// `footer_html` fields, used to seed the Report Placeholder editor.
+  Future<Map<String, dynamic>> fetchTemplateHtml(String templateId) async {
+    final response = await _apiService.get('/reportTemplate/getById/$templateId');
+    final resData = jsonDecode(response.body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300 && resData['data'] != null) {
+      return resData['data'];
+    }
+    throw Exception(resData['message'] ?? "Failed to fetch report template.");
+  }
+
+  /// Single dynamic PATCH endpoint for a report template — pass whichever
+  /// fields need updating (e.g. `{'name': ...}` or the header/footer HTML).
+  Future<void> updateReportTemplateFields(String templateId, Map<String, dynamic> fields) async {
+    final response = await _apiService.patch('/reportTemplate/$templateId/update', fields);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final resData = jsonDecode(response.body);
+      throw Exception(resData['message'] ?? "Failed to update report template.");
+    }
+  }
+
+  /// Saves the Report Placeholder editor's header/footer back onto the
+  /// template as rendered HTML.
+  Future<void> saveTemplateHtml(String templateId, {required String headerHtml, required String footerHtml}) {
+    return updateReportTemplateFields(templateId, {
+      'header_html': headerHtml,
+      'footer_html': footerHtml,
+    });
   }
 
   Future<void> deleteReport(String templateId) async {
@@ -208,9 +296,9 @@ class ReportController extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> deleteDocument(String docId, bool updateSkill) async {
+  Future<Map<String, dynamic>> deleteDocument(String docId) async {
     try {
-      final response = await _apiService.delete('/reportTemplate/$docId/document?updateSkill=$updateSkill');
+      final response = await _apiService.delete('/reportTemplate/$docId/document');
       
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -235,12 +323,12 @@ class ReportController extends ChangeNotifier {
     final presignPayload = {
       "files": files.map((f) => {
         "file_name": f.name,
-        "content_type": EveProfileApi.contentTypeForFileName(f.name)
+        "content_type": _contentTypeForExtension(f.extension)
       }).toList()
     };
-    
+
     final presignResponse = await _apiService.post(
-      '/reportTemplate/$templateId/documents/presigned-urls', 
+      '/reportTemplate/$templateId/documents/presigned-urls',
       presignPayload
     );
     
@@ -286,12 +374,14 @@ class ReportController extends ChangeNotifier {
     return registeredDocs;
   }
 
-  Future<Map<String, dynamic>> addDocuments(String templateId, List<Map<String, String>> uploadedDocs, bool updateSkill) async {
+  Future<Map<String, dynamic>> addDocuments(String templateId, List<Map<String, String>> uploadedDocs) async {
+    final doc = uploadedDocs.first;
+    final assignPayload = {
+      "key": doc["key"],
+      "name": doc["name"],
+    };
     final response = await _apiService.post(
-      '/reportTemplate/$templateId/documents?updateSkill=$updateSkill',
-      {
-        "documents": uploadedDocs 
-      }
+      '/reportTemplate/assign-document-to-report-template/$templateId',assignPayload
     );
 
     final resData = jsonDecode(response.body);

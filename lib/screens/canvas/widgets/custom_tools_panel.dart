@@ -2,57 +2,146 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/canvas/widgets/canvas_painter.dart';
+import 'empty_selection_card.dart';
 
-class CustomToolsPanel extends StatelessWidget {
+class CustomToolsPanel extends StatefulWidget {
   final List<CustomToolGroup> groups;
   final CustomTool? selectedTool;
+  final bool isSelectedToolLocked;
   final Function(CustomTool) onToolSelected;
   final VoidCallback onClose;
   final bool isLoading;
+  final VoidCallback? onAddToolSets;
+  final VoidCallback? onCreateToolSet;
 
   const CustomToolsPanel({
     super.key,
     required this.groups,
     required this.isLoading,
     required this.selectedTool,
+    this.isSelectedToolLocked = false,
     required this.onToolSelected,
     required this.onClose,
+    this.onAddToolSets,
+    this.onCreateToolSet,
   });
 
-  // 🚀 1. Extracted Loading State
+  @override
+  State<CustomToolsPanel> createState() => _CustomToolsPanelState();
+}
+
+class _CustomToolsPanelState extends State<CustomToolsPanel> {
+  static const double _tileSize = 40;
+  static const double _itemWidth = 50;
+
+  // Keyed by group name; null until groups first arrive so the first group opens by default.
+  Set<String>? _expandedGroups;
+
+  Set<String> get _expanded {
+    if (_expandedGroups == null && widget.groups.isNotEmpty) {
+      _expandedGroups = {widget.groups.first.toolGroup};
+    }
+    return _expandedGroups ?? <String>{};
+  }
+
+  void _toggleGroup(String name) {
+    setState(() {
+      final expanded = _expanded;
+      expanded.contains(name) ? expanded.remove(name) : expanded.add(name);
+    });
+  }
+
   Widget _buildLoadingState(ThemeData theme) {
     return Center(
       child: CircularProgressIndicator(color: theme.colorScheme.primary),
     );
   }
 
-  // 🚀 2. Extracted Empty State
   Widget _buildEmptyState(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: EmptySelectionCard(
+        icon: Icons.category_outlined,
+        title: "No Tool Set selected for this project.",
+        actionLabel: "Add Tool Sets",
+        onAction: widget.onAddToolSets,
+        linkLabel: "Create a new Tool Set",
+        onLink: widget.onCreateToolSet,
+      ),
+    );
+  }
+
+  Widget _buildContentState(ThemeData theme) {
+    final groups = widget.groups;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+      itemCount: groups.length,
+      separatorBuilder: (_, _) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Divider(height: 1, color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+      ),
+      itemBuilder: (context, index) {
+        final group = groups[index];
+        final isExpanded = _expanded.contains(group.toolGroup);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.handyman_outlined, 
-              size: 48, 
-              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5)
-            ),
-            const SizedBox(height: 16),
-            Text(
-              "No Custom Tools",
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onSurfaceVariant,
+            _buildGroupHeader(theme, group, isExpanded),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 180),
+              crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              firstChild: const SizedBox(width: double.infinity),
+              secondChild: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: group.tools.map((tool) => _buildToolItem(theme, tool)).toList(),
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              "There are no custom tools available for this project.",
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupHeader(ThemeData theme, CustomToolGroup group, bool isExpanded) {
+    return InkWell(
+      onTap: () => _toggleGroup(group.toolGroup),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              turns: isExpanded ? 0.25 : 0,
+              duration: const Duration(milliseconds: 180),
+              child: Icon(Icons.chevron_right, size: 20, color: theme.colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                group.toolGroup,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                "${group.tools.length}",
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -61,84 +150,76 @@ class CustomToolsPanel extends StatelessWidget {
     );
   }
 
-  // 🚀 3. Extracted Content State
-  Widget _buildContentState(ThemeData theme) {
-    return ListView.builder(
-      itemCount: groups.length,
-      itemBuilder: (context, index) {
-        final group = groups[index];
-        return ExpansionTile(
-          title: Text(group.toolGroup, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-          initiallyExpanded: index == 0,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 64, // 🚀 Fixed tool-item size; panel width only changes column count
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  childAspectRatio: 1.0,
-                ),
-                itemCount: group.tools.length,
-                itemBuilder: (context, toolIndex) {
-                  final tool = group.tools[toolIndex];
-                  final isSelected = selectedTool?.toolId == tool.toolId;                              
+  Widget _buildToolItem(ThemeData theme, CustomTool tool) {
+    final isDark = theme.brightness == Brightness.dark;
+    final isSelected = widget.selectedTool?.toolId == tool.toolId;
 
-                  return InkWell(
-                    onTap: () => onToolSelected(tool),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant, 
-                          width: isSelected ? 2 : 1
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        color: isSelected ? theme.colorScheme.primaryContainer.withOpacity(0.3) : Colors.transparent,
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // 🌟 USING THE CENTERED PREVIEW PAINTER 🌟
-                          Expanded(
-                            child: tool.toolObjects.isNotEmpty 
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Container(
-                                      color: Colors.white, // Clean background for the thumbnail
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      child: CustomPaint(
-                                        painter: CenteredPreviewPainter(context, tool.toolObjects),
-                                      ),
-                                    ),
-                                  )
-                                : const Center(
-                                    child: Icon(Icons.extension_outlined, size: 20, color: Colors.grey)
-                                  ),
-                          ),
-                          
-                          const SizedBox(height: 4),
-                          Text(
-                            tool.toolName, 
-                            style: const TextStyle(fontSize: 9), 
-                            textAlign: TextAlign.center, 
-                            maxLines: 1, 
-                            overflow: TextOverflow.ellipsis
-                          ),
-                        ],
+    // Tool drawings keep their own (often dark) stroke colours, so the tile stays light
+    // in both themes; dark mode just uses a slightly dimmer shade so it doesn't glare.
+    final tileColor = isDark ? const Color(0xFFD9DCE1) : const Color(0xFFF1F3F5);
+
+    return SizedBox(
+      width: _itemWidth,
+      child: InkWell(
+        onTap: () => widget.onToolSelected(tool),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: _tileSize,
+                    height: _tileSize,
+                    decoration: BoxDecoration(
+                      color: tileColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant.withOpacity(0.6),
+                        width: isSelected ? 2 : 1,
                       ),
                     ),
-                  );
-                },
+                    clipBehavior: Clip.hardEdge,
+                    child: tool.toolObjects.isNotEmpty
+                        ? IgnorePointer(
+                            child: CustomPaint(painter: CenteredPreviewPainter(context, tool.toolObjects)),
+                          )
+                        : const Icon(Icons.extension_outlined, size: 20, color: Colors.grey),
+                  ),
+                  if (isSelected && widget.isSelectedToolLocked)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: theme.colorScheme.primary),
+                        ),
+                        child: Icon(Icons.lock, size: 10, color: theme.colorScheme.primary),
+                      ),
+                    ),
+                ],
               ),
-            )
-          ],
-        );
-      },
+              const SizedBox(height: 3),
+              Text(
+                tool.toolName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -147,9 +228,9 @@ class CustomToolsPanel extends StatelessWidget {
     final theme = Theme.of(context);
 
     Widget bodyContent;
-    if (isLoading) {
+    if (widget.isLoading) {
       bodyContent = _buildLoadingState(theme);
-    } else if (groups.isEmpty) {
+    } else if (widget.groups.isEmpty) {
       bodyContent = _buildEmptyState(theme);
     } else {
       bodyContent = _buildContentState(theme);
@@ -163,9 +244,39 @@ class CustomToolsPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
+          _buildHeader(theme),
           Expanded(
             child: bodyContent,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text("Tool Sets", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+          ),
+          if (widget.onAddToolSets != null)
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: IconButton(
+                onPressed: widget.onAddToolSets,
+                tooltip: "Add Tool Sets",
+                padding: EdgeInsets.zero,
+                iconSize: 18,
+                style: IconButton.styleFrom(
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                icon: Icon(Icons.add, color: theme.colorScheme.onSurface),
+              ),
+            ),
         ],
       ),
     );

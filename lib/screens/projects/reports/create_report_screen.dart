@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../../../core/api_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/widgets.dart';
-import 'report_skill_preview_screen.dart';
+import '../controllers/project_controller.dart';
+// import 'report_skill_preview_screen.dart'; // Clarification-questions step is commented out below.
+import 'generated_report_view.dart';
 
 class CreateReportScreen extends StatefulWidget {
   final String projectId;
@@ -34,9 +38,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   List<dynamic> _reportTemplates = [];
   dynamic _selectedReportTemplate; // Single selection
 
-  // Step 3: Clarification Questions
-  List<dynamic> _clarificationQuestions = [];
-  final Map<int, TextEditingController> _questionAnswers = {};
+  // Step 3: Clarification Questions — commented out along with the step
+  // itself; the flow now stops after template selection and shows the
+  // inspection summary preview instead. Not removed so it can be restored.
+  // List<dynamic> _clarificationQuestions = [];
+  // final Map<int, TextEditingController> _questionAnswers = {};
 
   @override
   void initState() {
@@ -45,13 +51,13 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     _fetchReportTemplates();
   }
 
-  @override
-  void dispose() {
-    for (var controller in _questionAnswers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
+  // @override
+  // void dispose() {
+  //   for (var controller in _questionAnswers.values) {
+  //     controller.dispose();
+  //   }
+  //   super.dispose();
+  // }
 
   // --- STEP 1 LOGIC ---
   Future<void> _fetchInspections() async {
@@ -81,7 +87,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
  Future<void> _fetchReportTemplates() async {
     try {
-      final response = await _apiService.get('/reportTemplate/getByCompanyId');
+      final response = await _apiService.get('/template/templateReportTemplateByProjectId/${widget.projectId}');
       final responseData = jsonDecode(response.body);
 
       if (!mounted) return;
@@ -108,41 +114,201 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   // 🚀 THE HEAVY LIFTING: Merge Existing + Upload New -> Register Template -> Trigger AI
-  Future<void> _processDocumentsAndAnalyze() async {
+  // Commented out along with the clarification-questions step (step 3) it
+  // used to lead into — not removed so it can be restored later.
+  // Future<void> _processDocumentsAndAnalyze() async {
+  //   setState(() {
+  //     _isProcessing = true;
+  //     _loadingMessage = "Generating Skill & Questions...";
+  //   });
+  //
+  //   try {
+  //     // 1. TRIGGER SKILL GENERATION
+  //     final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
+  //     final genData = jsonDecode(genRes.body);
+  //
+  //     final String statusEndpoint = genData['data']['status_endpoint'];
+  //
+  //     // 2. POLL UNTIL SKILL IS GENERATED
+  //     bool isComplete = false;
+  //     while (!isComplete) {
+  //       await Future.delayed(const Duration(seconds: 3));
+  //       final pollRes = await _apiService.get(statusEndpoint);
+  //       final pollData = jsonDecode(pollRes.body);
+  //       if (pollData['status'] == 'completed') isComplete = true;
+  //     }
+  //
+  //     // 3. GET CLARIFICATION QUESTIONS
+  //     setState(() => _loadingMessage = "Fetching questions...");
+  //     final qRes = await _apiService.get('/reportTemplate/${_selectedReportTemplate['id']}/clarification-questions');
+  //     final qData = jsonDecode(qRes.body);
+  //
+  //     setState(() {
+  //       _clarificationQuestions = qData['data']['clarification_questions'] ?? []; // Adjust key based on API
+  //       _questionAnswers.clear();
+  //       for (int i = 0; i < _clarificationQuestions.length; i++) {
+  //         _questionAnswers[i] = TextEditingController();
+  //       }
+  //       _currentStep = 2; // Move to the Questions Step
+  //     });
+  //   } catch (e) {
+  //     if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
+  //   } finally {
+  //     if (mounted) setState(() => _isProcessing = false);
+  //   }
+  // }
+
+  // 🚀 Calls GET /inspection/summary/{templateId}?inspectionIds=...&inspectionIds=...
+  // and previews the returned HTML summary with a close button — the whole
+  // flow now stops here instead of continuing into skill generation /
+  // clarification questions / final report finalization.
+  // 🚀 Ensures the report template's Eve profile is built.
+  // 1. GET /reportTemplate/{templateId}/profile
+  // 2. If profile_status == 'ready' -> nothing to do.
+  // 3. Otherwise (null / queued / building / failed) -> POST
+  //    /reportTemplate/{templateId}/profile/generate {"force": true}
+  //    and poll the status endpoint until it reports 'ready'.
+  Future<void> _ensureTemplateProfileReady(String templateId) async {
+    setState(() => _loadingMessage = "Preparing report template...");
+
+    final profileRes = await _apiService.get('/reportTemplate/$templateId/profile');
+    final profileData = jsonDecode(profileRes.body);
+    final String? profileStatus =
+        profileData['data']?['profile_status'] ?? "none";
+
+    if (profileStatus == 'ready') return;
+
+    // Kick off profile generation.
+    final genRes = await _apiService.post(
+      '/reportTemplate/$templateId/profile/generate',
+      {"force": true},
+    );
+    final genData = jsonDecode(genRes.body);
+
+    final bool hasJobId = genData is Map && genData.containsKey('job_id') && genData['job_id'] != null;
+    if (!hasJobId) {
+      throw Exception("Failed to start report template profile generation.");
+    }
+
+    final String jobId = genData['job_id'];
+    final String statusEndpoint = genData['status_endpoint'] ??
+        '/reportTemplate/$templateId/profile/status/$jobId';
+
+    const int maxAttempts = 60;
+    int attempts = 0;
+    bool isReady = false;
+
+    while (!isReady && attempts < maxAttempts) {
+      await Future.delayed(const Duration(seconds: 3));
+      attempts++;
+
+      final pollRes = await _apiService.get(statusEndpoint);
+      final pollData = jsonDecode(pollRes.body);
+      final String? status =
+          pollData['status'] ?? pollData['data']?['profile_status'] ?? "none";
+
+      if (status == 'ready' || status == 'completed') {
+        isReady = true;
+      } else if (status == 'failed' || status == 'error') {
+        throw Exception(
+            pollData['message'] ?? pollData['profile_error'] ?? "Report template profile generation failed.");
+      }
+    }
+
+    if (!isReady) throw Exception("Report template profile generation timed out.");
+  }
+
+  Future<void> _generateReportSummary() async {
     setState(() {
       _isProcessing = true;
-      _loadingMessage = "Generating Skill & Questions...";
     });
 
     try {
-      // 1. TRIGGER SKILL GENERATION
-      final genRes = await _apiService.post('/reportTemplate/${_selectedReportTemplate['id']}/generate-skill', {});
-      final genData = jsonDecode(genRes.body);
+      final templateId = _selectedReportTemplate['id'];
 
-      final String statusEndpoint = genData['data']['status_endpoint'];
-
-      // 2. POLL UNTIL SKILL IS GENERATED
-      bool isComplete = false;
-      while (!isComplete) {
-        await Future.delayed(const Duration(seconds: 3));
-        final pollRes = await _apiService.get(statusEndpoint);
-        final pollData = jsonDecode(pollRes.body);
-        if (pollData['status'] == 'completed') isComplete = true;
+      // Templates without documents have no Eve profile to build — skip
+      // straight to report generation for those.
+      if (_selectedReportTemplate['documents'] == true) {
+        // Make sure the template's Eve profile is built before generating
+        // the summary. If it's not ready yet, kick off generation and poll.
+        await _ensureTemplateProfileReady(templateId);
+        if (!mounted) return;
       }
 
-      // 3. GET CLARIFICATION QUESTIONS
-      setState(() => _loadingMessage = "Fetching questions...");
-      final qRes = await _apiService.get('/reportTemplate/${_selectedReportTemplate['id']}/clarification-questions');
-      final qData = jsonDecode(qRes.body);
-
-      setState(() {
-        _clarificationQuestions = qData['data']['clarification_questions'] ?? []; // Adjust key based on API
-        _questionAnswers.clear();
-        for (int i = 0; i < _clarificationQuestions.length; i++) {
-          _questionAnswers[i] = TextEditingController();
-        }
-        _currentStep = 2; // Move to the Questions Step
+      // final query = _selectedInspectionIds
+      //     .map((id) => 'inspectionIds=${Uri.encodeQueryComponent(id)}')
+      //     .join('&');
+      // // final response = await _apiService.get('/inspection/summary/$templateId?$query');
+      setState(() => _loadingMessage = "Generating Report Summary...");
+      final response = await _apiService.post('/inspection/report/generate', 
+      {
+        'project_id': widget.projectId,
+        'report_template_id': templateId,
+        'inspection_ids': _selectedInspectionIds
       });
+      final responseData = jsonDecode(response.body);
+
+      if (!mounted) return;
+
+      // New response shape (no `success` flag):
+      // { message, job_id, report_id, status: "queued", status_endpoint, ... }
+      if (responseData['status_endpoint'] == null) {
+        throw Exception(responseData['message'] ?? "Failed to start report summary generation.");
+      }
+
+      final String statusEndpoint = responseData['status_endpoint'];
+      final String reportId = responseData['report_id'] ?? "";
+
+      Map<String, dynamic>? pollData;
+      bool isComplete = false;
+      const int maxAttempts = 90; // 15 minutes max
+      int attempts = 0;
+
+      while (!isComplete && attempts < maxAttempts) {
+        await Future.delayed(const Duration(seconds: 10));
+        attempts++;
+
+        final pollRes = await _apiService.get(statusEndpoint);
+        pollData = jsonDecode(pollRes.body);
+
+        if (pollData!['status'] == 'ready') {
+          isComplete = true;
+        } else if (pollData['status'] == 'failed') {
+          throw Exception(pollData['message'] ?? "Report summary generation failed.");
+        }
+      }
+
+      if (!isComplete) throw Exception("Report summary generation timed out.");
+      if (!mounted) return;
+
+      // The poll result now returns a presigned URL (summary_html_url)
+      // instead of inline HTML — fetch it to get the actual summary HTML.
+      String summaryHtml = "<p>No summary generated.</p>";
+      final String? summaryHtmlUrl = pollData?['download_urls']?['filled_html'];
+      if (summaryHtmlUrl != null && summaryHtmlUrl.isNotEmpty) {
+        final htmlRes = await http.get(Uri.parse(summaryHtmlUrl));
+        if (htmlRes.statusCode != 200) {
+          throw Exception("Failed to load report summary (HTTP ${htmlRes.statusCode}).");
+        }
+        summaryHtml = utf8.decode(htmlRes.bodyBytes);
+      }
+      if (!mounted) return;
+
+      final bool? didFinish = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => GeneratedReportView(
+            htmlContent: summaryHtml,
+            reportId: pollData?['report_id'] ?? reportId,
+            reportURL: pollData?['artifacts']?["filled_html_key"] ?? "",
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+      if (!mounted) return;
+      if (didFinish == true) {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (mounted) ToastService.show(context, message: "Error: $e", type: ToastType.error);
     } finally {
@@ -158,18 +324,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         return;
       }
       setState(() => _currentStep += 1);
-    } 
+    }
     else if (_currentStep == 1) {
       // 🚀 Validate single template selection
       if (_selectedReportTemplate == null) {
         ToastService.show(context, message: "Please select a Report Template.", type: ToastType.error);
         return;
       }
-      _processDocumentsAndAnalyze();
+      _generateReportSummary();
     }
-    else if (_currentStep == 2) {
-      _submitFinalReport();
-    }
+    // else if (_currentStep == 2) {
+    //   _submitFinalReport();
+    // }
   }
 
   void _onStepCancel() {
@@ -181,21 +347,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   }
 
   // 🚀 FINAL STEP: Submit Answers and Finalize Skill
+  // Commented out along with the clarification-questions step (step 3) and
+  // ReportSkillPreviewScreen flow it led into — not removed so it can be
+  // restored later.
+  /*
   Future<void> _submitFinalReport() async {
     setState(() {
       _isProcessing = true;
       _loadingMessage = "Finalizing Report Formatting...";
     });
-    
+
     try {
       // 1. APPLY CLARIFICATIONS
 
       final Map<String, String> answersPayload = {};
-      
+
       for (int i = 0; i < _clarificationQuestions.length; i++) {
         final qText = _clarificationQuestions[i]['question'];
         final aText = _questionAnswers[i]?.text.trim() ?? "";
-        
+
         if (aText.isNotEmpty) {
           answersPayload[qText] = aText;
         }
@@ -228,7 +398,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
           '/reportTemplate/${_selectedReportTemplate['id']}/apply-clarifications',
           {'clarification_answers': answersPayload}
         );
-        
+
         final finalizeData = jsonDecode(finalizeRes.body);
 
         final String statusEndpoint = finalizeData['status_endpoint'];
@@ -246,14 +416,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
           if (pollData['status'] == 'completed') {
             isComplete = true;
-            
+
             if (!mounted) return;
-            
+
             final skillContent = pollData['result']['skill_content'];
             // final skillId = pollData['result']['skill']['id'];
 
             ToastService.show(context, message: "Skill generated successfully!", type: ToastType.success);
-            
+
             final bool? didCreateReport = await Navigator.push<bool>(
               context,
               MaterialPageRoute(
@@ -270,7 +440,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             if (didCreateReport == true) {
               Navigator.pop(context, true);
             }
-            
+
           } else if (pollData['status'] == 'failed' || pollData['status'] == 'error') {
             throw Exception("Finalization failed on server.");
           }
@@ -284,6 +454,63 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
+  */
+
+  // Page header in the same shape as the other project screens: breadcrumb
+  // (Projects · <project name> · Reports · Create Report) on top, then a back
+  // arrow + title row. This screen is pushed imperatively on top of the
+  // project's reports route, so "Reports" pops back to that route while the
+  // other crumbs navigate through the router.
+  Widget _buildHeader(ThemeData theme) {
+    final colorScheme = theme.colorScheme;
+    final project = projectController.currentProject;
+
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppBreadcrumbs(
+            items: [
+              BreadcrumbItem(
+                label: "Projects",
+                onTap: () => context.go('/projects'),
+              ),
+              BreadcrumbItem(
+                label: project?.name ?? "Project",
+                onTap: () => context.go('/projects/details/${widget.projectId}/inspections'),
+              ),
+              BreadcrumbItem(
+                label: "Reports",
+                onTap: () => Navigator.of(context).popUntil((route) => route.settings is Page),
+              ),
+              BreadcrumbItem(label: "Create Report"),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.of(context).maybePop(),
+                color: colorScheme.onSurface,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                "Create Report",
+                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -292,16 +519,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainer,
-      appBar: AppBar(
-        title: const Text("Create Report", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-        backgroundColor: colorScheme.surface,
-        centerTitle: false,
-      ),
       body: PopScope(
         canPop: !_isProcessing,
         child: AbsorbPointer(
           absorbing: _isProcessing,
-          child: Stack(
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                _buildHeader(theme),
+                Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                Expanded(
+                  child: Stack(
             children: [
               Stepper(
                 type: StepperType.vertical, 
@@ -315,7 +544,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                     child: Row(
                       children: [
                         Button(
-                          label: _currentStep == 2 ? "Finalize Report" : (_currentStep == 1 ? "Analyze Documents" : "Continue"),
+                          label: _currentStep == 1 ? "Generate Report" : "Continue",
                           variant: ButtonVariant.filled,
                           onPressed: details.onStepContinue,
                         ),
@@ -421,7 +650,6 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                               separatorBuilder: (_, __) => const Divider(height: 1),
                               itemBuilder: (context, index) {
                                 final template = _reportTemplates[index];
-                                final bool hasDocuments = template['documents'] == true;
 
                                 return RadioListTile<dynamic>(
                                   value: template,
@@ -435,23 +663,15 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                       fontWeight: FontWeight.w600, 
                                       fontSize: 14,
                                       // Optional: Dim the title text slightly if it's disabled
-                                      color: hasDocuments ? colorScheme.onSurface : colorScheme.onSurface.withOpacity(0.5),
+                                      color: colorScheme.onSurface,
                                     )
                                   ),
-                                  subtitle: hasDocuments
-                                      ? null
-                                      : Text(
-                                          "No documents available for this template",
-                                          style: TextStyle(fontSize: 12, color: colorScheme.error.withOpacity(0.8)), 
-                                        ),
                                   // Setting onChanged to null automatically disables the entire tile
-                                  onChanged: hasDocuments 
-                                      ? (val) {
+                                  onChanged: (val) {
                                           setState(() {
                                             _selectedReportTemplate = val;
                                           });
-                                        }
-                                      : null, 
+                                        }, 
                                 );
                               },
                             ),
@@ -460,63 +680,66 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
                   // ==========================================
                   // STEP 3: CLARIFICATION QUESTIONS
+                  // Commented out — the flow now stops after template
+                  // selection (step 2) and shows the summary preview
+                  // instead. Not removed so it can be restored later.
                   // ==========================================
-                  Step(
-                    title: const Text("Clarification Questions", style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text("Answer these to refine the report structure (Optional)"), 
-                    isActive: _currentStep >= 2,
-                    state: _currentStep > 2 ? StepState.complete : StepState.indexed,
-                    content: _clarificationQuestions.isEmpty 
-                      ? const Text("No questions generated.")
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: List.generate(_clarificationQuestions.length, (index) {
-                            final qData = _clarificationQuestions[index];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 24),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surface,
-                                border: Border.all(color: colorScheme.outlineVariant),
-                                borderRadius: BorderRadius.circular(12)
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 14,
-                                        backgroundColor: colorScheme.primaryContainer,
-                                        child: Text("${index + 1}", style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.bold)),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          qData['question'] ?? "",
-                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  TextField(
-                                    controller: _questionAnswers[index],
-                                    maxLines: 2,
-                                    decoration: InputDecoration(
-                                      hintText: "Enter your answer here (Optional)...",
-                                      filled: true,
-                                      fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  )
-                                ],
-                              ),
-                            );
-                          }),
-                        ),
-                  ),
+                  // Step(
+                  //   title: const Text("Clarification Questions", style: TextStyle(fontWeight: FontWeight.bold)),
+                  //   subtitle: const Text("Answer these to refine the report structure (Optional)"),
+                  //   isActive: _currentStep >= 2,
+                  //   state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+                  //   content: _clarificationQuestions.isEmpty
+                  //     ? const Text("No questions generated.")
+                  //     : Column(
+                  //         crossAxisAlignment: CrossAxisAlignment.start,
+                  //         children: List.generate(_clarificationQuestions.length, (index) {
+                  //           final qData = _clarificationQuestions[index];
+                  //           return Container(
+                  //             margin: const EdgeInsets.only(bottom: 24),
+                  //             padding: const EdgeInsets.all(16),
+                  //             decoration: BoxDecoration(
+                  //               color: colorScheme.surface,
+                  //               border: Border.all(color: colorScheme.outlineVariant),
+                  //               borderRadius: BorderRadius.circular(12)
+                  //             ),
+                  //             child: Column(
+                  //               crossAxisAlignment: CrossAxisAlignment.start,
+                  //               children: [
+                  //                 Row(
+                  //                   crossAxisAlignment: CrossAxisAlignment.start,
+                  //                   children: [
+                  //                     CircleAvatar(
+                  //                       radius: 14,
+                  //                       backgroundColor: colorScheme.primaryContainer,
+                  //                       child: Text("${index + 1}", style: TextStyle(color: colorScheme.onPrimaryContainer, fontSize: 12, fontWeight: FontWeight.bold)),
+                  //                     ),
+                  //                     const SizedBox(width: 12),
+                  //                     Expanded(
+                  //                       child: Text(
+                  //                         qData['question'] ?? "",
+                  //                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  //                       ),
+                  //                     ),
+                  //                   ],
+                  //                 ),
+                  //                 const SizedBox(height: 16),
+                  //                 TextField(
+                  //                   controller: _questionAnswers[index],
+                  //                   maxLines: 2,
+                  //                   decoration: InputDecoration(
+                  //                     hintText: "Enter your answer here (Optional)...",
+                  //                     filled: true,
+                  //                     fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  //                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  //                   ),
+                  //                 )
+                  //               ],
+                  //             ),
+                  //           );
+                  //         }),
+                  //       ),
+                  // ),
                 ],
               ),
 
@@ -595,6 +818,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                   ),
                 ),
             ],
+          ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

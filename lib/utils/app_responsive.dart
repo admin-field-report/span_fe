@@ -39,4 +39,10 @@ class AppResponsive {
 
   static bool isDesktopScreen(BuildContext context) =>
       MediaQuery.sizeOf(context).width >= 1024;
+
+  /// True on an actual tablet device (Android/iOS with a tablet-class
+  /// shortest side), in either orientation — unlike [isTabletScreen], which
+  /// is a width-range check that a landscape tablet's width exceeds.
+  static bool isTabletDevice(BuildContext context) =>
+      isMobile && MediaQuery.sizeOf(context).shortestSide >= 600;
 }

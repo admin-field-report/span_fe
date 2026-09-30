@@ -200,7 +200,11 @@ class _ReportSkillPreviewScreenState extends State<ReportSkillPreviewScreen> {
           final bool? didFinish = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
-              builder: (context) => GeneratedReportView(htmlContent: finalHtml),
+              builder: (context) => GeneratedReportView(
+                htmlContent: finalHtml,
+                reportId: pollData['result']?['data']?['report']?['id'] ?? "",
+                reportURL: "",
+              ),
               fullscreenDialog: true, 
             ),
           );

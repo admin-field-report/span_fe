@@ -19,6 +19,7 @@ import '../screens/reports/reports_screen.dart';
 import '../screens/reports/word_profile_template_screen.dart';
 import '../screens/reports/report_profiler_screen.dart';
 import '../screens/reports/report_profiler_detail_screen.dart';
+import '../screens/report_placeholder/report_placeholder_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -68,7 +69,11 @@ GoRoute(
     ShellRoute(
       builder: (context, state, child) {
         final bool isCanvasRoute = state.uri.path.contains('/canvas');
-        final bool removePadding = state.uri.path.contains('/canvas');
+        // Report Placeholder manages its own full Scaffold/AppBar chrome too,
+        // so it needs the shell's own margin/rounding stripped the same way
+        // canvas does.
+        final bool isReportPlaceholderRoute = state.uri.path.contains('/report-placeholder');
+        final bool removePadding = isCanvasRoute || isReportPlaceholderRoute;
         return MainScaffold(
           isScrollable: !isCanvasRoute,
           removePadding: removePadding,
@@ -184,6 +189,19 @@ GoRoute(
         GoRoute(
           path: '/ai',
           builder: (context, state) => const AIDataScreen(),
+        ),
+        GoRoute(
+          path: '/report-placeholder',
+          builder: (context, state) {
+            // Optional {templateId, templateName} travel via `extra` (set when
+            // opened from an existing report row or right after creating one);
+            // omitted entirely for the blank, unsaved scratch document opened
+            // from the left-nav entry.
+            final extra = state.extra;
+            final templateId = extra is Map ? extra['templateId'] as String? : null;
+            final templateName = extra is Map ? extra['templateName'] as String? : null;
+            return ReportPlaceholderScreen(templateId: templateId, templateName: templateName);
+          },
         ),
         GoRoute(
           path: '/canvas',

@@ -6,7 +6,9 @@ import 'dart:typed_data';
 import 'dart:convert';
 import '../../../widgets/canvas/models/canvas_models.dart';
 import '../../../widgets/form_components/text_area_field.dart';
-import '../../../models/project.dart'; 
+import '../../../models/project.dart';
+import 'multi_camera_capture_screen.dart';
+import 'empty_selection_card.dart';
 
 class PropertiesPanel extends StatefulWidget {
   final DrawingObject? activeObject;
@@ -19,12 +21,16 @@ class PropertiesPanel extends StatefulWidget {
   
   final ValueChanged<String>? onInspectionDescriptionChanged;
   final ValueChanged<List<String>>? onInspectionTagsChanged;
+  final VoidCallback? onAddTagGroups;
+  final VoidCallback? onCreateTagGroup;
 
   final VoidCallback onUpdate;
   final VoidCallback onClose;
-  final Future<void> Function(String fileName, Uint8List bytes) onImageUpload; 
+  final Future<void> Function(String fileName, Uint8List bytes) onImageUpload;
   final Future<void> Function(String s3Key) onImageDelete;
   final Function(String s3Key) onImageTap;
+  final Future<void> Function(List<Map<String, dynamic>> photos, void Function(int uploaded, int total) onProgress)?
+      onBulkImageUpload;
 
   final bool allowImageUpload;
   final bool showImageSection; 
@@ -40,12 +46,15 @@ class PropertiesPanel extends StatefulWidget {
     this.inspectionImageUrls,
     this.onInspectionDescriptionChanged,
     this.onInspectionTagsChanged,
+    this.onAddTagGroups,
+    this.onCreateTagGroup,
 
     required this.onUpdate,
     required this.onClose,
     required this.onImageUpload,
     required this.onImageDelete,
     required this.onImageTap,
+    this.onBulkImageUpload,
     this.allowImageUpload = true,
     this.showImageSection = true, 
     this.isInspectionLevel = true, 
@@ -155,6 +164,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     }
   }
 
+  bool get _isMobilePlatform =>
+      !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
+
   void _showImageOptions() {
     if (kIsWeb) {
       _pickAndUploadImage(useCamera: false);
@@ -187,6 +199,17 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   _pickAndUploadImage(useCamera: true);
                 },
               ),
+              if (_isMobilePlatform)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  leading: const Icon(Icons.burst_mode_outlined),
+                  title: const Text('Capture Multiple Photos'),
+                  subtitle: const Text('Take several photos and upload together'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openMultiCameraCapture();
+                  },
+                ),
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                 leading: const Icon(Icons.photo_library_outlined),
@@ -202,6 +225,31 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
         );
       },
     );
+  }
+
+  Future<void> _openMultiCameraCapture() async {
+    final uploaded = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MultiCameraCaptureScreen(
+          onBulkUpload: widget.onBulkImageUpload ?? _fallbackSequentialUpload,
+        ),
+      ),
+    );
+
+    if (uploaded == true) {
+      widget.onUpdate();
+    }
+  }
+
+  Future<void> _fallbackSequentialUpload(
+    List<Map<String, dynamic>> photos,
+    void Function(int uploaded, int total) onProgress,
+  ) async {
+    for (int i = 0; i < photos.length; i++) {
+      await widget.onImageUpload(photos[i]['fileName'] as String, photos[i]['bytes'] as Uint8List);
+      onProgress(i + 1, photos.length);
+    }
   }
 
   Future<void> _pickAndUploadImage({required bool useCamera}) async {
@@ -333,7 +381,29 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                   
                   const SizedBox(height: 24),
 
-                  Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text("Tags", style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+                      ),
+                      if (widget.onAddTagGroups != null)
+                        SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: IconButton(
+                            onPressed: widget.onAddTagGroups,
+                            tooltip: "Add Tag Groups",
+                            padding: EdgeInsets.zero,
+                            iconSize: 18,
+                            style: IconButton.styleFrom(
+                              side: BorderSide(color: theme.colorScheme.outlineVariant),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            icon: Icon(Icons.add, color: theme.colorScheme.onSurface),
+                          ),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
 
                   if (widget.isLoadingTags) 
@@ -344,17 +414,13 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       ),
                     )
                   else if (widget.availableTags.isEmpty)
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Text(
-                          "No tag groups available.",
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
+                    EmptySelectionCard(
+                      icon: Icons.sell_outlined,
+                      title: "No Tag Group selected for this project.",
+                      actionLabel: "Add Tag Groups",
+                      onAction: widget.onAddTagGroups,
+                      linkLabel: "Create a new Tag Group",
+                      onLink: widget.onCreateTagGroup,
                     )
                   else
                     // 🚀 The scrollable tag area with matching layout
@@ -471,22 +537,13 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       const SizedBox(height: 12),
                     ],
 
-                    if (widget.allowImageUpload) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isUploading ? null : _showImageOptions,
-                          icon: Icon(Icons.add_a_photo_outlined, size: 18), 
-                          label: Text("Upload Image"),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
-                          ),
-                        ),
+                    if (imageUrls.isEmpty && widget.allowImageUpload)
+                      const EmptySelectionCard(
+                        icon: Icons.image_outlined,
+                        title: "No images attached.",
+                        subtitle: "Use Upload Image below to add photos.",
                       ),
-                      const SizedBox(height: 16),
-                    ],
-                    
+
                     if (imageUrls.isNotEmpty)
                       GridView.builder(
                         shrinkWrap: true,
@@ -572,6 +629,27 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
               ),
             ),
           ),
+          if (widget.showImageSection && widget.allowImageUpload)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _isUploading ? null : _showImageOptions,
+                  icon: Icon(Icons.add_a_photo_outlined, size: 18),
+                  label: Text("Upload Image"),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

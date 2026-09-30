@@ -180,11 +180,15 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
                               child: Column(
                                 children: displayData.map((item) {
                                   final isSelected = _selectedItems.contains(item);
-                                  return Column(
-                                    children: [
-                                      _buildDataRow(item, isSelected, theme, colorScheme, regularColumns),
-                                      Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
-                                    ],
+                                  // RepaintBoundary lets the compositor reuse each
+                                  // rasterized row while scrolling this non-lazy list.
+                                  return RepaintBoundary(
+                                    child: Column(
+                                      children: [
+                                        _buildDataRow(item, isSelected, theme, colorScheme, regularColumns),
+                                        Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
+                                      ],
+                                    ),
                                   );
                                 }).toList(),
                               ),
@@ -200,12 +204,14 @@ class _CommonTableState<T> extends State<CommonTable<T>> {
                           child: Column(
                             children: displayData.map((item) {
                               final isSelected = _selectedItems.contains(item);
-                              return Column(
-                                children: [
-                                  // 🚀 Passes the sticky flag to ensure it renders transparent/correctly
-                                  _buildDataRow(item, isSelected, theme, colorScheme, stickyColumns, isSticky: true),
-                                  Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
-                                ],
+                              return RepaintBoundary(
+                                child: Column(
+                                  children: [
+                                    // 🚀 Passes the sticky flag to ensure it renders transparent/correctly
+                                    _buildDataRow(item, isSelected, theme, colorScheme, stickyColumns, isSticky: true),
+                                    Divider(height: 1, color: colorScheme.outlineVariant.withOpacity(0.2)),
+                                  ],
+                                ),
                               );
                             }).toList(),
                           ),

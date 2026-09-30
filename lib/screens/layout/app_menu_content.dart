@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/theme_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../screens/auth/controllers/auth_controller.dart';
 import '../../utils/app_responsive.dart';
+
+const String _feedbackFormBaseUrl = 'https://airtable.com/appdWFOzIRBRFlY5y/pagIImrZd7LxXcBFd/form';
 
 class AppMenuContent extends StatelessWidget {
   final bool isCollapsed;
@@ -32,12 +34,11 @@ class AppMenuContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: themeController,
-      builder: (context, _) {
-        final theme = Theme.of(context);
+    // Theme changes already propagate through MaterialApp → Theme.of(context),
+    // so no themeController listener is needed here.
+    final theme = Theme.of(context);
 
-        return Column(
+    return Column(
           children: [
             Expanded(
               child: ListView(
@@ -82,6 +83,12 @@ class AppMenuContent extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12.0),
               child: Column(
                 children: [
+                  _NavTile(
+                    icon: Icons.feedback_outlined,
+                    label: "Feedback",
+                    isCollapsed: isCollapsed,
+                    onTap: () => _openFeedbackForm(context),
+                  ),
                   // 🚀 Settings is now a standard route!
                   _NavTile(
                     icon: Icons.settings_outlined,
@@ -97,8 +104,6 @@ class AppMenuContent extends StatelessWidget {
             const SizedBox(height: 12),
           ],
         );
-      }
-    );
   }
 
   Widget _buildTemplatesMenu(BuildContext context, ThemeData theme) {
@@ -122,7 +127,7 @@ class AppMenuContent extends StatelessWidget {
             _buildPopupItem(context, Icons.assignment_outlined, "Project Templates", '/templates/projects'),
             _buildPopupItem(context, Icons.build_outlined, "Tools", '/templates/tools'),
             _buildPopupItem(context, Icons.label_outlined, "Tags", '/templates/tags'),
-            _buildPopupItem(context, Icons.assessment_outlined, "Reports", '/templates/reports'),
+            _buildPopupItem(context, Icons.assessment_outlined, "Report Templates", '/templates/reports'),
           ],
           child: _NavTile(
             icon: Icons.description_outlined,
@@ -147,7 +152,7 @@ class AppMenuContent extends StatelessWidget {
           _NavTile(icon: Icons.assignment_outlined, label: "Project Templates", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/projects'), onTap: () => _navigate(context, '/templates/projects')),
           _NavTile(icon: Icons.build_outlined, label: "Tools", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tools'), onTap: () => _navigate(context, '/templates/tools')),
           _NavTile(icon: Icons.label_outlined, label: "Tags", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/tags'), onTap: () => _navigate(context, '/templates/tags')),
-          _NavTile(icon: Icons.assessment_outlined, label: "Reports", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/reports'), onTap: () => _navigate(context, '/templates/reports')),
+          _NavTile(icon: Icons.assessment_outlined, label: "Report Templates", isCollapsed: false, isSubItem: true, isSelected: _isPathActive(context, '/templates/reports'), onTap: () => _navigate(context, '/templates/reports')),
         ],
       ),
     );
@@ -300,6 +305,22 @@ class AppMenuContent extends StatelessWidget {
   void _navigate(BuildContext context, String path) {
     if (isMobile) Navigator.pop(context);
     context.go(path);
+  }
+
+  Future<void> _openFeedbackForm(BuildContext context) async {
+    if (isMobile) Navigator.pop(context);
+
+    final user = authController.user;
+    final name = "${user?.firstName ?? ''} ${user?.lastName ?? ''}".trim();
+    final email = user?.email ?? '';
+
+    final baseUri = Uri.parse(_feedbackFormBaseUrl);
+    final uri = baseUri.replace(queryParameters: {
+      if (email.isNotEmpty) 'prefill_Your Email': email,
+      if (name.isNotEmpty) 'prefill_Your Name': name,
+    });
+
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
 

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
-enum ButtonVariant { filled, outline }
+enum ButtonVariant { filled, outline, text }
 
 class Button extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
+  final IconData? trailingIcon;
   final ButtonVariant variant;
   final Color? color;
   final bool isLoading;
@@ -17,6 +18,7 @@ class Button extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.icon,
+    this.trailingIcon,
     this.variant = ButtonVariant.filled,
     this.color,
     this.isLoading = false,
@@ -32,7 +34,8 @@ class Button extends StatelessWidget {
     final defaultBgColor = isDark ? Colors.white : Colors.black;
     final defaultTextColor = isDark ? Colors.black : Colors.white;
 
-    final primaryColor = color ?? defaultBgColor;
+    // Text buttons read as links, so they default to the theme's primary colour.
+    final primaryColor = color ?? (variant == ButtonVariant.text ? theme.colorScheme.primary : defaultBgColor);
     final onPrimaryColor = color != null ? Colors.white : defaultTextColor;
 
     final style = ElevatedButton.styleFrom(
@@ -49,7 +52,7 @@ class Button extends StatelessWidget {
           : null,
     ).copyWith(
       backgroundColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.disabled) && !isLoading) {
+        if (states.contains(WidgetState.disabled) && !isLoading && variant != ButtonVariant.text) {
           return theme.colorScheme.onSurface.withOpacity(0.12);
         }
         return variant == ButtonVariant.filled ? primaryColor : Colors.transparent;
@@ -89,6 +92,10 @@ class Button extends StatelessWidget {
             ),
           ),
         ),
+        if (trailingIcon != null && !isLoading) ...[
+          const SizedBox(width: 8),
+          Icon(trailingIcon, size: 18),
+        ],
       ],
     );
 
@@ -100,11 +107,17 @@ class Button extends StatelessWidget {
               style: style, 
               child: content,
             )
-          : OutlinedButton(
-              onPressed: isLoading ? () {} : onPressed, 
-              style: style, 
-              child: content,
-            ),
+          : variant == ButtonVariant.outline
+              ? OutlinedButton(
+                  onPressed: isLoading ? () {} : onPressed,
+                  style: style,
+                  child: content,
+                )
+              : TextButton(
+                  onPressed: isLoading ? () {} : onPressed,
+                  style: style,
+                  child: content,
+                ),
     );
   }
 }

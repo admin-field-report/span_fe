@@ -23,7 +23,7 @@ class _ForgotPasswordFormState extends State<ForgotPasswordForm> {
   final _confirmPasswordController = TextEditingController();
   
   // Styling
-  static const Color emerald = Color(0xFF00AB55);
+  static const Color emerald = Color(0xFF1C58F6);
   static const Color inactiveText = Color(0xFF919EAB);
 
   // Track the current phase of the reset process

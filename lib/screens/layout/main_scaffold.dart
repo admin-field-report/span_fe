@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme_controller.dart'; 
 import 'app_menu_content.dart';
 import '../settings/settings_screen.dart';
 import '../../utils/utils.dart';
@@ -25,22 +24,27 @@ class MainScaffold extends StatefulWidget {
 }
 
 class _MainScaffoldState extends State<MainScaffold> {
-  bool _isCollapsed = false;
+  /// null until the user taps the toggle; the default before that depends on
+  /// the device (collapsed on tablets, expanded on desktop).
+  bool? _isCollapsed;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: themeController,
-      builder: (context, _) {
-        final theme = Theme.of(context);
+    // Theme changes already propagate through MaterialApp → Theme.of(context),
+    // so no themeController listener is needed here.
+    final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
         final isDark = theme.brightness == Brightness.dark;
         
         final bool isMobile = AppResponsive.isMobileScreen(context);
-        final bool isTabletRange = AppResponsive.isTabletScreen(context);
+        // Tablets (either orientation, detected by device rather than the
+        // current width so landscape doesn't read as desktop) start with the
+        // menu collapsed; desktop starts expanded. The user's own toggle
+        // choice, once made, wins over both defaults.
+        final bool collapsedByDefault = AppResponsive.isTabletDevice(context) || AppResponsive.isTabletScreen(context);
 
-        bool effectiveCollapsed = isMobile ? false : (isTabletRange ? !_isCollapsed : _isCollapsed);
+        final bool effectiveCollapsed = isMobile ? false : (_isCollapsed ?? collapsedByDefault);
 
         if (widget.isFullScreen) {
           return Scaffold(
@@ -185,8 +189,6 @@ class _MainScaffoldState extends State<MainScaffold> {
             ),
           ),
         );
-      },
-    );
   }
 
   // --- HELPER: TOGGLE BUTTON ---
@@ -194,7 +196,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: () => setState(() => _isCollapsed = !_isCollapsed),
+        onTap: () => setState(() => _isCollapsed = !collapsed),
         child: Container(
           width: 30,
           height: 30,
@@ -277,7 +279,7 @@ class _MainScaffoldState extends State<MainScaffold> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Icon(Icons.analytics_rounded, color: colorScheme.primary, size: 32),
-          AppLogo(size: 50, padding: 5),
+          AppLogo(size: 50, padding: 5, color: const Color(0xFF1C58F6)),
           if (!collapsed) ...[
             const SizedBox(width: 12),
             const Flexible(
