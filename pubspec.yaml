@@ -59,6 +59,8 @@ dependencies:
   open_filex: ^4.7.0
   path_provider: ^2.1.6
   permission_handler: ^11.3.0
+  archive: ^4.0.9
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:
