@@ -7,7 +7,10 @@ import 'dart:io';
 import 'package:field_report_fe/span_doc/docx_model.dart';
 import 'package:field_report_fe/span_doc/fill_binding.dart';
 import 'package:field_report_fe/span_doc/fill_values.dart';
+import 'package:field_report_fe/span_doc/report_page_view.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 String _short(String text, [int max = 60]) {
   final flat = text.replaceAll('\n', ' ');
@@ -68,4 +71,26 @@ void main() {
 
     visit(bound.body, '');
   }, skip: skip);
+
+  testWidgets('draws the bound report page', (tester) async {
+    GoogleFonts.config.allowRuntimeFetching = false;
+    final doc = DocxDocument.parse(File('$dir/template.docx').readAsBytesSync());
+    final fill = (jsonDecode(File('$dir/fill_map.json').readAsStringSync()) as Map).cast<String, dynamic>();
+    final bound = FillBinder(fill).bind(doc);
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: ReportPageView(document: bound, fill: fill, onTapSlot: (_) {}))),
+    ));
+    await tester.pump();
+    final errors = <Object>[];
+    Object? e;
+    while ((e = tester.takeException()) != null) {
+      errors.add(e!);
+    }
+    for (final err in errors) {
+      print('EXCEPTION: $err');
+    }
+    expect(errors, isEmpty);
+  }, skip: dir == null);
 }

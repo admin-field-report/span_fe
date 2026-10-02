@@ -360,6 +360,10 @@ class ReportRunDetail {
   final List<InspectorQuestion> questions;
   final String? notes;
   final String? reportPath;
+
+  /// PDF copy of the current report (generated/filled.pdf or
+  /// generated/filled.edited.pdf), when the agent rendered one.
+  final String? pdfPath;
   final int typicalMinutes;
   final int maxMinutes;
   final int findings;
@@ -372,6 +376,7 @@ class ReportRunDetail {
     required this.questions,
     this.notes,
     this.reportPath,
+    this.pdfPath,
     this.typicalMinutes = 6,
     this.maxMinutes = 20,
     this.findings = 0,
@@ -388,6 +393,7 @@ class ReportRunDetail {
       questions: _mapList(json['questions']).map(InspectorQuestion.fromJson).toList(),
       notes: json['notes']?.toString(),
       reportPath: json['report']?.toString(),
+      pdfPath: json['pdf']?.toString(),
       typicalMinutes: _int(timing['typicalMinutes']) ?? 6,
       maxMinutes: _int(timing['maxMinutes']) ?? 20,
       findings: _int(inspection['findings']) ?? 0,
@@ -510,6 +516,9 @@ class ReportFillDocument {
   final Map<String, String> labels;
   final List<ReportBlankField> blanks;
 
+  /// Every photo of the run's inspection (path + caption): the editor's album.
+  final List<AlbumPhoto> album;
+
   const ReportFillDocument({
     required this.fillMap,
     required this.source,
@@ -518,7 +527,19 @@ class ReportFillDocument {
     this.sections = const [],
     this.labels = const {},
     this.blanks = const [],
+    this.album = const [],
   });
+
+  ReportFillDocument copyWith({Map<String, dynamic>? fillMap, String? source, ReportEditStatus? edit}) => ReportFillDocument(
+        fillMap: fillMap ?? this.fillMap,
+        source: source ?? this.source,
+        edit: edit ?? this.edit,
+        title: title,
+        sections: sections,
+        labels: labels,
+        blanks: blanks,
+        album: album,
+      );
 
   factory ReportFillDocument.fromJson(Map<String, dynamic> json) {
     final layout = _map(json['layout']);
@@ -533,6 +554,18 @@ class ReportFillDocument {
       blanks: _mapList(json['blanks'])
           .map((b) => ReportBlankField(field: b['field']?.toString() ?? '', question: spanText(b['question']?.toString() ?? '')))
           .toList(),
+      album: _mapList(json['album'])
+          .where((p) => (p['path']?.toString() ?? '').isNotEmpty)
+          .map((p) => AlbumPhoto(path: p['path'].toString(), caption: p['caption']?.toString()))
+          .toList(),
     );
   }
+}
+
+/// A photo from the run's inspection that can go in a photo slot.
+class AlbumPhoto {
+  final String path;
+  final String? caption;
+
+  const AlbumPhoto({required this.path, this.caption});
 }

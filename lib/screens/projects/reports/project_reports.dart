@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 import 'package:field_report_fe/models/project.dart';
@@ -19,6 +20,8 @@ import '../../../utils/app_responsive.dart';
 import './create_report_screen.dart';
 import './edit_report_screen.dart';
 import './generation/report_generation_api.dart';
+import './generation/widgets/span_progress_card.dart';
+import '../../../utils/save_report_file.dart';
 import './preview_report_pdf_screen.dart';
 
 class ProjectReports extends StatefulWidget {
@@ -37,26 +40,99 @@ class _ProjectReportsState extends State<ProjectReports> {
   // Reports currently downloading — shows a per-row spinner and blocks re-taps.
   final Set<String> _downloadingReportIds = {};
 
-  // Report id -> Span report run: reports Span wrote open in the report
-  // screen (progress, then the editable document) instead of the HTML editor.
-  Map<String, String> _spanRunByReport = {};
+  // Report id -> the Span run that writes it. Reports Span writes (Word,
+  // report_format 'docx') open in the Span report screen, never in the HTML
+  // editor or PDF preview, which can't read them.
+  Map<String, ReportRun> _runByReport = {};
+
+  // Progress of runs still writing (job id -> 0..1), shown on their rows.
+  final Map<String, double> _runProgress = {};
+  Timer? _runPoll;
 
   Future<void> _loadSpanRuns() async {
     try {
       final runs = await ReportGenerationApi.listRuns(projectId: widget.projectId, limit: 100);
       if (!mounted) return;
+      final wasRunning = _runByReport.values.where((r) => r.isRunning).map((r) => r.jobId).toSet();
       setState(() {
-        _spanRunByReport = {
+        _runByReport = {
           for (final run in runs)
-            if (run.reportId != null) run.reportId!: run.jobId,
+            if (run.reportId != null) run.reportId!: run,
         };
       });
+      final running = runs.where((r) => r.isRunning).toList();
+      for (final run in running) {
+        ReportGenerationApi.getEvents(run.jobId).then((events) {
+          if (mounted) setState(() => _runProgress[run.jobId] = reportProgressFor(events.phaseKey));
+        }).catchError((_) {});
+      }
+      // A run just finished: refresh the rows.
+      if (wasRunning.any((id) => runs.any((r) => r.jobId == id && r.status == 'ready'))) {
+        projectController.getAllReports(widget.projectId);
+      }
+      _runPoll?.cancel();
+      _runPoll = running.isEmpty ? null : Timer(const Duration(seconds: 5), _loadSpanRuns);
     } catch (_) {
-      // Optional: without it these rows open like any other report.
+      // The rows still open: Span reports load their run on tap.
     }
   }
 
-  void _openSpanRun(String jobId) => context.go('/projects/${widget.projectId}/reports/runs/$jobId');
+  @override
+  void dispose() {
+    _runPoll?.cancel();
+    super.dispose();
+  }
+
+  bool _isSpanReport(ProjectReport report) => report.reportFormat == 'docx' || _runByReport.containsKey(report.id);
+
+  Future<void> _openSpanReport(ProjectReport report) async {
+    var run = _runByReport[report.id];
+    if (run == null) {
+      await _loadSpanRuns();
+      run = _runByReport[report.id];
+    }
+    if (!mounted) return;
+    if (run == null) {
+      ToastService.show(context, type: ToastType.error, message: "This report's details couldn't be loaded. Refresh and try again.");
+      return;
+    }
+    context.go('/projects/${widget.projectId}/reports/runs/${run.jobId}');
+  }
+
+  /// Span reports download as the current Word file (with any edits).
+  Future<void> _downloadSpanReport(ProjectReport report) async {
+    if (_downloadingReportIds.contains(report.id)) return;
+    setState(() => _downloadingReportIds.add(report.id));
+    try {
+      var run = _runByReport[report.id];
+      if (run == null) {
+        await _loadSpanRuns();
+        run = _runByReport[report.id];
+      }
+      if (run == null) throw Exception("This report's file couldn't be found. Refresh and try again.");
+      if (run.isRunning) throw Exception('Span is still writing this report.');
+      final detail = await ReportGenerationApi.getRun(run.jobId);
+      final bytes = await ReportGenerationApi.getFileBytes(run.jobId, detail.reportPath ?? 'generated/filled.docx');
+      final project = projectController.currentProject?.name;
+      final saved = await saveReportFile(
+        bytes,
+        fileName: [if (project != null && project.isNotEmpty) project, run.inspectionName ?? report.name, run.templateName ?? 'Span'].join(' - '),
+        extension: 'docx',
+      );
+      if (mounted) ToastService.show(context, type: ToastType.success, message: saved.isEmpty ? 'Downloaded.' : 'Saved to $saved');
+    } catch (e) {
+      if (mounted) ToastService.show(context, type: ToastType.error, message: e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _downloadingReportIds.remove(report.id));
+    }
+  }
+
+  /// Span reports are listed as "Level 3 walkthrough report" (inspection + report).
+  String _displayName(ProjectReport report) {
+    final run = _runByReport[report.id];
+    if (run?.inspectionName != null) return '${run!.inspectionName} report';
+    return report.name;
+  }
 
   // Same storage-permission flow as DocumentPdfExporter: ask once via
   // a dialog, send the user to settings when permanently denied, and require
@@ -429,9 +505,8 @@ class _ProjectReportsState extends State<ProjectReports> {
                             data: displayData,
                             showCheckboxes: false,
                             onRowTap: (report) {
-                              final spanRun = _spanRunByReport[report.id];
-                              if (spanRun != null) {
-                                _openSpanRun(spanRun);
+                              if (_isSpanReport(report)) {
+                                _openSpanReport(report);
                                 return;
                               }
                               Navigator.push(
@@ -461,7 +536,7 @@ class _ProjectReportsState extends State<ProjectReports> {
                                 flex: 2,
                                 sortable: false,
                                 builder: (item) => Text(
-                                  item.name,
+                                  _displayName(item),
                                   style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                                 ),
                               ),
@@ -472,7 +547,13 @@ class _ProjectReportsState extends State<ProjectReports> {
                                 flex: 2,
                                 sortable: true,
                                 sortValue: (item) => item.createDate,
-                                builder: (item) => Column(
+                                builder: (item) => _runByReport[item.id]?.isRunning == true
+                                    ? SpanRowProgress(
+                                        key: ValueKey('row-progress-${item.id}'),
+                                        label: 'Span is writing',
+                                        progress: _runProgress[_runByReport[item.id]!.jobId] ?? 0.05,
+                                      )
+                                    : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   mainAxisSize: MainAxisSize.min,
@@ -514,17 +595,16 @@ class _ProjectReportsState extends State<ProjectReports> {
                                         : IconButton(
                                             icon: const Icon(Icons.download_outlined, size: 20),
                                             color: colorScheme.primary,
-                                            tooltip: "Download PDF",
-                                            onPressed: () => _downloadReportPdf(report),
+                                            tooltip: _isSpanReport(report) ? "Download Word" : "Download PDF",
+                                            onPressed: () => _isSpanReport(report) ? _downloadSpanReport(report) : _downloadReportPdf(report),
                                           ),
                                     IconButton(
                                       icon: const Icon(Icons.edit_outlined, size: 20),
                                       color: colorScheme.primary,
                                       tooltip: "Edit Report",
                                       onPressed: () async {
-                                        final spanRun = _spanRunByReport[report.id];
-                                        if (spanRun != null) {
-                                          _openSpanRun(spanRun);
+                                        if (_isSpanReport(report)) {
+                                          _openSpanReport(report);
                                           return;
                                         }
                                         final didUpdate = await Navigator.push(

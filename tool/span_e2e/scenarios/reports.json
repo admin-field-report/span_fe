@@ -1,0 +1,269 @@
+{
+ "steps": [
+  {
+   "go": "/login?beta=true",
+   "note": "open sign-in"
+  },
+  {
+   "click": "Email Address",
+   "note": "focus email"
+  },
+  {
+   "type": "inspector@example.test"
+  },
+  {
+   "clickExact": "Password",
+   "note": "focus password"
+  },
+  {
+   "type": "$env:MOCK_PASSWORD"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "clickExact": "Sign In",
+   "settle": 3000,
+   "note": "sign in"
+  },
+  {
+   "key": "Enter",
+   "settle": 4000,
+   "optional": true
+  },
+  {
+   "waitFor": "675 Street",
+   "note": "projects list loads",
+   "timeout": 45000
+  },
+  {
+   "go": "/projects/details/project_675/reports",
+   "note": "Reports tab"
+  },
+  {
+   "waitFor": "Level 3 walkthrough report",
+   "shot": "r01-reports-list"
+  },
+  {
+   "click": "Create Report",
+   "note": "Create Report"
+  },
+  {
+   "click": "Write with Span",
+   "settle": 7000,
+   "note": "choose Write with Span"
+  },
+  {
+   "waitFor": "Write report with Span",
+   "shot": "r02-generate",
+   "note": "Generate screen (R1)"
+  },
+  {
+   "click": "Write report with Span",
+   "settle": 5000,
+   "note": "start Span writing"
+  },
+  {
+   "waitFor": "Span is writing your report",
+   "shot": "r03-progress",
+   "note": "progress page (R2)"
+  },
+  {
+   "expect": "Reading the inspection"
+  },
+  {
+   "expectNot": "min left",
+   "note": "no time remaining shown"
+  },
+  {
+   "wait": 12000,
+   "shot": "r04-progress-later",
+   "note": "steps move forward"
+  },
+  {
+   "click": "Back to Reports",
+   "settle": 5000,
+   "note": "leave the page"
+  },
+  {
+   "waitFor": "Span is writing",
+   "shot": "r05-row-progress",
+   "note": "row shows progress bar (R3)"
+  },
+  {
+   "waitGone": "Span is writing",
+   "timeout": 120000,
+   "note": "Span finishes; row updates by itself"
+  },
+  {
+   "shot": "r06-row-ready"
+  },
+  {
+   "click": "Level 3 walkthrough report",
+   "settle": 7000,
+   "note": "open the new report"
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 40000,
+   "shot": "r07-report",
+   "note": "report page (R4)"
+  },
+  {
+   "expect": "Album photo 1",
+   "note": "photo album in sidebar"
+  },
+  {
+   "scroll": [
+    700,
+    520,
+    700
+   ],
+   "settle": 1500
+  },
+  {
+   "scroll": [
+    700,
+    520,
+    300
+   ],
+   "settle": 1500,
+   "shot": "r08-page2"
+  },
+  {
+   "click": "BRONXDALE MASONRY CORP",
+   "settle": 1500,
+   "note": "tap a value on the page to edit it"
+  },
+  {
+   "select": "MASONRY",
+   "note": "select a word"
+  },
+  {
+   "click": "Bold",
+   "settle": 1500,
+   "note": "Bold from the toolbar"
+  },
+  {
+   "shot": "r09-bold",
+   "note": "editing text with toolbar (R5)"
+  },
+  {
+   "waitFor": "Saving",
+   "timeout": 8000,
+   "optional": true
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 90000,
+   "shot": "r10-saved",
+   "note": "autosave + Word rebuild done"
+  },
+  {
+   "key": "Escape",
+   "settle": 800
+  },
+  {
+   "scroll": [
+    700,
+    520,
+    450
+   ],
+   "settle": 1500
+  },
+  {
+   "click": "Photo in report",
+   "settle": 1500,
+   "note": "select a photo on the page"
+  },
+  {
+   "waitFor": "Swap with",
+   "shot": "r11-photo-selected",
+   "note": "photo panel in sidebar (R6)"
+  },
+  {
+   "click": "Album photo 7",
+   "settle": 2000,
+   "note": "swap in another album photo"
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 90000,
+   "shot": "r12-photo-swapped"
+  },
+  {
+   "files": [
+    "fixtures/new-site-photo.jpg"
+   ],
+   "click": "Upload",
+   "settle": 4000,
+   "note": "upload a new photo into the selected spot"
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 90000,
+   "shot": "r12b-photo-uploaded"
+  },
+  {
+   "click": "Undo",
+   "settle": 2000,
+   "note": "undo the upload"
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 90000,
+   "shot": "r12c-undone"
+  },
+  {
+   "click": "Download",
+   "settle": 1200,
+   "shot": "r13-download-menu",
+   "note": "Download menu (R7)"
+  },
+  {
+   "click": "Word (.docx)",
+   "settle": 3000
+  },
+  {
+   "download": "docx",
+   "timeout": 90000,
+   "note": "Word file downloads"
+  },
+  {
+   "click": "Download",
+   "settle": 1200
+  },
+  {
+   "click": "PDF (.pdf)",
+   "settle": 3000
+  },
+  {
+   "download": "pdf",
+   "timeout": 90000,
+   "note": "PDF downloads"
+  },
+  {
+   "shot": "r14-after-downloads"
+  },
+  {
+   "click": "Back to reports",
+   "settle": 5000,
+   "note": "back to the Reports tab"
+  },
+  {
+   "waitFor": "August walkthrough summary"
+  },
+  {
+   "click": "August walkthrough summary",
+   "settle": 5000,
+   "note": "an old HTML report"
+  },
+  {
+   "expectNot": "Rewrite with Span",
+   "note": "old reports keep their old screen"
+  },
+  {
+   "shot": "r15-old-report"
+  }
+ ]
+}

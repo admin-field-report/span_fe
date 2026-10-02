@@ -468,7 +468,7 @@ class _GenerateReportScreenState extends State<GenerateReportScreen> {
               ),
               const SizedBox(height: 16),
               Button(
-                label: 'Generate with Span',
+                label: 'Write report with Span',
                 icon: Icons.auto_awesome_rounded,
                 isLoading: _starting,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

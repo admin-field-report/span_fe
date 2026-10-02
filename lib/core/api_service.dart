@@ -7,7 +7,10 @@ import 'storage_service.dart';
 import '../utils/app_responsive.dart';
 
 class ApiService {
-  final String baseUrl = dotenv.get('BASE_URL', fallback: '');
+  // --dart-define=SPAN_API_BASE_URL=... points a local build at another API
+  // (e.g. tool/mock_span_api) without editing .env.
+  static const String _baseUrlOverride = String.fromEnvironment('SPAN_API_BASE_URL');
+  final String baseUrl = _baseUrlOverride.isNotEmpty ? _baseUrlOverride : dotenv.get('BASE_URL', fallback: '');
   final http.Client _client = http.Client();
 
   // Middleware: Centralized headers

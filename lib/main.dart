@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/router.dart';
@@ -17,6 +18,9 @@ void main() async {
     themeController.loadPreferences(),
   ]);
   
+  // Test builds (--dart-define=SPAN_SEMANTICS=true) keep the accessibility
+  // tree on, so tool/span_e2e can find elements by their text.
+  if (const bool.fromEnvironment('SPAN_SEMANTICS')) SemanticsBinding.instance.ensureSemantics();
   runApp(const FieldReportApp());
   
   authController.checkSession();

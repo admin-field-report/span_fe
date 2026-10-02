@@ -1,0 +1,180 @@
+{
+ "steps": [
+  {
+   "go": "/login?beta=true",
+   "note": "open sign-in"
+  },
+  {
+   "click": "Email Address",
+   "note": "focus email"
+  },
+  {
+   "type": "inspector@example.test"
+  },
+  {
+   "clickExact": "Password",
+   "note": "focus password"
+  },
+  {
+   "type": "$env:MOCK_PASSWORD"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "clickExact": "Sign In",
+   "settle": 3000,
+   "note": "sign in"
+  },
+  {
+   "key": "Enter",
+   "settle": 4000,
+   "optional": true
+  },
+  {
+   "waitFor": "675 Street",
+   "note": "projects list loads",
+   "timeout": 45000
+  },
+  {
+   "go": "/templates/reports",
+   "note": "Report Templates"
+  },
+  {
+   "waitFor": "Facade progress report",
+   "shot": "t01-templates",
+   "note": "templates list (TP1)"
+  },
+  {
+   "expect": "Made from"
+  },
+  {
+   "click": "Create Report Template",
+   "note": "create"
+  },
+  {
+   "click": "Build from example reports",
+   "settle": 5000
+  },
+  {
+   "waitFor": "EXAMPLE REPORTS",
+   "shot": "t02-new",
+   "note": "setup (TP2)"
+  },
+  {
+   "settle": 800,
+   "field": "Template name"
+  },
+  {
+   "type": "Roof survey report"
+  },
+  {
+   "files": [
+    "fixtures/Roof survey - Harbor Rd.docx",
+    "fixtures/Roof survey - Kent St.docx"
+   ],
+   "click": "Drag example reports here, or browse",
+   "note": "add two example reports"
+  },
+  {
+   "waitFor": "Roof survey - Kent St.docx",
+   "shot": "t03-setup-filled"
+  },
+  {
+   "click": "Build template with Span",
+   "settle": 8000,
+   "note": "start building"
+  },
+  {
+   "waitFor": "Span is building your template",
+   "timeout": 40000,
+   "shot": "t04-progress",
+   "note": "progress (TP3)"
+  },
+  {
+   "expect": "Reading your examples"
+  },
+  {
+   "expectNot": "Answer",
+   "note": "no questions step"
+  },
+  {
+   "click": "Back to Templates",
+   "settle": 5000
+  },
+  {
+   "waitFor": "Span is building",
+   "shot": "t05-row-building",
+   "note": "row progress (TP4)"
+  },
+  {
+   "waitGone": "Span is building",
+   "timeout": 150000,
+   "note": "template finishes"
+  },
+  {
+   "shot": "t06-row-ready"
+  },
+  {
+   "click": "Roof survey report",
+   "settle": 8000,
+   "note": "open the template"
+  },
+  {
+   "waitFor": "Fields",
+   "timeout": 40000,
+   "shot": "t07-template",
+   "note": "template page with field chips (TP5)"
+  },
+  {
+   "click": "Contractor",
+   "settle": 1200,
+   "note": "select a field"
+  },
+  {
+   "shot": "t08-field-highlighted"
+  },
+  {
+   "click": "Instructions",
+   "settle": 1200
+  },
+  {
+   "shot": "t09-instructions",
+   "note": "instructions tab (TP6)"
+  },
+  {
+   "settle": 800,
+   "note": "edit the instructions",
+   "click": "Overview",
+   "dy": 40
+  },
+  {
+   "key": "End"
+  },
+  {
+   "type": " Keep captions short."
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "waitFor": "Saved",
+   "timeout": 20000,
+   "shot": "t09b-instructions-saved"
+  },
+  {
+   "click": "Style guide",
+   "settle": 1200,
+   "shot": "t10-style-guide"
+  },
+  {
+   "click": "Download Word",
+   "settle": 3000
+  },
+  {
+   "download": "docx",
+   "timeout": 60000,
+   "note": "template Word file downloads"
+  }
+ ]
+}

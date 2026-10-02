@@ -53,6 +53,7 @@ class ReportPageView extends StatefulWidget {
   final String? highlightedGroup;
   final ValueChanged<String>? onTapGroup;
   final ValueChanged<String>? onTapToken;
+  final String? highlightedToken;
 
   final double maxScale;
 
@@ -71,6 +72,7 @@ class ReportPageView extends StatefulWidget {
     this.highlightedGroup,
     this.onTapGroup,
     this.onTapToken,
+    this.highlightedToken,
     this.maxScale = 1.35,
   });
 
@@ -221,6 +223,7 @@ class _ReportPageViewState extends State<ReportPageView> {
     final header = headerId == null ? null : parts[headerId];
     final footer = footerId == null ? null : parts[footerId];
     final contentWidth = s.pageWidth - s.margins.horizontal;
+    final headerTop = s.headerDistance.clamp(0.0, s.margins.top);
 
     final floating = <Widget>[];
     void collectFloating(List<DocxBlock> blocks) {
@@ -251,31 +254,33 @@ class _ReportPageViewState extends State<ReportPageView> {
       child: Stack(
         children: [
           ...floating.whereType<_Behind>(),
+          // Like Word: the header starts at the header distance and the body
+          // starts at the top margin, or below the header when it is taller.
           Padding(
-            padding: s.margins,
+            padding: EdgeInsets.fromLTRB(s.margins.left, header == null ? s.margins.top : headerTop, s.margins.right, s.margins.bottom),
             child: SizedBox(
               width: contentWidth,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [for (final b in page.blocks) _block(b, contentWidth)],
+                children: [
+                  if (header != null)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: (s.margins.top - headerTop).clamp(0.0, 400.0)),
+                      child: IgnorePointer(
+                        ignoring: widget.mode == ReportPageMode.template,
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final b in header) _block(b, contentWidth)]),
+                      ),
+                    ),
+                  for (final b in page.blocks) _block(b, contentWidth),
+                ],
               ),
             ),
           ),
-          if (header != null)
-            Positioned(
-              left: s.margins.left,
-              right: s.margins.right,
-              top: (s.margins.top / 2).clamp(18.0, 54.0),
-              child: IgnorePointer(
-                ignoring: widget.mode == ReportPageMode.template,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final b in header) _block(b, contentWidth)]),
-              ),
-            ),
           if (footer != null)
             Positioned(
               left: s.margins.left,
               right: s.margins.right,
-              bottom: (s.margins.bottom / 2).clamp(18.0, 54.0),
+              bottom: s.footerDistance.clamp(0.0, s.margins.bottom),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final b in footer) _block(b, contentWidth)]),
             ),
           ...floating.where((w) => w is! _Behind),
@@ -326,7 +331,8 @@ class _ReportPageViewState extends State<ReportPageView> {
       case 'top':
         y = originY;
     }
-    final child = Positioned(left: x, top: y, width: width, height: height, child: _inlineBox(item, floatingSize: true));
+    final grows = item is DocxShape && item.autoFit;
+    final child = Positioned(left: x, top: y, width: width, height: grows ? null : height, child: _inlineBox(item, floatingSize: !grows));
     return anchor.behind ? _Behind(child: child) : child;
   }
 
@@ -576,15 +582,16 @@ class _ReportPageViewState extends State<ReportPageView> {
 
   Widget _chip(String token, double size) {
     final label = _label(token);
+    final on = widget.highlightedToken == token;
     final chip = Container(
       margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
       decoration: BoxDecoration(
-        color: const Color(0xFFE7F5FF),
-        border: Border.all(color: const Color(0xFFA5D8FF), width: 0.7),
+        color: on ? reportSelectionBlue : const Color(0xFFE7F5FF),
+        border: Border.all(color: on ? reportSelectionBlue : const Color(0xFFA5D8FF), width: 0.7),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(label, style: TextStyle(fontSize: size.clamp(6.0, 14.0), color: reportSelectionBlue, fontWeight: FontWeight.w500, height: 1.2)),
+      child: Text(label, style: TextStyle(fontSize: size.clamp(6.0, 14.0), color: on ? Colors.white : reportSelectionBlue, fontWeight: FontWeight.w500, height: 1.2)),
     );
     if (widget.onTapToken == null) return chip;
     return MouseRegion(
@@ -601,6 +608,14 @@ class _ReportPageViewState extends State<ReportPageView> {
     switch (item) {
       case DocxImage img:
         return _image(img);
+      case DocxShape sh when sh.parts.isNotEmpty:
+        return SizedBox(
+          width: sh.width,
+          height: sh.height,
+          child: Stack(children: [
+            for (final (rect, color) in sh.parts) Positioned.fromRect(rect: rect, child: ColoredBox(color: color)),
+          ]),
+        );
       case DocxShape sh:
         final inner = sh.width - 14.4;
         return Container(
@@ -614,17 +629,18 @@ class _ReportPageViewState extends State<ReportPageView> {
           ),
           child: sh.blocks.isEmpty
               ? null
-              : ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.topLeft,
-                    maxHeight: floatingSize ? double.infinity : null,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [for (final b in sh.blocks) _block(b, inner > 20 ? inner : sh.width)],
-                    ),
-                  ),
-                ),
+              : () {
+                  final content = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [for (final b in sh.blocks) _block(b, inner > 20 ? inner : sh.width)],
+                  );
+                  // A floating box has a fixed frame; text past it is clipped
+                  // (as in Word). An inline box grows with its text.
+                  return floatingSize
+                      ? ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minHeight: 0, maxHeight: double.infinity, child: content))
+                      : content;
+                }(),
         );
       default:
         return const SizedBox.shrink();
@@ -656,7 +672,28 @@ class _ReportPageViewState extends State<ReportPageView> {
     final photo = img.photo;
     if (photo == null) {
       if (img.bytes == null) return SizedBox(width: size.width, height: size.height);
-      return Image.memory(img.bytes!, width: size.width, height: size.height, fit: BoxFit.fill, gaplessPlayback: true);
+      final crop = img.crop;
+      if (crop == null || (crop.left + crop.right + crop.top + crop.bottom) == 0) {
+        return Image.memory(img.bytes!, width: size.width, height: size.height, fit: BoxFit.fill, gaplessPlayback: true);
+      }
+      // Word crops: show only the uncropped part, stretched to the frame.
+      final keepW = (1 - crop.left - crop.right).clamp(0.05, 1.0);
+      final keepH = (1 - crop.top - crop.bottom).clamp(0.05, 1.0);
+      return SizedBox(
+        width: size.width,
+        height: size.height,
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            maxWidth: size.width / keepW,
+            maxHeight: size.height / keepH,
+            child: Transform.translate(
+              offset: Offset(-crop.left * size.width / keepW, -crop.top * size.height / keepH),
+              child: Image.memory(img.bytes!, width: size.width / keepW, height: size.height / keepH, fit: BoxFit.fill, gaplessPlayback: true),
+            ),
+          ),
+        ),
+      );
     }
     final path = fillGet(widget.fill, photo.imagePath)?.toString() ?? '';
     final selected = widget.selectedPhoto == photo.id;
@@ -676,7 +713,10 @@ class _ReportPageViewState extends State<ReportPageView> {
               );
             },
           );
-    return MouseRegion(
+    return Semantics(
+      label: selected ? 'Selected photo in report' : 'Photo in report',
+      button: widget.onTapPhoto != null,
+      child: MouseRegion(
       cursor: widget.onTapPhoto == null ? MouseCursor.defer : SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTapPhoto == null ? null : () => widget.onTapPhoto!(photo),
@@ -687,6 +727,7 @@ class _ReportPageViewState extends State<ReportPageView> {
           child: picture,
         ),
       ),
+    ),
     );
   }
 

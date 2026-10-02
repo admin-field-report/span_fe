@@ -16,7 +16,7 @@ import '../screens/ai_data/ai_data_screen.dart';
 import '../widgets/canvas/canvas.dart';
 import '../screens/layout/not_found_screen.dart';
 import '../screens/reports/reports_screen.dart';
-import '../screens/reports/report_profiler_detail_screen.dart';
+import '../screens/reports/span_template_screen.dart';
 import '../screens/projects/reports/generation/generate_report_screen.dart';
 import '../screens/projects/reports/generation/report_run_screen.dart';
 import '../screens/report_placeholder/report_placeholder_screen.dart';
@@ -173,11 +173,11 @@ GoRoute(
         // ':templateId'.
         GoRoute(
           path: '/templates/reports/profiler/new',
-          builder: (context, state) => const ReportProfilerDetailScreen(),
+          builder: (context, state) => const SpanTemplateScreen(),
         ),
         GoRoute(
           path: '/templates/reports/profiler/:templateId',
-          builder: (context, state) => ReportProfilerDetailScreen(
+          builder: (context, state) => SpanTemplateScreen(
             key: ValueKey(state.pathParameters['templateId']),
             templateId: state.pathParameters['templateId'],
           ),

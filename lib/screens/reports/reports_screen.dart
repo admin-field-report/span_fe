@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,8 @@ import './widgets/add_report_form.dart';
 import './report_templete_details_screen.dart';
 import '../../services/toast_service.dart';
 import '../../widgets/confirmation/confirmation_remove.dart';
+import '../projects/reports/generation/widgets/span_progress_card.dart';
+import 'controllers/report_profiler_api.dart';
 
 /// Profile statuses that mean Span has built (or is building) this
 /// template from example reports: those rows open the Span template screen
@@ -34,10 +38,58 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   String _searchQuery = "";
 
+  // Templates Span builds from example reports, by id: how many examples,
+  // and progress while building (shown on the row).
+  Map<String, ProfilerTemplate> _span = {};
+  final Map<String, double> _progress = {};
+  Timer? _poll;
+
   @override
   void initState() {
     super.initState();
     reportController.getAllReports();
+    _loadSpan();
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  bool _building(String? status) => const {'queued', 'running', 'needs_clarification'}.contains(status);
+
+  Future<void> _loadSpan() async {
+    try {
+      final templates = await ReportProfilerApi.listTemplates();
+      if (!mounted) return;
+      final wasBuilding = _span.values.where((t) => _building(t.status)).map((t) => t.id).toSet();
+      setState(() => _span = {for (final t in templates) t.id: t});
+      final building = templates.where((t) => _building(t.status)).toList();
+      for (final t in building) {
+        final jobId = t.jobId;
+        if (jobId == null) continue;
+        ReportProfilerApi.getEvents(jobId).then((events) {
+          if (mounted) setState(() => _progress[t.id] = templateProgressFor(events.phaseKey));
+        }).catchError((_) {});
+      }
+      if (wasBuilding.any((id) => _span[id]?.status == 'ready')) reportController.getAllReports();
+      _poll?.cancel();
+      _poll = building.isEmpty ? null : Timer(const Duration(seconds: 5), _loadSpan);
+    } catch (_) {
+      // The list still shows; rows open their screens on tap.
+    }
+  }
+
+  String? _statusOf(ReportTemplate report) => _span[report.id]?.status ?? report.profileStatus?.toLowerCase();
+
+  String _madeFrom(ReportTemplate report) {
+    final span = _span[report.id];
+    if (span != null || _spanProfileStatuses.contains(_statusOf(report))) {
+      final n = span?.examples.length ?? 0;
+      return n == 0 ? 'Example reports · Span' : '$n example report${n == 1 ? '' : 's'} · Span';
+    }
+    return 'PDF / skill examples';
   }
 
   List<ReportTemplate> _getFilteredReports() {
@@ -232,8 +284,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   /// Templates Span has built (or is building) open the Span template
   /// screen; everything else keeps opening the skill details screen.
   void _onRowTap(BuildContext context, ReportTemplate report) {
-    final status = (report.profileStatus ?? 'none').toLowerCase();
-    if (_spanProfileStatuses.contains(status)) {
+    final status = (_statusOf(report) ?? 'none').toLowerCase();
+    if (_spanProfileStatuses.contains(status) || _span.containsKey(report.id)) {
       context.go('/templates/reports/profiler/${report.id}');
       return;
     }
@@ -321,7 +373,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             sortable: true,
                             sortValue: (r) => r.name,
                             builder: (r) {
-                              final badge = _profileStatusBadge(r);
+                              final status = _statusOf(r);
+                              final badge = status == 'failed' || status == 'cancelled' ? _profileStatusBadge(r) : null;
                               return Row(
                                 children: [
                                   Container(
@@ -345,17 +398,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             },
                           ),
                           TableColumn(
-                            title: "Created at",
+                            title: "Made from",
                             flex: 2,
-                            minWidth: 150,
+                            minWidth: 170,
+                            builder: (r) => Text(_madeFrom(r), style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                          ),
+                          TableColumn(
+                            title: "Updated",
+                            flex: 2,
+                            minWidth: 170,
                             sortable: true,
-                            sortValue: (r) => r.createDate,
-                            builder: (r) => Column(
+                            sortValue: (r) => _span[r.id]?.builtAt ?? r.createDate,
+                            builder: (r) => _building(_statusOf(r))
+                                ? SpanRowProgress(key: ValueKey('template-progress-${r.id}'), label: 'Span is building', progress: _progress[r.id] ?? 0.05)
+                                : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(DateFormat('dd MMM yyyy').format(r.createDate), style: const TextStyle(fontWeight: FontWeight.w500)),
-                                Text(DateFormat('hh:mm a').format(r.createDate), style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
+                                Text(DateFormat('dd MMM yyyy').format(_span[r.id]?.builtAt ?? r.createDate), style: const TextStyle(fontWeight: FontWeight.w500)),
+                                Text(DateFormat('hh:mm a').format(_span[r.id]?.builtAt ?? r.createDate), style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
                               ],
                             ),
                           ),
@@ -381,7 +442,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             builder: (p) => IconButton(
                                   icon: const Icon(Icons.delete_outline, size: 20),
                                   color: colorScheme.error,
-                                  tooltip: "Delete Project",
+                                  tooltip: "Delete template",
                                   onPressed: () => _showDeleteConfirmation(p),
                                 ),
                           ),
@@ -414,7 +475,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           if (isDesktop) const Spacer(),
           if (isDesktop) 
             Button(
-              label: "Create Report",
+              label: "Create Report Template",
               icon: Icons.add_rounded,
               onPressed: () => _showCreateReportChooser(context),
             )

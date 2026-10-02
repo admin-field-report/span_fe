@@ -65,7 +65,13 @@ class DocxSection {
   final String? firstFooterId;
   final bool titlePage;
 
+  /// Distance of the header from the top edge / footer from the bottom edge.
+  final double headerDistance;
+  final double footerDistance;
+
   const DocxSection({
+    this.headerDistance = 36,
+    this.footerDistance = 36,
     this.pageWidth = 612,
     this.pageHeight = 792,
     this.margins = const EdgeInsets.all(72),
@@ -296,10 +302,13 @@ class DocxImage extends DocxInline {
   /// In a report: a frame left empty (removed from the Word file).
   final bool removed;
 
-  const DocxImage({this.bytes, required this.width, required this.height, this.slot, this.anchor, this.photo, this.removed = false});
+  /// Cropping (fractions of the picture cut from each side), as Word stores it.
+  final EdgeInsets? crop;
+
+  const DocxImage({this.bytes, required this.width, required this.height, this.slot, this.anchor, this.photo, this.removed = false, this.crop});
 
   DocxImage bound({PhotoRef? photo, bool removed = false}) =>
-      DocxImage(bytes: bytes, width: width, height: height, slot: slot, anchor: anchor, photo: photo, removed: removed);
+      DocxImage(bytes: bytes, width: width, height: height, slot: slot, anchor: anchor, photo: photo, removed: removed, crop: crop);
 }
 
 /// Where a report photo lives in the fill map: [imagePath] holds the photo's
@@ -327,17 +336,25 @@ class DocxShape extends DocxInline {
   final List<DocxBlock> blocks;
   final DocxAnchor? anchor;
 
+  /// A group's filled rectangles, in points inside the shape's frame.
+  final List<(Rect, Color)> parts;
+
+  /// The text box grows to fit its text (Word's "resize shape to fit text").
+  final bool autoFit;
+
   const DocxShape({
+    this.autoFit = false,
     required this.width,
     required this.height,
     this.fill,
     this.line,
     this.blocks = const [],
     this.anchor,
+    this.parts = const [],
   });
 
   DocxShape withBlocks(List<DocxBlock> value) =>
-      DocxShape(width: width, height: height, fill: fill, line: line, blocks: value, anchor: anchor);
+      DocxShape(width: width, height: height, fill: fill, line: line, blocks: value, anchor: anchor, parts: parts, autoFit: autoFit);
 }
 
 /// Where a floating picture or shape sits. Offsets are points from the
@@ -883,6 +900,8 @@ class _DocxReader {
       firstHeaderId: ref('headerReference', 'first'),
       firstFooterId: ref('footerReference', 'first'),
       titlePage: _onOff(_child(sectPr, 'titlePg')) ?? false,
+      headerDistance: _twips(_attr(pgMar, 'header')) ?? 36,
+      footerDistance: _twips(_attr(pgMar, 'footer')) ?? 36,
     );
   }
 
@@ -1013,8 +1032,12 @@ class _DocxReader {
     final token = placeholderPattern.firstMatch(alt)?.group(0);
     final anchor = holder.name.local == 'anchor' ? _anchor(holder) : null;
 
-    final shape = _descendants(holder, 'wsp').firstOrNull;
-    if (shape != null && _descendants(holder, 'pic').isEmpty) {
+    // What the drawing is: a shape / text box (wps), a picture, or a group.
+    final graphicData = _descendants(holder, 'graphicData').firstOrNull;
+    final uri = _attr(graphicData, 'uri') ?? '';
+    final shape = uri.endsWith('wordprocessingShape') ? _descendants(holder, 'wsp').firstOrNull : null;
+    if (uri.endsWith('wordprocessingGroup')) return _group(holder, width, height, anchor);
+    if (shape != null) {
       final spPr = _child(shape, 'spPr');
       final content = _descendants(shape, 'txbxContent').firstOrNull;
       final fill = _solidFill(_child(spPr, 'solidFill'));
@@ -1022,7 +1045,9 @@ class _DocxReader {
       final lineFill = _solidFill(_child(ln, 'solidFill'));
       final blocks = content == null ? <DocxBlock>[] : _blocks(content, part);
       if (blocks.isEmpty && fill == null) return null;
+      final bodyPr = _descendants(shape, 'bodyPr').firstOrNull;
       return DocxShape(
+        autoFit: bodyPr != null && _child(bodyPr, 'spAutoFit') != null,
         width: width,
         height: height,
         fill: fill,
@@ -1034,6 +1059,7 @@ class _DocxReader {
 
     final blip = _descendants(holder, 'blip').firstOrNull;
     if (blip == null && token == null) return null;
+    final crop = _descendants(holder, 'srcRect').firstOrNull;
     final rid = _attr(blip, 'embed');
     final target = rid == null ? null : part.rels[rid];
     return DocxImage(
@@ -1042,7 +1068,50 @@ class _DocxReader {
       height: height,
       slot: token,
       anchor: anchor,
+      crop: crop == null
+          ? null
+          : EdgeInsets.fromLTRB(
+              (_num(_attr(crop, 'l')) ?? 0) / 100000,
+              (_num(_attr(crop, 't')) ?? 0) / 100000,
+              (_num(_attr(crop, 'r')) ?? 0) / 100000,
+              (_num(_attr(crop, 'b')) ?? 0) / 100000,
+            ),
     );
+  }
+
+  /// A group of shapes (decorative bars and boxes): its filled rectangles,
+  /// placed in the group's frame. Text and pictures inside groups are skipped.
+  DocxShape? _group(XmlElement holder, double width, double height, DocxAnchor? anchor) {
+    final group = _descendants(holder, 'wgp').firstOrNull;
+    if (group == null) return null;
+    final xfrm = _child(_child(group, 'grpSpPr'), 'xfrm');
+    final chOff = _child(xfrm, 'chOff');
+    final chExt = _child(xfrm, 'chExt');
+    final ox = _num(_attr(chOff, 'x')) ?? 0;
+    final oy = _num(_attr(chOff, 'y')) ?? 0;
+    final ew = _num(_attr(chExt, 'cx')) ?? 0;
+    final eh = _num(_attr(chExt, 'cy')) ?? 0;
+    if (ew <= 0 || eh <= 0) return null;
+    final parts = <(Rect, Color)>[];
+    for (final wsp in _descendants(group, 'wsp')) {
+      final spPr = _child(wsp, 'spPr');
+      final fill = _solidFill(_child(spPr, 'solidFill'));
+      final x = _child(spPr, 'xfrm');
+      final off = _child(x, 'off');
+      final ext = _child(x, 'ext');
+      if (fill == null || off == null || ext == null) continue;
+      parts.add((
+        Rect.fromLTWH(
+          ((_num(_attr(off, 'x')) ?? 0) - ox) / ew * width,
+          ((_num(_attr(off, 'y')) ?? 0) - oy) / eh * height,
+          (_num(_attr(ext, 'cx')) ?? 0) / ew * width,
+          (_num(_attr(ext, 'cy')) ?? 0) / eh * height,
+        ),
+        fill,
+      ));
+    }
+    if (parts.isEmpty) return null;
+    return DocxShape(width: width, height: height, parts: parts, anchor: anchor);
   }
 
   Color? _solidFill(XmlElement? solid) {
@@ -1052,8 +1121,16 @@ class _DocxReader {
   }
 
   DocxAnchor _anchor(XmlElement anchor) {
-    final h = _child(anchor, 'positionH');
-    final v = _child(anchor, 'positionV');
+    // Positions may sit inside mc:AlternateContent (wp14 percentages in the
+    // Choice, absolute offsets in the Fallback): take one with an offset or
+    // an alignment.
+    XmlElement? position(String local) {
+      final all = _descendants(anchor, local).toList();
+      return all.where((p) => _child(p, 'posOffset') != null || _child(p, 'align') != null).firstOrNull ?? all.firstOrNull;
+    }
+
+    final h = position('positionH');
+    final v = position('positionV');
     final hOff = _num(_child(h, 'posOffset')?.innerText);
     final vOff = _num(_child(v, 'posOffset')?.innerText);
     return DocxAnchor(

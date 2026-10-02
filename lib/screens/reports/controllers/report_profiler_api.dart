@@ -146,9 +146,6 @@ class ReportProfilerApi {
 
   static Future<void> reopenJob(String jobId) => _jobAction(jobId, {'action': 'reopen'});
 
-  static Future<void> answerClarifications(String jobId, Map<String, String> answers) =>
-      _jobAction(jobId, {'action': 'answer', 'answers': answers});
-
   static Future<void> _jobAction(String jobId, Map<String, dynamic> body) async {
     _decode(await apiService.post(_path('/jobs/$jobId'), body), 'The request failed.');
   }

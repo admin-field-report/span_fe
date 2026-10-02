@@ -1,0 +1,68 @@
+{
+ "steps": [
+  {
+   "go": "/login?beta=true",
+   "note": "open sign-in"
+  },
+  {
+   "click": "Email Address",
+   "note": "focus email"
+  },
+  {
+   "type": "inspector@example.test"
+  },
+  {
+   "clickExact": "Password",
+   "note": "focus password"
+  },
+  {
+   "type": "$env:MOCK_PASSWORD"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "clickExact": "Sign In",
+   "settle": 3000,
+   "note": "sign in"
+  },
+  {
+   "key": "Enter",
+   "settle": 4000,
+   "optional": true
+  },
+  {
+   "waitFor": "675 Street",
+   "note": "projects list loads",
+   "timeout": 45000
+  },
+  {
+   "go": "/projects/details/project_675/reports",
+   "note": "project reports tab"
+  },
+  {
+   "waitFor": "Level 3 walkthrough report",
+   "shot": "s1-reports"
+  },
+  {
+   "click": "Level 3 walkthrough report",
+   "settle": 6000,
+   "note": "open the Span report"
+  },
+  {
+   "waitFor": "Saved",
+   "shot": "s2-report",
+   "note": "report page shows, saved"
+  },
+  {
+   "clickAt": [
+    700,
+    500
+   ],
+   "note": "click page background"
+  },
+  {
+   "eval": "(()=>{const s=[...document.querySelectorAll('*')].find(e=>e.scrollHeight>e.clientHeight+50 && getComputedStyle(e).overflowY!='visible');return !!s})()"
+  }
+ ]
+}
